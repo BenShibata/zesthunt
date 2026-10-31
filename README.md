@@ -11,7 +11,7 @@ Built in stages, with a review after each one.
 - [x] **3. Queue refills, skip signals, moods, shake and voice**
 - [x] **4. Hunt party rooms**
 - [x] **5. Payment chips, split the bill, order-ahead links**
-- [ ] 6. Privacy hardening, accessibility and polish (plus PRIVACY.md and .env.example)
+- [x] **6. Privacy hardening, accessibility and polish** (see [PRIVACY.md](PRIVACY.md))
 
 ## Run locally
 
@@ -73,6 +73,16 @@ There's no checkout, no stored cards and no payment processor. Three things only
 2. **Split the bill:** on the locked-in screen (open by default after a party match, with the head count prefilled). Type the total and the number of people, and the phone works out each share in whole cents that add up exactly. **Send the split** opens the native share sheet with a ready message for Venmo, Cash App, Apple Cash or a text (or copies it where sharing isn't supported). Nothing is sent to the server. Amounts are shown in USD for now.
 3. **Order ahead:** links to the restaurant's own site when Places says it does takeout or delivery, otherwise to a DoorDash or Uber Eats search for that place. If Places says neither, it just says "Dine-in only". Payment happens on those sites.
 
+## Privacy and accessibility
+
+[PRIVACY.md](PRIVACY.md) lists exactly what is processed and where. The short version is also in the app at `/privacy`.
+
+- **Nothing persisted** except the opt-in "Remember my dietary needs on this device" (`localStorage` key `zesthunt:dietary:v1`, diet and allergy selections only). **Forget me** deletes it instantly.
+- **Dietary needs are hard rules:** places that can't meet them are filtered out. Any suggestion naming meat or fish that the diet excludes is replaced. With allergies set, the locked-in screen says "Check allergens with the restaurant."
+- **Strict headers:** a same-origin-only Content-Security-Policy, `frame-ancestors 'none'`, `nosniff`, COOP, a minimal `Permissions-Policy`, `Referrer-Policy: no-referrer` on every response, and `no-store` on the API.
+- **Logs** never include request bodies. Failures log only the error type or a service status like `places 403`.
+- **Accessibility:** real buttons and labels throughout, 44px minimum touch targets, keyboard support (← → Backspace, arrow keys in the mood tabs), live regions for notices, focus moved to the locked-in heading, AA contrast on the colour pairs we checked, and `prefers-reduced-motion` turns off the photo develop-in, confetti and route animations.
+
 ## Deploy to Vercel
 
 1. Push the repo and import it in Vercel (framework: Next.js, no build settings needed).
@@ -99,4 +109,5 @@ There's no checkout, no stored cards and no payment processor. Three things only
 - `src/components/LockedIn.tsx`: the screen after Go
 - `src/lib/`: types, time framing, map and order links, the `/api/picks` client, mock data
 - `src/server/`: Places, Routes, the Claude ranking, prompts, in-memory cache and rate limit
-- `src/app/api/picks`, `src/app/api/photo`: the two API routes
+- `src/app/api/picks`, `src/app/api/photo`, `src/app/api/party`: the API routes
+- `src/app/privacy`: the in-app privacy page

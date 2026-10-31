@@ -140,10 +140,10 @@ export function PartyBar({
           <Countdown expiresAt={expiresAt} />
         </span>
       </div>
-      <button type="button" onClick={onShare} className="h-10 rounded-full bg-social px-4 text-sm font-semibold text-white">
+      <button type="button" onClick={onShare} className="h-11 rounded-full bg-social px-4 text-sm font-semibold text-white">
         Invite
       </button>
-      <button type="button" onClick={onLeave} className="h-10 rounded-full px-3 text-sm font-semibold text-white/75 hover:bg-white/10" aria-label="Leave party">
+      <button type="button" onClick={onLeave} className="h-11 rounded-full px-3 text-sm font-semibold text-white/75 hover:bg-white/10" aria-label="Leave party">
         Leave
       </button>
     </div>

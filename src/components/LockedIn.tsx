@@ -16,10 +16,12 @@ interface Props {
   partyMatch?: boolean;
   /** Members in the party, to prefill the split. */
   partySize?: number;
+  /** The user has allergies set: remind them we can't verify ingredients. */
+  allergyNote?: boolean;
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, partySize, onClose }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, onClose }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
@@ -105,12 +107,18 @@ export function LockedIn({ pick, now, partyMatch, partySize, onClose }: Props) {
         </div>
 
         {pick.upgradeTip && (
-          <p className="mt-3 flex items-start gap-2 rounded-2xl bg-teal/10 px-4 py-3 text-sm text-teal dark:bg-teal/20 dark:text-teal-bright">
+          <p className="mt-3 flex items-start gap-2 rounded-2xl bg-teal/10 px-4 py-3 text-sm text-teal-deep dark:bg-teal/20 dark:text-teal-bright">
             <LeafIcon size={18} className="mt-0.5 shrink-0" />
             <span>
               <span className="font-semibold">Easy upgrade: </span>
               {pick.upgradeTip}
             </span>
+          </p>
+        )}
+
+        {allergyNote && (
+          <p className="mt-3 rounded-2xl border border-sheet-ink/15 px-4 py-3 text-sm font-semibold dark:border-white/15" role="note">
+            Check allergens with the restaurant.
           </p>
         )}
 

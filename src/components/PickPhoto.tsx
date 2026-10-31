@@ -2,9 +2,9 @@
 import type { PickPhoto as Photo } from "@/lib/types";
 
 /**
- * Edge-to-edge photo for a pick. Stage 1 renders a painterly placeholder from a
- * palette; stage 2 swaps in the Places photo (served through our own proxy so the
- * key and the user's IP never reach Google from the browser).
+ * Edge-to-edge photo for a pick: the Places photo, served through our own proxy so
+ * the key and the user's IP never reach Google from the browser. Demo places (and
+ * places without photos) get a painterly placeholder from a palette.
  */
 export function PickPhoto({ photo, alt }: { photo: Photo; alt: string }) {
   if (photo.kind === "url") {

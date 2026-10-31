@@ -1,6 +1,7 @@
 /**
- * Stage 1 stylized route preview. Stage 2 replaces it with a real map of the
- * Routes API walking polyline (rendered via our server so no key reaches the client).
+ * Stylized route preview. A real map with the walking polyline would need the
+ * user's precise origin on our server (or Google's), which the ~1 km rounding rule
+ * rules out, so turn-by-turn lives in the user's own maps app via "Start walking".
  */
 export function RouteMap({ walkMinutes, name }: { walkMinutes: number; name: string }) {
   return (

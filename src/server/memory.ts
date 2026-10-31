@@ -57,3 +57,13 @@ export function rateLimit(ip: string, bucket = "picks", limit = 40): { ok: boole
 export function clientIp(h: Headers): string {
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
 }
+
+/**
+ * What may reach server logs about a failure: our own "service status" strings
+ * (e.g. "places 403") or just the error type. Never messages that could echo a
+ * request, a prompt, coordinates or a URL with a key in it.
+ */
+export function safeErrorLabel(e: unknown): string {
+  if (e instanceof Error && /^(places|routes|geocode|upstash) \d{3}$/.test(e.message)) return e.message;
+  return e instanceof Error ? e.name : "unknown";
+}

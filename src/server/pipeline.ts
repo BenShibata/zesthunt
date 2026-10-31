@@ -2,9 +2,10 @@ import "server-only";
 import { z } from "zod";
 import { MOODS, type Mood, type Pick, type PicksEvent } from "@/lib/types";
 import { mealFrame } from "@/lib/time";
-import { dishCategory } from "@/lib/categories";
+import { dietSafeSuggestion, dishCategory } from "@/lib/categories";
 import { buildMockQueue } from "@/lib/mockPicks";
 import { env, isDemo } from "./env";
+import { safeErrorLabel } from "./memory";
 import { coarseFromHeaders, roundToArea, type LatLng } from "./geo";
 import { geocodeArea, nearbyOpenPlaces, type Place } from "./places";
 import { travelTimes, type Travel } from "./routes";
@@ -117,7 +118,10 @@ export async function* runPipeline(req: PicksRequest, headers: Headers, signal: 
   const emitted = new Set<string>();
   const firstOfSession = Boolean(req.firstOfSession);
   const heuristicOrder = rankHeuristically(shortlist, travel, req.mood, firstOfSession);
-  const make = (p: Place, ranked?: RankedPick): Pick => buildPick(p, travel.get(p.id)!, mode, ranked);
+  const make = (p: Place, ranked?: RankedPick): Pick => {
+    const pick = buildPick(p, travel.get(p.id)!, mode, ranked);
+    return { ...pick, suggestion: dietSafeSuggestion(pick.suggestion, diets) };
+  };
 
   if (env.anthropicKey) {
     try {
@@ -155,7 +159,7 @@ export async function* runPipeline(req: PicksRequest, headers: Headers, signal: 
     } catch (e) {
       if (signal.aborted) return;
       // Log the failure class only, never the request or response content.
-      console.error("rank failed:", e instanceof Error ? e.name : "unknown");
+      console.error("rank failed:", safeErrorLabel(e));
     }
   }
 
@@ -230,7 +234,11 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
 /** Same stream shape on mock data, so the client path is identical without keys. */
 async function* demoFeed(req: PicksRequest, exclude: Set<string>): AsyncGenerator<PicksEvent> {
   yield { type: "meta", mode: "demo", sparse: false, areaLabel: null };
-  const picks = buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession) }).filter((p) => !exclude.has(p.id));
+  const diets = req.dietary?.diets ?? [];
+  const veg = diets.some((d) => VEG_DIETS.test(d));
+  const picks = buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession) })
+    .filter((p) => !exclude.has(p.id) && !(veg && ["steak and BBQ", "burgers"].includes(p.category ?? "")))
+    .map((p) => ({ ...p, suggestion: dietSafeSuggestion(p.suggestion, diets) }));
   if (picks.length === 0) {
     yield { type: "empty", message: "That's every demo pick for this mood.", suggestion: "other_mood" };
     return;

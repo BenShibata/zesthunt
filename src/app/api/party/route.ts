@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { clientIp, rateLimit } from "@/server/memory";
+import { clientIp, rateLimit, safeErrorLabel } from "@/server/memory";
 import { CODE_RE, NicknameSchema, PartyCardSchema, PartyError, addCards, createParty, joinParty, partyState, recordSwipe } from "@/server/party";
 import type { PartyCard } from "@/lib/types";
 
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     }
   } catch (e) {
     if (e instanceof PartyError) return Response.json({ error: e.message }, { status: e.status, headers: NO_STORE });
-    console.error("party failed:", e instanceof Error ? e.message.slice(0, 40) : "unknown");
+    console.error("party failed:", safeErrorLabel(e));
     return Response.json({ error: "Party service hiccup. Try again." }, { status: 502, headers: NO_STORE });
   }
 }

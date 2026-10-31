@@ -1,6 +1,6 @@
 /**
- * Stage 1 mock data. Fictional places around a fictional block so the UI can be
- * reviewed without any API keys. Stage 2 replaces this with Places + Routes + Claude.
+ * Demo-mode data: fictional places around a fictional block, served by /api/picks
+ * when no Google key is configured, so the app runs without any API keys.
  */
 import { dishCategory } from "./categories";
 import type { HealthLabel, Mood, Pick, PickPhoto, PaymentOptions, PlateBalance, PriceLevel } from "./types";

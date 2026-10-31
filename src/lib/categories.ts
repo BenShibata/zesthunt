@@ -93,3 +93,22 @@ export function applySignals(picks: Pick[], signals: string[]): Pick[] {
 export function orderForMood(picks: Pick[], mood: Pick["moods"][number]): Pick[] {
   return [...picks.filter((p) => p.moods.includes(mood)), ...picks.filter((p) => !p.moods.includes(mood))];
 }
+
+const MEAT_OR_FISH = /\b(chicken|pork|beef|steak|lamb|bacon|ham|salmon|tuna|fish|shrimp|prawn|crab|lobster|meat|bbq|barbecue|shawarma|burger|pepperoni|sushi|sashimi|poke)\b/i;
+const NO_FISH_DIETS = /veg/i; // vegetarian, vegan
+const NO_MEAT_DIETS = /veg|pesc/i; // also pescatarian
+
+/**
+ * Safety net for diets: a suggestion that names meat or fish the diet excludes is
+ * swapped for a neutral one. Applied on the server to every pick, ranked or not.
+ */
+export function dietSafeSuggestion(suggestion: string, diets: string[]): string {
+  if (diets.length === 0 || !MEAT_OR_FISH.test(suggestion)) return suggestion;
+  if (/\b(tofu|tempeh|seitan|veggie|vegetable|vegan|vegetarian|plant-based|falafel)\b/i.test(suggestion)) return suggestion;
+  const noFish = diets.some((d) => NO_FISH_DIETS.test(d));
+  const noMeat = diets.some((d) => NO_MEAT_DIETS.test(d));
+  if (!noMeat) return suggestion;
+  const fishOnly = /\b(salmon|tuna|fish|shrimp|prawn|crab|lobster|sushi|sashimi|poke)\b/i.test(suggestion) && !/\b(chicken|pork|beef|steak|lamb|bacon|ham|meat|bbq|barbecue|shawarma|burger|pepperoni)\b/i.test(suggestion);
+  if (fishOnly && !noFish) return suggestion; // pescatarian + fish is fine
+  return diets.some((d) => /vegan/i.test(d)) ? "Try their vegan options" : "Try their vegetarian options";
+}

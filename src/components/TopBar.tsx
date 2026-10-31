@@ -1,14 +1,18 @@
 import { MOODS, MOOD_LABELS, type Mood } from "@/lib/types";
-import { CompassMark, PartyIcon } from "./Icons";
+import { CompassMark, LeafIcon, PartyIcon } from "./Icons";
 
 export function TopBar({
   dietaryBadge,
+  dietOpen,
+  onDiet,
   demo,
   onParty,
   partyActive,
   hideParty,
 }: {
   dietaryBadge: string | null;
+  dietOpen?: boolean;
+  onDiet?: () => void;
   demo?: boolean;
   onParty: () => void;
   partyActive?: boolean;
@@ -24,10 +28,19 @@ export function TopBar({
             Demo
           </span>
         )}
-        {dietaryBadge && (
-          <span className="ml-1 rounded-full bg-teal/30 px-2 py-0.5 text-xs font-semibold text-teal-bright" aria-label={`Dietary filter on: ${dietaryBadge}`}>
-            {dietaryBadge}
-          </span>
+        {onDiet && (
+          <button
+            type="button"
+            onClick={onDiet}
+            aria-expanded={dietOpen}
+            aria-label={dietaryBadge ? `Dietary filter on: ${dietaryBadge}. Change` : "Set dietary needs"}
+            className={`ml-1 inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-full px-2.5 text-xs font-semibold ${
+              dietaryBadge ? "bg-teal/30 text-teal-bright" : "text-white/60 hover:bg-white/10"
+            }`}
+          >
+            <LeafIcon size={14} />
+            {dietaryBadge ?? <span className="sr-only">Diet</span>}
+          </button>
         )}
       </div>
       {!hideParty && (
@@ -54,6 +67,8 @@ export function MoodTabs({ mood, onChange }: { mood: Mood; onChange: (m: Mood) =
           <button
             key={m}
             role="tab"
+            id={`mood-${m}`}
+            aria-controls="picks-panel"
             type="button"
             aria-selected={selected}
             onClick={() => onChange(m)}

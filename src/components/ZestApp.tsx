@@ -16,6 +16,11 @@ import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt } from "./FeedStates";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
 import { JoinScreen, PartyBar, PartySetup } from "./Party";
+import { DietPanel } from "./DietPanel";
+import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
+import type { Dietary } from "@/lib/types";
+
+const hasDietary = (d: Dietary | null): d is Dietary => Boolean(d && d.diets.length + d.allergies.length > 0);
 
 const subscribeHash = (cb: () => void) => {
   window.addEventListener("hashchange", cb);
@@ -88,6 +93,11 @@ export function ZestApp() {
   const [hostExtra, setHostExtra] = useState<Pick[]>([]);
   const hostRefilling = useRef(false);
 
+  // Dietary needs: memory by default; localStorage only if the user opts in.
+  const { dietary, remembered: dietRemembered, update: updateDiet, setRemember, forget: forgetDiet, current: dietRef } = useDietary();
+  const [dietOpen, setDietOpen] = useState(false);
+  const dietAtOpen = useRef("");
+
   const baseQuery = useCallback(
     (m: Mood, sig: string[]): PicksQuery => ({
       mood: m,
@@ -95,8 +105,9 @@ export function ZestApp() {
       areaQuery: areaQuery.current,
       firstOfSession: firstOfSession.current,
       skipSignals: sig,
+      dietary: hasDietary(dietRef.current) ? dietRef.current : null,
     }),
-    [],
+    [dietRef],
   );
 
   /**
@@ -179,7 +190,9 @@ export function ZestApp() {
 
   // Open straight onto a pick (server uses a city-level IP estimate if there's no location yet).
   useEffect(() => {
-    fetchQueue("fresh", [], { append: false });
+    // Storage-backed state may not have settled yet on the first effect, so read it directly.
+    const stored = readStoredDietary();
+    fetchQueue("fresh", [], { append: false, extra: hasDietary(stored) ? { dietary: stored } : {} });
     return () => inflight.current?.abort();
   }, [fetchQueue]);
 
@@ -357,6 +370,22 @@ export function ZestApp() {
     setNotice("Picks cleared after 10 quiet minutes.");
   }, [load, mood, voice]);
 
+  const openDiet = () => {
+    if (dietOpen) return closeDiet();
+    dietAtOpen.current = JSON.stringify(dietary);
+    setPartySetup(false);
+    setDietOpen(true);
+  };
+
+  /** Applies dietary changes once, when the panel closes, instead of on every tap. */
+  const closeDiet = () => {
+    setDietOpen(false);
+    if (JSON.stringify(dietRef.current) !== dietAtOpen.current && !party.active) {
+      setNotice(hasDietary(dietRef.current) ? "Picks updated for your dietary needs." : "Dietary filter off.");
+      load(mood);
+    }
+  };
+
   // ---------------------------------------------------------------------------
   // Hunt party
   // ---------------------------------------------------------------------------
@@ -484,6 +513,7 @@ export function ZestApp() {
       return;
     }
     setPartyError(null);
+    setDietOpen(false);
     setPartySetup((o) => !o);
   };
 
@@ -523,10 +553,19 @@ export function ZestApp() {
   }, [locked, composing]);
 
   if (party.matchedCard && now) {
-    return <LockedIn pick={toLocalPick(party.matchedCard)} now={now} partyMatch partySize={party.members.length || 2} onClose={party.dismissMatch} />;
+    return (
+      <LockedIn
+        pick={toLocalPick(party.matchedCard)}
+        now={now}
+        partyMatch
+        partySize={party.members.length || 2}
+        allergyNote={dietary.allergies.length > 0}
+        onClose={party.dismissMatch}
+      />
+    );
   }
   if (locked && now) {
-    return <LockedIn pick={locked} now={now} onClose={() => setLocked(null)} />;
+    return <LockedIn pick={locked} now={now} allergyNote={dietary.allergies.length > 0} onClose={() => setLocked(null)} />;
   }
 
   if (joinCode && !inParty) {
@@ -543,7 +582,27 @@ export function ZestApp() {
 
   return (
     <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
-      <TopBar dietaryBadge={null} demo={feedMode === "demo"} onParty={onPartyButton} hideParty={inParty} />
+      <TopBar
+        dietaryBadge={dietaryBadge(dietary)}
+        dietOpen={dietOpen}
+        onDiet={openDiet}
+        demo={feedMode === "demo"}
+        onParty={onPartyButton}
+        hideParty={inParty}
+      />
+      {dietOpen && (
+        <DietPanel
+          dietary={dietary}
+          remembered={dietRemembered}
+          onChange={updateDiet}
+          onRemember={setRemember}
+          onForget={() => {
+            forgetDiet();
+            setNotice("Forgotten. Nothing about your diet is stored on this device.");
+          }}
+          onClose={closeDiet}
+        />
+      )}
       {partySetup && !inParty && (
         <PartySetup onStart={startParty} onCancel={() => setPartySetup(false)} busy={partyBusy} error={partyError} />
       )}
@@ -561,6 +620,12 @@ export function ZestApp() {
         <MoodTabs mood={mood} onChange={changeMood} />
       )}
 
+      <div
+        id="picks-panel"
+        role={inParty ? undefined : "tabpanel"}
+        aria-labelledby={inParty ? undefined : `mood-${mood}`}
+        className="flex min-h-0 flex-1 flex-col"
+      >
       {inParty ? (
         partyCurrent && now ? (
           <PickCard pick={partyCurrent} now={now} swipes={swipes} swipe={swipe} />
@@ -588,6 +653,7 @@ export function ZestApp() {
       {current && now && <PickCard pick={current} now={now} swipes={swipes} swipe={swipe} />}
         </>
       )}
+      </div>
 
       <div aria-live="polite" className="min-h-0 px-4">
         {voice.listening ? (
@@ -647,8 +713,15 @@ export function ZestApp() {
         }}
         onHoldEnd={voice.stop}
       />
-      <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-[11px] text-white/50">
-        Nothing is saved by us. Close the tab and it&apos;s gone.
+      <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-[11px] text-white/55">
+        {inParty
+          ? "Nothing is saved by us. This room vanishes 10 minutes after it opened."
+          : dietRemembered
+            ? "Nothing is saved by us. Your dietary needs stay on this device."
+            : "Nothing is saved by us. Close the tab and it\u2019s gone."}{" "}
+        <a href="/privacy" target="_blank" rel="noopener" className="underline underline-offset-2">
+          Privacy
+        </a>
       </p>
     </main>
   );

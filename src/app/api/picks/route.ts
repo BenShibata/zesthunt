@@ -1,4 +1,4 @@
-import { clientIp, rateLimit } from "@/server/memory";
+import { clientIp, rateLimit, safeErrorLabel } from "@/server/memory";
 import { PicksRequestSchema, runPipeline } from "@/server/pipeline";
 import type { PicksEvent } from "@/lib/types";
 
@@ -39,7 +39,7 @@ export async function POST(request: Request) {
           send(event);
         }
       } catch (e) {
-        console.error("picks failed:", e instanceof Error ? e.message.slice(0, 40) : "unknown");
+        console.error("picks failed:", safeErrorLabel(e));
         send({ type: "error", message: "We couldn't reach the map service. Try again in a moment." });
       } finally {
         controller.close();
