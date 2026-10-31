@@ -199,8 +199,9 @@ let store: RoomStore | null = null;
 
 export function roomStore(): RoomStore {
   if (store) return store;
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // KV_REST_API_* are the names Vercel's Upstash marketplace integration sets.
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
   store = url && token ? new UpstashStore(url.replace(/\/$/, ""), token) : new MemoryStore();
   return store;
 }

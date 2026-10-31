@@ -87,7 +87,7 @@ There's no checkout, no stored cards and no payment processor. Three things only
 
 1. Push the repo and import it in Vercel (framework: Next.js, no build settings needed).
 2. Add `GOOGLE_MAPS_API_KEY` and `ANTHROPIC_API_KEY` under Project → Settings → Environment Variables.
-   For party rooms, add an Upstash Redis database (Vercel Marketplace → Upstash) and set `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`.
+   For party rooms, add an Upstash Redis database (Vercel Marketplace → Upstash) (it sets `KV_REST_API_URL` / `KV_REST_API_TOKEN` for you, which the app reads; `UPSTASH_REDIS_REST_*` also work).
 3. Deploy. In Google Cloud, restrict the key to the three APIs above.
 
 ## Controls
