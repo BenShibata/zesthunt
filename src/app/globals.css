@@ -1,0 +1,131 @@
+@import "tailwindcss";
+
+@theme {
+  /* Camera-dark opening screen */
+  --color-ink: #0b0b0c;
+  --color-ink-2: #161618;
+  --color-ink-3: #232326;
+
+  /* Paprika: primary actions only */
+  --color-paprika: #c8401f;
+  --color-paprika-deep: #a83317;
+  --color-paprika-bright: #ff7a57;
+
+  /* Deep teal: health cues */
+  --color-teal: #0f766e;
+  --color-teal-bright: #3fd0bd;
+
+  /* Blue: social */
+  --color-social: #2563eb;
+  --color-social-bright: #7aa7ff;
+
+  /* Warm light sheet (locked-in screen) */
+  --color-sheet: #fbf6ef;
+  --color-sheet-2: #f2e9dd;
+  --color-sheet-ink: #1d1a17;
+  --color-sheet-muted: #5e554b;
+
+  --font-display: var(--font-bricolage), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body {
+  background: var(--color-ink);
+  color: #f5f3ef;
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus-visible {
+  outline: 3px solid var(--color-social-bright);
+  outline-offset: 2px;
+}
+
+/* The pick photo "develops in": a short fade plus sharpen. */
+@keyframes develop {
+  from {
+    opacity: 0;
+    filter: blur(18px) saturate(0.3) brightness(1.5);
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0) saturate(1) brightness(1);
+    transform: scale(1);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes march {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate(0, -20px) rotate(0);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(var(--drift), 42dvh) rotate(var(--spin));
+    opacity: 0;
+  }
+}
+
+.confetti {
+  animation: confetti-fall 1.6s cubic-bezier(0.2, 0.6, 0.4, 1) both;
+}
+
+.animate-develop {
+  animation: develop 650ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.animate-rise {
+  animation: rise 360ms ease-out both;
+}
+
+.skeleton {
+  background: linear-gradient(90deg, #1b1b1e 0%, #26262a 50%, #1b1b1e 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.route-march {
+  animation: march 1.2s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-develop,
+  .animate-rise,
+  .skeleton,
+  .route-march,
+  .confetti {
+    animation: none;
+  }
+}
