@@ -3,7 +3,8 @@
 import { useEffect, useRef } from "react";
 import type { Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, minutesUntil, priceText } from "@/lib/time";
-import { directionsUrl, orderAheadUrl } from "@/lib/links";
+import { directionsUrl, orderAhead } from "@/lib/links";
+import { SplitCard } from "./SplitCard";
 import { RouteMap } from "./RouteMap";
 import { SheetPaymentChips } from "./PaymentChips";
 import { CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, TagIcon, WalkIcon } from "./Icons";
@@ -13,15 +14,17 @@ interface Props {
   now: Date;
   /** Set when everyone in a hunt party swiped right on this pick. */
   partyMatch?: boolean;
+  /** Members in the party, to prefill the split. */
+  partySize?: number;
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, onClose }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, onClose }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
-  const order = orderAheadUrl(pick);
+  const order = orderAhead(pick);
   const walking = pick.travelMode === "walk";
 
   useEffect(() => {
@@ -111,7 +114,10 @@ export function LockedIn({ pick, now, partyMatch, onClose }: Props) {
           </p>
         )}
 
-        <div className="mt-auto flex flex-col gap-2 pt-4">
+        <SplitCard placeName={pick.name} defaultPeople={partySize ?? 2} startOpen={Boolean(partyMatch)} />
+
+        {/* Pinned so "Start walking" stays in thumb reach even when the split card is open. */}
+        <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 bg-sheet px-5 pt-4 dark:bg-[#1b1916]">
           <a
             href={directionsUrl(pick)}
             target="_blank"
@@ -121,15 +127,28 @@ export function LockedIn({ pick, now, partyMatch, onClose }: Props) {
             {walking ? <WalkIcon size={22} /> : <CarIcon size={22} />}
             {walking ? "Start walking" : "Get directions"}
           </a>
-          <a
-            href={order.url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-sheet-ink/20 text-base font-semibold transition hover:bg-sheet-2 dark:border-white/20 dark:hover:bg-white/5"
-          >
-            {order.ownSite ? "Order ahead on their site" : "Order ahead via delivery app"}
-            <ExternalIcon size={16} />
-          </a>
+          {order.kind === "own" && (
+            <a href={order.url} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
+              Order ahead on their site
+              <ExternalIcon size={16} />
+            </a>
+          )}
+          {order.kind === "delivery" && (
+            <div className="flex items-center gap-2" role="group" aria-labelledby="order-ahead-label">
+              <span id="order-ahead-label" className="shrink-0 text-sm font-semibold text-sheet-muted dark:text-white/70">
+                Order ahead on
+              </span>
+              {order.options.map((o) => (
+                <a key={o.app} href={o.url} target="_blank" rel="noopener noreferrer" className={`${secondaryBtn} flex-1 px-2 text-sm`}>
+                  {o.app}
+                  <ExternalIcon size={14} />
+                </a>
+              ))}
+            </div>
+          )}
+          {order.kind === "none" && (
+            <p className="text-center text-sm text-sheet-muted dark:text-white/70">Dine-in only, per Google. Just walk on over.</p>
+          )}
           <p className="pt-2 text-center text-xs text-sheet-muted dark:text-white/60">
             We never see your card. You pay in your own wallet.
           </p>
@@ -138,6 +157,9 @@ export function LockedIn({ pick, now, partyMatch, onClose }: Props) {
     </main>
   );
 }
+
+const secondaryBtn =
+  "inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-sheet-ink/20 text-base font-semibold transition hover:bg-sheet-2 dark:border-white/20 dark:hover:bg-white/5";
 
 const CONFETTI_COLORS = ["#c8401f", "#ff7a57", "#0f766e", "#3fd0bd", "#2563eb", "#7aa7ff"];
 

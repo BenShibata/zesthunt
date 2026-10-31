@@ -18,6 +18,8 @@ interface Seed {
   walk: number;
   payment: PaymentOptions | null;
   orderUrl?: string;
+  /** Places says no takeout and no delivery. */
+  dineInOnly?: boolean;
   plate: [number, number, number];
   labels: HealthLabel[];
   tip?: string;
@@ -243,6 +245,7 @@ const SEEDS: Seed[] = [
   },
   {
     name: "Ember Grill",
+    dineInOnly: true,
     suggestion: "Try the steak frites",
     reason: "A proper sit-down treat.",
     moods: ["treat"],
@@ -314,6 +317,9 @@ function toPick(seed: Seed, i: number, now: Date): Pick {
     address: `${100 + i * 37} Valencia St`,
     payment: seed.payment,
     orderUrl: seed.orderUrl,
+    // Mock: places with an ordering page do takeout; the rest are unknown.
+    takeout: seed.dineInOnly ? false : seed.orderUrl ? true : null,
+    delivery: seed.dineInOnly ? false : null,
     plate,
     labels: seed.labels,
     balance,

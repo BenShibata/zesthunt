@@ -61,6 +61,9 @@ export interface Pick {
   websiteUrl?: string;
   /** The restaurant's own ordering page, when Places has one. */
   orderUrl?: string;
+  /** From Places: does takeout / delivery. null = unknown (we don't guess). */
+  takeout?: boolean | null;
+  delivery?: boolean | null;
   plate: PlateBalance;
   labels: HealthLabel[];
   /** 0–1, how balanced the dish style is. Drives "balanced first". */

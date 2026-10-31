@@ -215,6 +215,8 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     // Places (New) has no dedicated ordering-URL field; a restaurant's own site is
     // used for order-ahead only when Places says it does takeout or delivery.
     orderUrl: place.websiteUri && (place.takeout || place.delivery) ? place.websiteUri : undefined,
+    takeout: place.takeout,
+    delivery: place.delivery,
     plate,
     labels: ranked?.labels ?? prof.labels,
     balance: balanceScore([plate.protein, plate.veg, plate.grain]),

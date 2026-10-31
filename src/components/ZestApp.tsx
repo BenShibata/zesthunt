@@ -523,7 +523,7 @@ export function ZestApp() {
   }, [locked, composing]);
 
   if (party.matchedCard && now) {
-    return <LockedIn pick={toLocalPick(party.matchedCard)} now={now} partyMatch onClose={party.dismissMatch} />;
+    return <LockedIn pick={toLocalPick(party.matchedCard)} now={now} partyMatch partySize={party.members.length || 2} onClose={party.dismissMatch} />;
   }
   if (locked && now) {
     return <LockedIn pick={locked} now={now} onClose={() => setLocked(null)} />;

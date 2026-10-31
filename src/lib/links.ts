@@ -21,11 +21,25 @@ export function directionsUrl(pick: Pick): string {
   return `https://www.google.com/maps/dir/?${params}`;
 }
 
-/** The restaurant's own ordering page if Places has one, else a delivery-app search. */
-export function orderAheadUrl(pick: Pick): { url: string; ownSite: boolean } {
-  if (pick.orderUrl) return { url: pick.orderUrl, ownSite: true };
+export type OrderAhead =
+  | { kind: "own"; url: string }
+  | { kind: "delivery"; options: { app: string; url: string }[] }
+  | { kind: "none" };
+
+/**
+ * Order-ahead never happens in Zesthunt: we only link out, and payment happens there.
+ * The restaurant's own ordering page wins; otherwise a delivery-app search for the
+ * place; nothing at all when Places says it does neither takeout nor delivery.
+ */
+export function orderAhead(pick: Pick): OrderAhead {
+  if (pick.orderUrl) return { kind: "own", url: pick.orderUrl };
+  if (pick.takeout === false && pick.delivery === false) return { kind: "none" };
+  const q = encodeURIComponent(pick.name);
   return {
-    url: `https://www.doordash.com/search/store/${encodeURIComponent(pick.name)}/`,
-    ownSite: false,
+    kind: "delivery",
+    options: [
+      { app: "DoorDash", url: `https://www.doordash.com/search/store/${q}/` },
+      { app: "Uber Eats", url: `https://www.ubereats.com/search?q=${q}` },
+    ],
   };
 }

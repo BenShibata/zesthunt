@@ -43,6 +43,8 @@ export const PartyCardSchema = z.object({
     .nullable(),
   websiteUrl: z.string().max(500).optional(),
   orderUrl: z.string().max(500).optional(),
+  takeout: z.boolean().nullable().optional(),
+  delivery: z.boolean().nullable().optional(),
   plate: z.object({ protein: z.number(), veg: z.number(), grain: z.number() }),
   labels: z.array(z.enum(["Protein", "Veg", "Whole grain"])).max(3),
   balance: z.number(),

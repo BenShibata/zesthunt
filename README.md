@@ -10,7 +10,7 @@ Built in stages, with a review after each one.
 - [x] **2. Places + Routes + Claude picks pipeline** (`src/server/`, `src/app/api/`)
 - [x] **3. Queue refills, skip signals, moods, shake and voice**
 - [x] **4. Hunt party rooms**
-- [ ] 5. Payment chips from Places, split the bill, order-ahead links
+- [x] **5. Payment chips, split the bill, order-ahead links**
 - [ ] 6. Privacy hardening, accessibility and polish (plus PRIVACY.md and .env.example)
 
 ## Run locally
@@ -64,6 +64,14 @@ Photos go through `/api/photo` so the key stays server-side and the browser neve
 2. Friends open the link, type a nickname and swipe the same cards. When every member (2+) swipes right on the same pick, every device shows "It's a match!" with haptics and confetti.
 3. Rooms have a hard 10-minute TTL from creation that activity doesn't extend. The room holds only the code, nicknames (plus a hashed join key), restaurant cards and swipes. Never location, cravings or travel times; each device works out its own walk time.
 4. Only the host's device adds cards (it's the one with a location). Party traffic goes through one `POST /api/party` endpoint so codes and keys stay out of URLs. Members poll every 2 s.
+
+## Paying (without Zesthunt touching money)
+
+There's no checkout, no stored cards and no payment processor. Three things only:
+
+1. **How to pay:** chips come from Google Places `paymentOptions`: "Tap to pay" (NFC), "Cards", "Cash only", plus "Online ordering" when there's an ordering page. If Places doesn't say, no chip is shown.
+2. **Split the bill:** on the locked-in screen (open by default after a party match, with the head count prefilled). Type the total and the number of people, and the phone works out each share in whole cents that add up exactly. **Send the split** opens the native share sheet with a ready message for Venmo, Cash App, Apple Cash or a text (or copies it where sharing isn't supported). Nothing is sent to the server. Amounts are shown in USD for now.
+3. **Order ahead:** links to the restaurant's own site when Places says it does takeout or delivery, otherwise to a DoorDash or Uber Eats search for that place. If Places says neither, it just says "Dine-in only". Payment happens on those sites.
 
 ## Deploy to Vercel
 
