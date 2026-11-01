@@ -1,12 +1,12 @@
 import "server-only";
 import { z } from "zod";
-import { MOODS, type Mood, type Pick, type PicksEvent } from "@/lib/types";
+import { MOODS, type AreaSource, type Mood, type Pick, type PicksEvent, type ThirdParty } from "@/lib/types";
 import { mealFrame } from "@/lib/time";
 import { dietSafeSuggestion, dishCategory } from "@/lib/categories";
 import { buildMockQueue } from "@/lib/mockPicks";
 import { env, isDemo } from "./env";
 import { safeErrorLabel } from "./memory";
-import { coarseFromHeaders, roundToArea, type LatLng } from "./geo";
+import { cityFromHeaders, coarseFromHeaders, roundToArea, type LatLng } from "./geo";
 import { geocodeArea, nearbyOpenPlaces, type Place } from "./places";
 import { travelTimes, type Travel } from "./routes";
 import { balanceScore, profileFor, toPlate, type Profile } from "./heuristics";
@@ -14,8 +14,8 @@ import { rankWithClaude } from "./rank";
 import type { CandidateForPrompt, RankedPick } from "./prompts";
 
 export const PicksRequestSchema = z.object({
-  /** Device-local wall clock, "YYYY-MM-DDTHH:mm". Only the hour and minute are used. */
-  localTime: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/),
+  /** Device-local wall clock, "HH:mm" (older clients sent a date too; only the hour and minute are used). */
+  localTime: z.string().regex(/^(\d{4}-\d{2}-\d{2}T)?\d{2}:\d{2}$/),
   mood: z.enum(MOODS),
   /** Already rounded on the device; rounded again here regardless. */
   location: z.object({ lat: z.number().min(-90).max(90), lng: z.number().min(-180).max(180) }).nullable(),
@@ -45,8 +45,19 @@ const BANNED = /\b(calorie|calories|kcal|cal\b|grams?|ounces?|oz\b|lbs?|guilt|gu
 
 const VEG_DIETS = /veg/i;
 
-export async function* runPipeline(req: PicksRequest, headers: Headers, signal: AbortSignal): AsyncGenerator<PicksEvent> {
-  const [h, m] = req.localTime.slice(11, 16).split(":").map(Number);
+export interface PipelineOptions {
+  /** Rank with Claude when a key is set. The MCP connector turns this off: the user's own assistant ranks. */
+  rankWithAI?: boolean;
+}
+
+export async function* runPipeline(
+  req: PicksRequest,
+  headers: Headers,
+  signal: AbortSignal,
+  opts: PipelineOptions = {},
+): AsyncGenerator<PicksEvent> {
+  const useAI = Boolean(env.anthropicKey) && opts.rankWithAI !== false;
+  const [h, m] = req.localTime.slice(-5).split(":").map(Number);
   const frame = mealFrame(new Date(2000, 0, 1, h, m));
   const exclude = new Set(req.exclude ?? []);
 
@@ -57,8 +68,18 @@ export async function* runPipeline(req: PicksRequest, headers: Headers, signal: 
 
   // 1. Where: device location (rounded) → typed neighborhood/ZIP → IP city estimate → ask.
   let origin: LatLng | null = req.location ? roundToArea(req.location) : null;
-  if (!origin && req.areaQuery) origin = await geocodeArea(req.areaQuery);
-  if (!origin) origin = coarseFromHeaders(headers);
+  let areaSource: AreaSource = "device";
+  let areaLabel: string | null = null;
+  if (!origin && req.areaQuery) {
+    origin = await geocodeArea(req.areaQuery);
+    areaSource = "typed";
+    areaLabel = req.areaQuery;
+  }
+  if (!origin) {
+    origin = coarseFromHeaders(headers);
+    areaSource = "ip";
+    areaLabel = cityFromHeaders(headers);
+  }
   if (!origin) {
     yield { type: "need_location" };
     return;
@@ -95,7 +116,8 @@ export async function* runPipeline(req: PicksRequest, headers: Headers, signal: 
   );
   const shortlist = [...places].sort((a, b) => travel.get(a.id)!.minutes - travel.get(b.id)!.minutes).slice(0, MAX_CANDIDATES);
 
-  yield { type: "meta", mode, sparse: mode === "drive", areaLabel: null };
+  const sharedWith: ThirdParty[] = useAI ? ["google", "anthropic"] : ["google"];
+  yield { type: "meta", mode, sparse: mode === "drive", areaLabel, areaSource, sharedWith };
 
   // 4. Rank and describe.
   const byShortId = new Map<string, Place>();
@@ -123,7 +145,7 @@ export async function* runPipeline(req: PicksRequest, headers: Headers, signal: 
     return { ...pick, suggestion: dietSafeSuggestion(pick.suggestion, diets) };
   };
 
-  if (env.anthropicKey) {
+  if (useAI) {
     try {
       const ranked = rankWithClaude(
         {
@@ -233,7 +255,7 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
 
 /** Same stream shape on mock data, so the client path is identical without keys. */
 async function* demoFeed(req: PicksRequest, exclude: Set<string>): AsyncGenerator<PicksEvent> {
-  yield { type: "meta", mode: "demo", sparse: false, areaLabel: null };
+  yield { type: "meta", mode: "demo", sparse: false, areaLabel: null, areaSource: "demo", sharedWith: [] };
   const diets = req.dietary?.diets ?? [];
   const veg = diets.some((d) => VEG_DIETS.test(d));
   const picks = buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession) })

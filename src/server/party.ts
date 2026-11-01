@@ -98,6 +98,20 @@ export async function createParty(nickname: string, cards: PartyCard[]) {
   throw new PartyError(503, "Couldn't open a room. Try again.");
 }
 
+/** An open room with no host, for the AI connector: friends join from the link, and 2+ "go" swipes make a match. */
+export async function createOpenParty(cards: PartyCard[]) {
+  const store = roomStore();
+  const expiresAt = Date.now() + ROOM_TTL_MS;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = newCode();
+    if (await store.create(code, { hostId: null, expiresAt }, null)) {
+      await store.appendDeck(code, cards.slice(0, MAX_DECK).map((c) => JSON.stringify(c)), expiresAt);
+      return { code, expiresAt };
+    }
+  }
+  throw new PartyError(503, "Couldn't open a room. Try again.");
+}
+
 export async function joinParty(code: string, nickname: string) {
   const meta = await liveMeta(code);
   const members = await roomStore().members(code);

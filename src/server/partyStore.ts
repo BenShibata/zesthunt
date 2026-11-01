@@ -24,13 +24,14 @@ export interface StoredMember {
 }
 
 export interface RoomMeta {
-  hostId: string;
+  /** Null for an open room started from an AI assistant: no host, everyone joins by link. */
+  hostId: string | null;
   expiresAt: number;
 }
 
 export interface RoomStore {
   /** Creates the room only if the code is free. */
-  create(code: string, meta: RoomMeta, host: StoredMember): Promise<boolean>;
+  create(code: string, meta: RoomMeta, host: StoredMember | null): Promise<boolean>;
   meta(code: string): Promise<RoomMeta | null>;
   addMember(code: string, m: StoredMember, expiresAt: number): Promise<void>;
   members(code: string): Promise<StoredMember[]>;
@@ -72,10 +73,10 @@ class MemoryStore implements RoomStore {
     for (const [code, room] of this.rooms) if (room.meta.expiresAt <= Date.now()) this.rooms.delete(code);
   }
 
-  async create(code: string, meta: RoomMeta, host: StoredMember) {
+  async create(code: string, meta: RoomMeta, host: StoredMember | null) {
     this.sweep();
     if (this.get(code)) return false;
-    this.rooms.set(code, { meta, members: new Map([[host.id, host]]), deck: [], swipes: new Map(), match: null });
+    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), match: null });
     return true;
   }
   async meta(code: string) {
@@ -145,11 +146,11 @@ class UpstashStore implements RoomStore {
     return parts.map((p) => ["EXPIREAT", this.k(code, p), at]);
   }
 
-  async create(code: string, meta: RoomMeta, host: StoredMember) {
+  async create(code: string, meta: RoomMeta, host: StoredMember | null) {
     const ttl = Math.max(1, Math.ceil((meta.expiresAt - Date.now()) / 1000));
     const [ok] = await this.run([["SET", this.k(code, "meta"), JSON.stringify(meta), "NX", "EX", ttl]]);
     if (ok !== "OK") return false;
-    await this.run([["HSET", this.k(code, "members"), host.id, JSON.stringify(host)], ...this.expire(code, meta.expiresAt, "members")]);
+    if (host) await this.run([["HSET", this.k(code, "members"), host.id, JSON.stringify(host)], ...this.expire(code, meta.expiresAt, "members")]);
     return true;
   }
   async meta(code: string) {

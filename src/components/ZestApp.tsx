@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
-import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery } from "@/lib/api";
+import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
 import { applySignals, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
 import { useSwipe } from "@/hooks/useSwipe";
@@ -17,6 +17,8 @@ import { EmptyState, ErrorState, LocationPrompt } from "./FeedStates";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
 import { JoinScreen, PartyBar, PartySetup } from "./Party";
 import { DietPanel } from "./DietPanel";
+import { PrivacyReceipt } from "./PrivacyReceipt";
+import { LockIcon } from "./Icons";
 import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
@@ -68,6 +70,10 @@ export function ZestApp() {
   const [draft, setDraft] = useState("");
   const [signals, setSignals] = useState<string[]>([]);
   const [refilling, setRefilling] = useState(false);
+  // The "What we sent" receipt: the last request body and the server's account of it. Memory only.
+  const [lastSent, setLastSent] = useState<SentRequest | null>(null);
+  const [lastMeta, setLastMeta] = useState<Extract<PicksEvent, { type: "meta" }> | null>(null);
+  const [receiptOpen, setReceiptOpen] = useState(false);
 
   // Session-only context, never persisted.
   const location = useRef<{ lat: number; lng: number } | null>(null);
@@ -127,6 +133,7 @@ export function ZestApp() {
         switch (e.type) {
           case "meta":
             setFeedMode(e.mode);
+            setLastMeta(e);
             if (e.sparse && !opts.append) setNotice("Not much open within walking distance, so these are a short drive.");
             break;
           case "pick":
@@ -163,7 +170,7 @@ export function ZestApp() {
         }
       };
 
-      streamPicks({ ...baseQuery(m, sig), ...opts.extra }, onEvent, ctrl.signal)
+      streamPicks({ ...baseQuery(m, sig), ...opts.extra }, onEvent, ctrl.signal, setLastSent)
         .catch((err: unknown) => {
           if (ctrl.signal.aborted || got > 0) return;
           const message = err instanceof Error ? err.message : "Couldn't load picks.";
@@ -291,6 +298,7 @@ export function ZestApp() {
     streamPicks(
       { ...baseQuery(wildMood, signals), exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
       (e) => {
+        if (e.type === "meta") setLastMeta(e);
         if (taken || e.type !== "pick") return;
         taken = true;
         ctrl.abort();
@@ -299,6 +307,7 @@ export function ZestApp() {
         setNotice(`Wildcard: something ${MOOD_LABELS[wildMood].toLowerCase()}`);
       },
       ctrl.signal,
+      setLastSent,
     ).catch(() => {
       if (!taken) setNotice("No wildcard right now. Try again in a moment.");
     });
@@ -357,7 +366,14 @@ export function ZestApp() {
     preciseLocation.current = pos;
     location.current = roundCoords(pos.lat, pos.lng);
     setPrecise(pos);
+    setNotice("Rounded to ~1 km before it left your phone.");
     load(mood);
+  };
+
+  const toggleReceipt = () => {
+    if (dietOpen) closeDiet();
+    setPartySetup(false);
+    setReceiptOpen((o) => !o);
   };
 
   const onIdle = useCallback(() => {
@@ -374,6 +390,7 @@ export function ZestApp() {
     if (dietOpen) return closeDiet();
     dietAtOpen.current = JSON.stringify(dietary);
     setPartySetup(false);
+    setReceiptOpen(false);
     setDietOpen(true);
   };
 
@@ -414,9 +431,11 @@ export function ZestApp() {
     streamPicks(
       { ...baseQuery(mood, signals), exclude: party.deck.map((c) => c.id) },
       (e) => {
+        if (e.type === "meta") setLastMeta(e);
         if (e.type === "pick") got.push(e.pick);
       },
       new AbortController().signal,
+      setLastSent,
     )
       .then(() => {
         setHostExtra((x) => [...x, ...got]);
@@ -514,6 +533,7 @@ export function ZestApp() {
     }
     setPartyError(null);
     setDietOpen(false);
+    setReceiptOpen(false);
     setPartySetup((o) => !o);
   };
 
@@ -540,7 +560,7 @@ export function ZestApp() {
     keyActions.current = { skip, go, rewind };
   });
   useEffect(() => {
-    if (locked || composing) return;
+    if (locked || composing || receiptOpen) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest("input, textarea, [role=tablist]")) return;
@@ -550,7 +570,7 @@ export function ZestApp() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [locked, composing]);
+  }, [locked, composing, receiptOpen]);
 
   if (party.matchedCard && now) {
     return (
@@ -626,7 +646,9 @@ export function ZestApp() {
         aria-labelledby={inParty ? undefined : `mood-${mood}`}
         className="flex min-h-0 flex-1 flex-col"
       >
-      {inParty ? (
+      {receiptOpen ? (
+        <PrivacyReceipt sent={lastSent} meta={lastMeta} precise={precise} inParty={inParty} onClose={() => setReceiptOpen(false)} />
+      ) : inParty ? (
         partyCurrent && now ? (
           <PickCard pick={partyCurrent} now={now} swipes={swipes} swipe={swipe} />
         ) : (
@@ -697,7 +719,7 @@ export function ZestApp() {
 
       <Controls
         canRewind={inParty ? pHistory.length > 0 : history.length > 0}
-        disabled={!shown}
+        disabled={!shown || receiptOpen}
         listening={voice.listening}
         timeLeft={timer.fraction}
         minutesLeft={Math.ceil(timer.remainingMs / 60000)}
@@ -713,16 +735,24 @@ export function ZestApp() {
         }}
         onHoldEnd={voice.stop}
       />
-      <p className="pb-[max(0.5rem,env(safe-area-inset-bottom))] text-center text-[11px] text-white/55">
-        {inParty
-          ? "Nothing is saved by us. This room vanishes 10 minutes after it opened."
-          : dietRemembered
-            ? "Nothing is saved by us. Your dietary needs stay on this device."
-            : "Nothing is saved by us. Close the tab and it\u2019s gone."}{" "}
-        <a href="/privacy" target="_blank" rel="noopener" className="underline underline-offset-2">
-          Privacy
-        </a>
-      </p>
+      <div className="flex items-center justify-center gap-1 px-3 pb-[env(safe-area-inset-bottom)] text-[11px] text-white/60">
+        <p className="min-w-0 truncate">
+          {inParty
+            ? "Nothing saved. Room ends at 10 min."
+            : dietRemembered
+              ? "Nothing saved by us. Diet stays here."
+              : "Nothing saved. Close the tab, it\u2019s gone."}
+        </p>
+        <button
+          type="button"
+          onClick={toggleReceipt}
+          aria-expanded={receiptOpen}
+          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 font-semibold text-teal-bright underline-offset-2 hover:underline"
+        >
+          <LockIcon size={12} />
+          What we sent
+        </button>
+      </div>
     </main>
   );
 }

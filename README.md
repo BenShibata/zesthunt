@@ -12,6 +12,10 @@ Built in stages, with a review after each one.
 - [x] **4. Hunt party rooms**
 - [x] **5. Payment chips, split the bill, order-ahead links**
 - [x] **6. Privacy hardening, accessibility and polish** (see [PRIVACY.md](PRIVACY.md))
+- [x] **"What we sent" receipt and rounded-area visual**
+- [x] **A. AI assistant connector (MCP) at `/mcp`**
+- [ ] B. Pick card shown inside the chat (MCP Apps / Apps SDK)
+- [ ] C. Connector directory listings and "Add to Claude / ChatGPT" buttons
 
 ## Run locally
 
@@ -77,11 +81,25 @@ There's no checkout, no stored cards and no payment processor. Three things only
 
 [PRIVACY.md](PRIVACY.md) lists exactly what is processed and where. The short version is also in the app at `/privacy`.
 
+- **"What we sent":** the footer's lock button opens a receipt built from the exact request body that last left the phone. It shows the rounded area on a drawn map (your exact spot as a dot that stays on the phone), the time without a date, mood, diet, craving and skip hints. It also lists what wasn't sent, which services got what, and the raw JSON.
 - **Nothing persisted** except the opt-in "Remember my dietary needs on this device" (`localStorage` key `zesthunt:dietary:v1`, diet and allergy selections only). **Forget me** deletes it instantly.
 - **Dietary needs are hard rules:** places that can't meet them are filtered out. Any suggestion naming meat or fish that the diet excludes is replaced. With allergies set, the locked-in screen says "Check allergens with the restaurant."
 - **Strict headers:** a same-origin-only Content-Security-Policy, `frame-ancestors 'none'`, `nosniff`, COOP, a minimal `Permissions-Policy`, `Referrer-Policy: no-referrer` on every response, and `no-store` on the API.
 - **Logs** never include request bodies. Failures log only the error type or a service status like `places 403`.
 - **Accessibility:** real buttons and labels throughout, 44px minimum touch targets, keyboard support (← → Backspace, arrow keys in the mood tabs), live regions for notices, focus moved to the locked-in heading, AA contrast on the colour pairs we checked, and `prefers-reduced-motion` turns off the photo develop-in, confetti and route animations.
+
+## AI assistant connector (MCP)
+
+`POST /mcp` is a Streamable HTTP MCP server: stateless, no sign-in, and a fresh server for every request. Add `https://zesthunt.com/mcp` as a custom connector in Claude or ChatGPT.
+
+| Tool | What it does |
+| --- | --- |
+| `find_food_now` | Places open now near an area, with walk and closing times, ranked for meal, mood and diet. Read-only. |
+| `start_hunt_party` | Opens a 10-minute room with no host and returns a `/#p=CODE` link. Everyone joins from the link, and two or more "go" swipes on the same place make a match. |
+
+Privacy is in the schema: the tools accept only an area (words, or coordinates rounded to ~1 km), the local time, a mood and dietary filters. There is no field for a name, address or account. The server instructions ask assistants never to send a home address. The user's own assistant does the ranking, so Claude isn't called and no other AI sees the request. IP-based location is never used here, because the caller is the assistant's server. Each answer carries a `privacy` line.
+
+Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, then connect to `http://localhost:3000/mcp`).
 
 ## Deploy to Vercel
 
@@ -110,4 +128,6 @@ There's no checkout, no stored cards and no payment processor. Three things only
 - `src/lib/`: types, time framing, map and order links, the `/api/picks` client, mock data
 - `src/server/`: Places, Routes, the Claude ranking, prompts, in-memory cache and rate limit
 - `src/app/api/picks`, `src/app/api/photo`, `src/app/api/party`: the API routes
+- `src/app/mcp` and `src/server/mcp.ts`: the AI assistant connector
+- `src/components/PrivacyReceipt.tsx`, `src/components/AreaVisual.tsx`: the "What we sent" receipt and the rounded-area drawing
 - `src/app/privacy`: the in-app privacy page

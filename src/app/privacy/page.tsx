@@ -18,7 +18,7 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "What our server sees",
     body: [
-      "Each request carries the time, your mood, your location rounded to about 1 km (or a neighborhood you typed), any dietary filter, and skip hints like “fewer noodles”. It's used for that response only, and never written to disk, a database or logs.",
+      "Each request carries the time (no date), your mood, your location rounded to about 1 km (or a neighborhood you typed), any dietary filter, and skip hints like “fewer noodles”. It's used for that response only, and never written to disk, a database or logs.",
       "Without a location, we use your city-level IP estimate once, then forget it.",
     ],
   },
@@ -45,6 +45,16 @@ const sections: { title: string; body: string[] }[] = [
     body: [
       "Off by default and kept in memory. If you turn on “Remember my dietary needs on this device”, only your diet and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
     ],
+  },
+  {
+    title: "Through your AI assistant",
+    body: [
+      "If you add the Zesthunt connector to Claude, ChatGPT or another assistant, it can only send an area (rounded to about 1 km), the time, a mood and diet filters. There's no field for your name or address. We keep nothing, and your assistant does the ranking.",
+    ],
+  },
+  {
+    title: "See for yourself",
+    body: ["Tap “What we sent” at the bottom of the app to see your last request exactly as it left your phone."],
   },
   {
     title: "Money",

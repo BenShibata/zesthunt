@@ -82,9 +82,22 @@ export interface Dietary {
 
 export type FeedMode = "walk" | "drive" | "demo";
 
+/** How the server placed the search: the device's rounded point, typed words, or a city-level IP guess. */
+export type AreaSource = "device" | "typed" | "ip" | "demo";
+export type ThirdParty = "google" | "anthropic";
+
 /** Lines of the NDJSON stream from /api/picks. */
 export type PicksEvent =
-  | { type: "meta"; mode: FeedMode; sparse: boolean; areaLabel: string | null }
+  | {
+      type: "meta";
+      mode: FeedMode;
+      sparse: boolean;
+      /** The typed words or the IP city, for the "What we sent" receipt. Null for a device point. */
+      areaLabel: string | null;
+      areaSource: AreaSource;
+      /** Services this request's data was passed on to. */
+      sharedWith: ThirdParty[];
+    }
   | { type: "pick"; pick: Pick }
   | { type: "need_location" }
   | { type: "empty"; message: string; suggestion: "drive" | "order_in" | "other_mood" }
@@ -102,7 +115,7 @@ export interface PartyMember {
 /** What a member's poll returns. The room never holds location, prompts or cravings. */
 export interface PartyState {
   code: string;
-  hostId: string;
+  hostId: string | null;
   expiresAt: number;
   members: PartyMember[];
   /** Cards after the `since` the client asked for. */

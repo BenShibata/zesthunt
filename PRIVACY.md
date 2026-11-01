@@ -20,7 +20,7 @@ Zesthunt writes nothing else to `localStorage`, `sessionStorage`, IndexedDB or c
 
 `POST /api/picks` receives:
 
-- the device's local time (hour and minute frame the meal),
+- the device's local time, hour and minute only (no date), to frame the meal,
 - the mood tab,
 - your location, **rounded on the device to about 1 km** (two decimal places), *or* a neighborhood/ZIP you typed, *or* nothing,
 - your dietary needs and allergies, if set, used as a filter,
@@ -46,6 +46,18 @@ Restaurant results are cached in server memory per ~1 km area for 5 minutes (it'
 **Voice:** hold-to-speak uses your browser's on-device speech recognition only (`processLocally = true`). Audio never leaves your phone, and only the transcribed text is sent. Browsers without on-device recognition fall back to typing.
 
 **Location:** precise browser location is only requested when you tap Go (to refine the walk time on your device) or when you choose "Use my location". It stays in memory and is rounded before it's sent anywhere.
+
+**See it yourself:** the lock button ("What we sent") at the bottom of the app shows the last request exactly as it left your phone, including the raw JSON, and which services received what.
+
+## Through an AI assistant (the Zesthunt connector)
+
+If you add Zesthunt to an assistant such as Claude or ChatGPT, the assistant calls `zesthunt.com/mcp` for you.
+
+- **What it can send:** an area (a neighborhood, cross-streets, ZIP or city, or approximate coordinates, which we round to about 1 km), your local time, a mood, and diet or allergy filters. The tools have no field for a name, address or account, so these can't be sent.
+- **What happens to it:** the same as in the app. It's used for that answer only, never stored or logged. Google gets the rounded area. Claude is **not** called, because your assistant does the ranking.
+- **No IP location:** requests come from the assistant's servers, so we never guess your location from them.
+- **Party rooms** started from an assistant work like any other room, except they have no host. They hold nicknames, the places and swipes, and vanish after 10 minutes.
+- **Your assistant's own history:** Zesthunt keeps nothing, but your conversation with the assistant is subject to that assistant's own settings.
 
 ## Hunt party rooms
 

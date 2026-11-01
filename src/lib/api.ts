@@ -17,17 +17,31 @@ export function roundCoords(lat: number, lng: number) {
   return { lat: Math.round(lat * 100) / 100, lng: Math.round(lng * 100) / 100 };
 }
 
+/** Hour and minute only: the date isn't needed to frame a meal, so it isn't sent. */
 function localTime(d = new Date()) {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** Streams NDJSON events from /api/picks, calling onEvent for each line as it arrives. */
-export async function streamPicks(query: PicksQuery, onEvent: (e: PicksEvent) => void, signal: AbortSignal) {
+/** The exact body sent to /api/picks, kept in memory for the "What we sent" receipt. */
+export type SentRequest = PicksQuery & { localTime: string };
+
+/**
+ * Streams NDJSON events from /api/picks, calling onEvent for each line as it arrives.
+ * onSent receives the exact body that goes over the wire, so the receipt can't drift from the truth.
+ */
+export async function streamPicks(
+  query: PicksQuery,
+  onEvent: (e: PicksEvent) => void,
+  signal: AbortSignal,
+  onSent?: (body: SentRequest) => void,
+) {
+  const body: SentRequest = { ...query, localTime: localTime() };
+  onSent?.(body);
   const res = await fetch("/api/picks", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...query, localTime: localTime() }),
+    body: JSON.stringify(body),
     signal,
     cache: "no-store",
     referrerPolicy: "no-referrer",

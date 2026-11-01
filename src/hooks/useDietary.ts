@@ -58,8 +58,7 @@ function write(d: Dietary | null) {
   window.dispatchEvent(new Event(CHANGE));
 }
 
-export const DIETS = ["Vegetarian", "Vegan", "Pescatarian", "Halal", "Kosher", "Gluten-free", "Dairy-free"] as const;
-export const ALLERGIES = ["Peanuts", "Tree nuts", "Shellfish", "Fish", "Eggs", "Milk", "Soy", "Wheat", "Sesame"] as const;
+export { ALLERGIES, DIETS } from "@/lib/dietary";
 
 const SHORT: Record<string, string> = {
   Vegetarian: "Veg",

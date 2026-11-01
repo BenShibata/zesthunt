@@ -47,3 +47,14 @@ export function coarseFromHeaders(h: Headers): LatLng | null {
   if (!h.get("x-vercel-ip-latitude")) return null;
   return roundToArea({ lat, lng });
 }
+
+/** City name from the hosting platform's IP geolocation, shown back to the user in the receipt only. */
+export function cityFromHeaders(h: Headers): string | null {
+  const raw = h.get("x-vercel-ip-city");
+  if (!raw) return null;
+  try {
+    return decodeURIComponent(raw).slice(0, 60);
+  } catch {
+    return null;
+  }
+}

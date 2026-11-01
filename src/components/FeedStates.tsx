@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CompassMark } from "./Icons";
+import { AreaVisual } from "./AreaVisual";
 
 const primary = "h-12 rounded-full bg-paprika px-6 font-semibold text-white transition hover:bg-paprika-deep";
 const secondary = "h-12 rounded-full bg-white/10 px-6 font-semibold text-white transition hover:bg-white/15";
@@ -10,7 +11,7 @@ const secondary = "h-12 rounded-full bg-white/10 px-6 font-semibold text-white t
 export function LocationPrompt({ onSubmit, onUseLocation }: { onSubmit: (q: string) => void; onUseLocation: () => void }) {
   const [value, setValue] = useState("");
   return (
-    <section className="flex flex-1 flex-col justify-center gap-4 px-6" aria-labelledby="where-title">
+    <section className="flex flex-1 flex-col justify-center gap-4 overflow-y-auto px-6" aria-labelledby="where-title">
       <CompassMark size={40} className="text-paprika-bright" />
       <h1 id="where-title" className="font-display text-3xl font-bold tracking-tight">
         Where are you hunting?
@@ -41,7 +42,8 @@ export function LocationPrompt({ onSubmit, onUseLocation }: { onSubmit: (q: stri
       <button type="button" onClick={onUseLocation} className={secondary}>
         Use my location instead
       </button>
-      <p className="text-sm text-white/60">Used for this search only. We round it to about 1 km and never save it.</p>
+      <AreaVisual source="preview" />
+      <p className="-mt-1 text-sm text-white/65">Your location is rounded on this phone before it&apos;s sent, used for this search only, and never saved.</p>
     </section>
   );
 }
