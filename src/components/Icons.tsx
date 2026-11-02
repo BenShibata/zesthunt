@@ -209,3 +209,21 @@ export function ArrowRightIcon(props: IconProps) {
     </svg>
   );
 }
+
+/** Fork and knife: food preferences (diet and allergies). */
+export function UtensilsIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10" />
+      <path d="M17 21V3c-2 1-3.5 3.5-3.5 7 0 1.5.7 2.5 2 3H17" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}

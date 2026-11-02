@@ -37,7 +37,7 @@ Open http://localhost:3000 in a phone-sized viewport.
 
 ### Demo mode vs live
 
-With no keys, the app runs in **demo mode**: the same `/api/picks` stream serves fictional places, and a "Demo" chip shows in the top bar.
+With no keys, the app runs in **demo mode**: the same `/api/picks` stream serves fictional places, and "Demo · fictional places" shows under the moods, where the area line would be.
 
 For real places, copy `.env.example` to `.env.local` and fill in:
 
@@ -144,6 +144,8 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
 | Change mood | tap a mood (all five always fit on screen) | Tab to the moods, ← → |
+| Diet and allergies | **Diet** (top right; shows e.g. "Vegan +1" when set) | Tab to it, Enter |
+| Start a hunt party | **Party** (top right) | Tab to it, Enter |
 | Search a craving | tap the search button (center) | Tab to it, Enter |
 | Surprise (wildcard) | **Surprise** on the area line, or shake the phone | Tab to it, Enter |
 | Speak a craving | hold the search button (it turns into a mic while listening) | (typing is the keyboard path) |

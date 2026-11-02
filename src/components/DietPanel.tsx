@@ -57,7 +57,7 @@ export function DietPanel({
   const any = dietary.diets.length + dietary.allergies.length > 0;
 
   return (
-    <section className="animate-rise mx-4 mb-3 max-h-[55dvh] space-y-4 overflow-y-auto rounded-3xl bg-teal/15 p-4" aria-labelledby="diet-title">
+    <section id="diet-panel" className="animate-rise mx-4 mb-3 max-h-[55dvh] space-y-4 overflow-y-auto rounded-3xl bg-teal/15 p-4" aria-labelledby="diet-title">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="diet-title" className="font-display text-xl font-bold">

@@ -6,12 +6,15 @@ import { DiceIcon, PinIcon, XIcon } from "./Icons";
  * a pick feels wrong, so it's always visible.
  */
 export function SearchContext({
+  demo,
   area,
   craving,
   onChangeArea,
   onClearCraving,
   onSurprise,
 }: {
+  /** No API keys: the places are fictional, so say so where the area would be. */
+  demo?: boolean;
   area: { label: string; approx: boolean; drive: boolean } | null;
   craving: string | null;
   onChangeArea?: () => void;
@@ -21,6 +24,14 @@ export function SearchContext({
 }) {
   return (
     <div className="flex min-w-0 items-center gap-2 px-4 pb-1 text-sm">
+      {demo && !area && (
+        <span
+          className="min-w-0 truncate rounded-full border border-white/25 px-2.5 py-1 text-xs font-semibold text-white/70"
+          title="No API keys set: showing fictional places"
+        >
+          Demo · fictional places
+        </span>
+      )}
       {area && (
         <button
           type="button"

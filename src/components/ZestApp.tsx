@@ -22,7 +22,7 @@ import { JoinScreen, PartyBar, PartySetup } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
 import { LockIcon, RewindIcon } from "./Icons";
-import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
+import { dietaryBadge, dietaryShort, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
 const hasDietary = (d: Dietary | null): d is Dietary => Boolean(d && d.diets.length + d.allergies.length > 0);
@@ -650,7 +650,7 @@ export function ZestApp() {
   if (joinCode && !inParty) {
     return (
       <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
-        <TopBar dietaryBadge={null} demo={feedMode === "demo"} onParty={() => {}} hideParty />
+        <TopBar dietaryBadge={null} onParty={() => {}} hideParty />
         <JoinScreen code={joinCode} onJoin={joinParty} onSolo={clearHash} busy={partyBusy} error={partyError} />
       </main>
     );
@@ -683,9 +683,9 @@ export function ZestApp() {
     <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
       <TopBar
         dietaryBadge={dietaryBadge(dietary)}
+        dietaryShort={dietaryShort(dietary)}
         dietOpen={dietOpen}
         onDiet={openDiet}
-        demo={feedMode === "demo"}
         onParty={onPartyButton}
         hideParty={inParty}
       />
@@ -719,6 +719,7 @@ export function ZestApp() {
         <>
           <MoodTabs mood={mood} onChange={changeMood} />
           <SearchContext
+            demo={feedMode === "demo"}
             area={searchArea}
             craving={craving}
             onChangeArea={() => {

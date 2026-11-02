@@ -70,6 +70,13 @@ const SHORT: Record<string, string> = {
   "Dairy-free": "DF",
 };
 
+/** Fits the top-bar button: the first selection plus a count ("Vegan +1"). Null when nothing is set. */
+export function dietaryShort(d: Dietary): string | null {
+  const parts = [...d.diets.map((x) => SHORT[x] ?? x), ...(d.allergies.length > 0 ? ["Allergies"] : [])];
+  if (parts.length === 0) return null;
+  return parts.length > 1 ? `${parts[0]} +${parts.length - 1}` : parts[0];
+}
+
 export function dietaryBadge(d: Dietary): string | null {
   const parts = d.diets.map((x) => SHORT[x] ?? x);
   if (d.allergies.length > 0) parts.push("Allergies");
