@@ -1,5 +1,5 @@
 import { MOODS, MOOD_LABELS, type Mood } from "@/lib/types";
-import { CompassMark, LeafIcon, PartyIcon } from "./Icons";
+import { CompassMark, DiceIcon, LeafIcon, PartyIcon } from "./Icons";
 
 export function TopBar({
   dietaryBadge,
@@ -58,39 +58,52 @@ export function TopBar({
   );
 }
 
-export function MoodTabs({ mood, onChange }: { mood: Mood; onChange: (m: Mood) => void }) {
+export function MoodTabs({ mood, onChange, onSurprise }: { mood: Mood; onChange: (m: Mood) => void; onSurprise?: () => void }) {
   return (
-    <div role="tablist" aria-label="Mood" className="flex gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none]">
-      {MOODS.map((m) => {
-        const selected = m === mood;
-        return (
-          <button
-            key={m}
-            role="tab"
-            id={`mood-${m}`}
-            aria-controls="picks-panel"
-            type="button"
-            aria-selected={selected}
-            onClick={() => onChange(m)}
-            onKeyDown={(e) => {
-              const i = MOODS.indexOf(m);
-              if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                e.preventDefault();
-                e.stopPropagation();
-                const next = MOODS[(i + (e.key === "ArrowRight" ? 1 : MOODS.length - 1)) % MOODS.length];
-                onChange(next);
-                (e.currentTarget.parentElement?.children[MOODS.indexOf(next)] as HTMLElement | undefined)?.focus();
-              }
-            }}
-            tabIndex={selected ? 0 : -1}
-            className={`h-11 shrink-0 rounded-full px-4 text-sm font-semibold transition ${
-              selected ? "bg-white text-ink" : "bg-white/8 text-white/75 hover:bg-white/14"
-            }`}
-          >
-            {MOOD_LABELS[m]}
-          </button>
-        );
-      })}
+    <div className="flex gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none]">
+      {onSurprise && (
+        <button
+          type="button"
+          onClick={onSurprise}
+          aria-label="Surprise me: a pick from another mood (or shake your phone)"
+          title="Surprise me"
+          className="grid size-11 shrink-0 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 active:scale-95"
+        >
+          <DiceIcon size={18} />
+        </button>
+      )}
+      <div role="tablist" aria-label="Mood" className="flex gap-1.5">
+        {MOODS.map((m) => {
+          const selected = m === mood;
+          return (
+            <button
+              key={m}
+              role="tab"
+              id={`mood-${m}`}
+              aria-controls="picks-panel"
+              type="button"
+              aria-selected={selected}
+              onClick={() => onChange(m)}
+              onKeyDown={(e) => {
+                const i = MOODS.indexOf(m);
+                if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const next = MOODS[(i + (e.key === "ArrowRight" ? 1 : MOODS.length - 1)) % MOODS.length];
+                  onChange(next);
+                  (e.currentTarget.parentElement?.children[MOODS.indexOf(next)] as HTMLElement | undefined)?.focus();
+                }
+              }}
+              tabIndex={selected ? 0 : -1}
+              className={`h-11 shrink-0 rounded-full px-4 text-sm font-semibold transition ${
+                selected ? "bg-white text-ink" : "bg-white/8 text-white/75 hover:bg-white/14"
+              }`}
+            >
+              {MOOD_LABELS[m]}
+            </button>
+          );
+        })}
+    </div>
     </div>
   );
 }

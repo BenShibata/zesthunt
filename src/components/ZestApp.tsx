@@ -18,7 +18,7 @@ import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty
 import { JoinScreen, PartyBar, PartySetup } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { LockIcon } from "./Icons";
+import { LockIcon, RewindIcon } from "./Icons";
 import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
@@ -34,6 +34,7 @@ function clearHash() {
 }
 
 const IDLE_MS = 10 * 60 * 1000;
+const UNDO_MS = 6000;
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
 
@@ -66,6 +67,8 @@ export function ZestApp() {
   const [swipes, setSwipes] = useState(0);
   const [locked, setLocked] = useState<Pick | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** Undo chip: offered for a few seconds after a skip. Backspace works any time. */
+  const [undoOffer, setUndoOffer] = useState(0);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const [signals, setSignals] = useState<string[]>([]);
@@ -215,6 +218,12 @@ export function ZestApp() {
     return () => clearTimeout(t);
   }, [notice]);
 
+  useEffect(() => {
+    if (!undoOffer) return;
+    const t = setTimeout(() => setUndoOffer(0), UNDO_MS);
+    return () => clearTimeout(t);
+  }, [undoOffer]);
+
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
 
   const soloSkip = useCallback(() => {
@@ -231,6 +240,7 @@ export function ZestApp() {
     setHistory((h) => [...h, index]);
     setIndex((i) => i + 1);
     setSwipes((s) => s + 1);
+    setUndoOffer(Date.now());
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
     const left = queue.length - (index + 1);
@@ -279,6 +289,7 @@ export function ZestApp() {
     setQueue(fit);
     setIndex(0);
     setHistory([]);
+    setUndoOffer(0);
     if (fit.length > 0) {
       setFeed({ status: "ready" });
     } else if (feed.status === "ready" || feed.status === "loading") {
@@ -457,6 +468,7 @@ export function ZestApp() {
     setPHistory((h) => [...h, pIndex]);
     setPIndex((i) => i + 1);
     setSwipes((s) => s + 1);
+    setUndoOffer(dir === "skip" ? Date.now() : 0);
     if (party.isHost && party.deck.length - (pIndex + 1) <= REFILL_AT) hostRefill();
   };
 
@@ -548,6 +560,12 @@ export function ZestApp() {
   const go = inParty ? () => partySwipe("go") : soloGo;
   const rewind = inParty ? partyRewind : soloRewind;
   const shown = inParty ? partyCurrent : current;
+  const undoLeft = inParty ? pHistory.length : history.length;
+  const undo = () => {
+    rewind();
+    // Keep the chip up while there's more to bring back.
+    setUndoOffer(undoLeft > 1 ? Date.now() : 0);
+  };
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 10-minute clock, so the idle timer pauses in a party too.
@@ -637,7 +655,7 @@ export function ZestApp() {
           onLeave={leaveParty}
         />
       ) : (
-        <MoodTabs mood={mood} onChange={changeMood} />
+        <MoodTabs mood={mood} onChange={changeMood} onSurprise={onWildcardTap} />
       )}
 
       <div
@@ -677,6 +695,18 @@ export function ZestApp() {
       )}
       </div>
 
+      {undoOffer > 0 && undoLeft > 0 && !receiptOpen && (
+        <div className="flex justify-center px-4">
+          <button
+            type="button"
+            onClick={undo}
+            className="animate-rise mb-1 inline-flex h-11 items-center gap-1.5 rounded-full bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/15"
+          >
+            <RewindIcon size={16} />
+            Undo skip
+          </button>
+        </div>
+      )}
       <div aria-live="polite" className="min-h-0 px-4">
         {voice.listening ? (
           <p className="animate-rise mx-auto mb-1 w-fit max-w-full rounded-full bg-paprika/25 px-3 py-1.5 text-center text-sm text-white">
@@ -718,15 +748,12 @@ export function ZestApp() {
       )}
 
       <Controls
-        canRewind={inParty ? pHistory.length > 0 : history.length > 0}
         disabled={!shown || receiptOpen}
         listening={voice.listening}
         timeLeft={timer.fraction}
         minutesLeft={Math.ceil(timer.remainingMs / 60000)}
-        onRewind={rewind}
         onSkip={skip}
         onGo={go}
-        onWildcard={onWildcardTap}
         onType={() => (inParty ? setNotice("Cravings are solo-only for now.") : setComposing((c) => !c))}
         onHoldStart={() => {
           if (inParty) return setNotice("Cravings are solo-only for now.");

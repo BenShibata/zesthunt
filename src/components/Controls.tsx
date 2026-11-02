@@ -1,19 +1,20 @@
 "use client";
 
 import { useRef } from "react";
-import { DiceIcon, GoIcon, MicIcon, RewindIcon, SkipIcon } from "./Icons";
+import { GoIcon, MicIcon, SkipIcon } from "./Icons";
 
+/**
+ * The bottom bar: Skip, the craving button (inside the idle countdown ring) and Go.
+ * Rewind lives in an Undo chip after a skip, and the wildcard sits at the end of the mood row.
+ */
 interface Props {
-  canRewind: boolean;
   disabled: boolean;
   listening: boolean;
   /** 1 → 0, time left before picks clear. */
   timeLeft: number;
   minutesLeft: number;
-  onRewind: () => void;
   onSkip: () => void;
   onGo: () => void;
-  onWildcard: () => void;
   onType: () => void;
   onHoldStart: () => void;
   onHoldEnd: () => void;
@@ -28,18 +29,13 @@ export function Controls(p: Props) {
   const ring = 2 * Math.PI * 41;
   const urgent = p.timeLeft < 0.1;
 
-  const side =
-    "grid size-12 place-items-center rounded-full bg-white/10 text-white transition active:scale-95 disabled:opacity-35 hover:bg-white/15";
   const main =
-    "grid size-15 place-items-center rounded-full text-white shadow-lg transition active:scale-95 disabled:opacity-40";
+    "grid size-16 place-items-center rounded-full text-white shadow-lg transition active:scale-95 disabled:opacity-40";
 
   return (
-    <div className="flex items-center justify-center gap-2 px-4 pt-2 pb-1">
-      <button type="button" className={side} onClick={p.onRewind} disabled={!p.canRewind} aria-label="Rewind: bring back the last pick">
-        <RewindIcon size={20} />
-      </button>
+    <div className="flex items-center justify-center gap-6 px-4 pt-2 pb-1">
       <button type="button" className={`${main} bg-white/15 hover:bg-white/20`} onClick={p.onSkip} disabled={p.disabled} aria-label="Skip this pick">
-        <SkipIcon size={26} />
+        <SkipIcon size={28} />
       </button>
 
       {/* Center: tap to type, hold to speak, wrapped in the countdown ring */}
@@ -102,10 +98,7 @@ export function Controls(p: Props) {
         disabled={p.disabled}
         aria-label="Go: lock in this pick"
       >
-        <GoIcon size={28} />
-      </button>
-      <button type="button" className={side} onClick={p.onWildcard} aria-label="Wildcard: surprise me with something outside this mood (or shake your phone)">
-        <DiceIcon size={20} />
+        <GoIcon size={30} />
       </button>
     </div>
   );

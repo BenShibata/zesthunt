@@ -73,7 +73,7 @@ Every API route has a per-IP limit per minute: picks 40, party actions 60, party
 - The phone holds ~10 picks so skips never wait. When 3 remain it quietly asks for more, excluding everything already seen.
 - **Skip signals:** each pick has a coarse dish category. After 2 skips of the same kind, the phone forms a hint ("fewer noodles", "shorter walks", "cheaper places"). It reorders what's left right away and sends the hint with the next request. Skips themselves never leave the device.
 - **Moods:** switching re-sorts the picks already loaded, so it's instant, then streams mood-specific picks behind them.
-- **Shake:** two sharp jolts trigger a wildcard pick from another mood. iOS needs motion permission, which is requested on the first tap of the wildcard button.
+- **Shake:** two sharp jolts trigger a wildcard pick from another mood. iOS needs motion permission, which is requested on the first tap of the dice (Surprise) button.
 - **Voice:** holding the center button uses the Web Speech API with `processLocally = true`. The spec requires on-device recognition in that mode and fails rather than uploading audio. Browsers without on-device speech (currently Safari, Firefox and older Chrome) open the text field instead. Only the transcribed text is sent.
 
 ## Hunt party
@@ -128,9 +128,9 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | --- | --- | --- |
 | Go (lock in) | swipe right / ✓ | → |
 | Skip | swipe left / ✕ | ← |
-| Rewind | ↺ | Backspace |
+| Undo a skip | "Undo skip" chip (shows for 6 s after a skip) | Backspace |
 | Tell it a craving | tap center button | Tab to it, Enter |
-| Wildcard | dice button, or shake the phone | Tab to it, Enter |
+| Surprise (wildcard) | dice button at the start of the mood row, or shake the phone | Tab to it, Enter |
 | Speak a craving | hold the center button | (typing is the keyboard path) |
 
 ## Project layout
