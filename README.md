@@ -77,6 +77,8 @@ Every API route has a per-IP limit per minute: picks 40, party actions 60, party
 - **Craving:** tap the search button (center) and type, hold it and speak, or tap a shortcut (they change with the meal: coffee and bagels in the morning, pizza and ramen at dinner; meat-led ones are hidden for vegetarian and vegan diets). The craving shows as a chip next to the area and applies to every refill until you clear it with ✕. Switching mood keeps it.
 - **Rating:** the card shows the Google rating and count ("★ 4.6 (1.2k)"). Claude and the rule-based ranking use it only as a tie-breaker.
 - **Menu, photos and reviews:** a link on the locked-in screen opens the place on Google Maps.
+- **Every chip is a way forward:** the dish type and health labels on the card are buttons. "More noodles" searches for noodles nearby, and "Protein", "Veg" and "Whole grain" search for high-protein, veggie and whole-grain places. They set the craving, so ✕ on the craving chip goes back to the mood. (In a party they're plain labels, since cravings are solo-only.)
+- **Notices float, nothing jumps:** "Got it: fewer salads" and other notices appear over the top of the photo, in place of the swipe-count badge, and **Back** sits in the photo's top-left corner whenever there's a pick to return to. Neither pushes the card or the buttons around.
 - **Out of picks:** the empty screen offers a short drive (when on foot), other moods, clearing the craving, or ordering in, instead of a dead end.
 
 ## The queue
@@ -139,7 +141,8 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | --- | --- | --- |
 | Let's go (lock in) | swipe right / **Let's go** | → |
 | Another (skip) | swipe left / **Another** | ← |
-| Undo a skip | "Undo skip" chip (shows for 6 s after a skip) | Backspace |
+| Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
+| More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
 | Change mood | tap a mood (all five always fit on screen) | Tab to the moods, ← → |
 | Search a craving | tap the search button (center) | Tab to it, Enter |
 | Surprise (wildcard) | **Surprise** on the area line, or shake the phone | Tab to it, Enter |

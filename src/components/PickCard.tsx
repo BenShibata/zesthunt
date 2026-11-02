@@ -1,11 +1,11 @@
 "use client";
 
-import type { Pick } from "@/lib/types";
+import type { HealthLabel, Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
 import { OverlayPaymentChip } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { CarIcon, ClockIcon, LeafIcon, PartyIcon, WalkIcon } from "./Icons";
+import { CarIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, WalkIcon } from "./Icons";
 import type { useSwipe } from "@/hooks/useSwipe";
 
 interface Props {
@@ -13,9 +13,20 @@ interface Props {
   now: Date;
   swipes: number;
   swipe: ReturnType<typeof useSwipe>;
+  /** A notice is showing over the photo: hide the swipe-count badge so they don't collide. */
+  quietBadge?: boolean;
+  /** Tapping a chip searches for more of that ("noodles", "veggie"). Omitted where cravings don't apply (parties). */
+  onTangent?: (query: string) => void;
 }
 
-export function PickCard({ pick, now, swipes, swipe }: Props) {
+/** What each health label searches for when tapped. */
+const LABEL_QUERY: Record<HealthLabel, string> = {
+  Protein: "high protein",
+  Veg: "veggie",
+  "Whole grain": "whole grain bowl",
+};
+
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -52,7 +63,7 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
           SKIP
         </span>
 
-        <div className="pointer-events-none absolute right-3 top-3">
+        <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
           <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
             {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
           </span>
@@ -115,23 +126,53 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
               Closes in {closesIn} min
             </p>
           )}
-          {pick.labels.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Good stuff in this pick">
-              {pick.labels.map((l) => (
-                <li
-                  key={l}
-                  className="inline-flex items-center gap-1 rounded-full bg-teal/25 px-2 py-0.5 text-xs font-semibold text-teal-bright"
-                >
-                  <LeafIcon size={12} />
-                  {l}
-                </li>
-              ))}
-            </ul>
-          )}
+          <TangentChips pick={pick} onTangent={onTangent} />
         </div>
         <PlateRing plate={pick.plate} />
       </div>
     </article>
+  );
+}
+
+/**
+ * The dish type and health labels as chips. Each one is a way out of this pick toward a
+ * better one: tapping "More noodles" or "Veg" searches for exactly that nearby.
+ */
+function TangentChips({ pick, onTangent }: { pick: Pick; onTangent?: (query: string) => void }) {
+  const chips = [
+    ...(pick.category ? [{ key: "dish", text: `More ${pick.category}`, query: pick.category, health: false }] : []),
+    ...pick.labels.map((l) => ({ key: l, text: l, query: LABEL_QUERY[l], health: true })),
+  ];
+  if (chips.length === 0) return null;
+  // Visually 32px tall; the ::after pad makes each tap target 44px.
+  const chip = (health: boolean) =>
+    `relative inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold after:absolute after:-inset-1.5 after:content-[''] ${
+      health ? "bg-teal/25 text-teal-bright" : "bg-white/12 text-white"
+    }`;
+  return (
+    <ul className="mt-2.5 flex flex-wrap gap-2" aria-label={onTangent ? "Find more like this" : "About this pick"}>
+      {chips.map((c) => (
+        <li key={c.key}>
+          {onTangent ? (
+            <button
+              type="button"
+              onClick={() => onTangent(c.query)}
+              aria-label={c.health ? `Find more ${c.text.toLowerCase()} options nearby` : `Find ${c.query} nearby`}
+              className={`${chip(c.health)} transition hover:brightness-125 active:scale-95`}
+            >
+              {c.health && <LeafIcon size={12} />}
+              {c.text}
+              <SearchIcon size={12} className="opacity-70" />
+            </button>
+          ) : (
+            <span className={chip(c.health)}>
+              {c.health && <LeafIcon size={12} />}
+              {c.text}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

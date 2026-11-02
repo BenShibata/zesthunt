@@ -37,7 +37,6 @@ function clearHash() {
 }
 
 const IDLE_MS = 10 * 60 * 1000;
-const UNDO_MS = 6000;
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
 
@@ -70,8 +69,6 @@ export function ZestApp() {
   const [swipes, setSwipes] = useState(0);
   const [locked, setLocked] = useState<Pick | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  /** Undo chip: offered for a few seconds after a skip. Backspace works any time. */
-  const [undoOffer, setUndoOffer] = useState(0);
   /** The active craving: it drives the search (and every refill) until cleared. Memory only. */
   const [craving, setCraving] = useState<string | null>(null);
   /** The user asked to search a short drive away. Reset when the area changes. */
@@ -244,11 +241,6 @@ export function ZestApp() {
     return () => clearTimeout(t);
   }, [notice]);
 
-  useEffect(() => {
-    if (!undoOffer) return;
-    const t = setTimeout(() => setUndoOffer(0), UNDO_MS);
-    return () => clearTimeout(t);
-  }, [undoOffer]);
 
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
 
@@ -266,7 +258,6 @@ export function ZestApp() {
     setHistory((h) => [...h, index]);
     setIndex((i) => i + 1);
     setSwipes((s) => s + 1);
-    setUndoOffer(Date.now());
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
     const left = queue.length - (index + 1);
@@ -305,7 +296,6 @@ export function ZestApp() {
   /** Restyles the queue instantly from picks already in hand, then streams more for the new mood behind them. */
   const changeMood = (m: Mood) => {
     if (m === mood) return;
-    setUndoOffer(0);
     if (cravingRef.current) {
       // Craving picks were chosen for the craving, not the mood, so re-search with both.
       setMood(m);
@@ -322,7 +312,6 @@ export function ZestApp() {
     setQueue(fit);
     setIndex(0);
     setHistory([]);
-    setUndoOffer(0);
     if (fit.length > 0) {
       setFeed({ status: "ready" });
     } else if (feed.status === "ready" || feed.status === "loading") {
@@ -526,7 +515,6 @@ export function ZestApp() {
     setPHistory((h) => [...h, pIndex]);
     setPIndex((i) => i + 1);
     setSwipes((s) => s + 1);
-    setUndoOffer(dir === "skip" ? Date.now() : 0);
     if (party.isHost && party.deck.length - (pIndex + 1) <= REFILL_AT) hostRefill();
   };
 
@@ -618,12 +606,7 @@ export function ZestApp() {
   const go = inParty ? () => partySwipe("go") : soloGo;
   const rewind = inParty ? partyRewind : soloRewind;
   const shown = inParty ? partyCurrent : current;
-  const undoLeft = inParty ? pHistory.length : history.length;
-  const undo = () => {
-    rewind();
-    // Keep the chip up while there's more to bring back.
-    setUndoOffer(undoLeft > 1 ? Date.now() : 0);
-  };
+  const canGoBack = inParty ? pHistory.length > 0 : history.length > 0;
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 10-minute clock, so the idle timer pauses in a party too.
@@ -752,13 +735,43 @@ export function ZestApp() {
         id="picks-panel"
         role={inParty ? undefined : "tabpanel"}
         aria-labelledby={inParty ? undefined : `mood-${mood}`}
-        className="flex min-h-0 flex-1 flex-col"
+        className="relative flex min-h-0 flex-1 flex-col"
       >
+      {/*
+        Floats over the top of the photo so nothing below moves: "Back" on the left whenever
+        there's a pick to return to, and notices on the right (in place of the swipe badge).
+      */}
+      {!receiptOpen && !areaOpen && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start gap-2 p-3">
+          {canGoBack && (
+            <button
+              type="button"
+              onClick={rewind}
+              aria-label="Back to the previous pick"
+              className="pointer-events-auto inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-black/55 pr-3.5 pl-3 text-sm font-semibold text-white backdrop-blur-md transition hover:bg-black/70 active:scale-95"
+            >
+              <RewindIcon size={16} />
+              Back
+            </button>
+          )}
+          <div aria-live="polite" className="ml-auto flex min-w-0 justify-end">
+            {voice.listening ? (
+              <p className="animate-rise rounded-2xl bg-paprika/90 px-3 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-md">
+                {voice.interim ? `“${voice.interim}”` : "Listening… let go when you're done"}
+              </p>
+            ) : (
+              shownNotice && (
+                <p className="animate-rise rounded-2xl bg-black/70 px-3 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-md">{shownNotice}</p>
+              )
+            )}
+          </div>
+        </div>
+      )}
       {receiptOpen ? (
         <PrivacyReceipt sent={lastSent} meta={lastMeta} precise={precise} inParty={inParty} onClose={() => setReceiptOpen(false)} />
       ) : inParty ? (
         partyCurrent && now ? (
-          <PickCard pick={partyCurrent} now={now} swipes={swipes} swipe={swipe} />
+          <PickCard pick={partyCurrent} now={now} swipes={swipes} swipe={swipe} quietBadge={Boolean(shownNotice)} />
         ) : (
           <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
             <p className="font-display text-2xl font-bold">You&apos;ve swiped them all.</p>
@@ -790,34 +803,12 @@ export function ZestApp() {
           actions={emptyActions}
         />
       )}
-      {current && now && <PickCard pick={current} now={now} swipes={swipes} swipe={swipe} />}
+      {current && now && (
+        <PickCard pick={current} now={now} swipes={swipes} swipe={swipe} quietBadge={Boolean(shownNotice || voice.listening)} onTangent={submitCraving} />
+      )}
         </>
         )
       )}
-      </div>
-
-      {undoOffer > 0 && undoLeft > 0 && !receiptOpen && (
-        <div className="flex justify-center px-4">
-          <button
-            type="button"
-            onClick={undo}
-            className="animate-rise mb-1 inline-flex h-11 items-center gap-1.5 rounded-full bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/15"
-          >
-            <RewindIcon size={16} />
-            Undo skip
-          </button>
-        </div>
-      )}
-      <div aria-live="polite" className="min-h-0 px-4">
-        {voice.listening ? (
-          <p className="animate-rise mx-auto mb-1 w-fit max-w-full rounded-full bg-paprika/25 px-3 py-1.5 text-center text-sm text-white">
-            {voice.interim ? `“${voice.interim}”` : "Listening… let go when you're done"}
-          </p>
-        ) : (
-          shownNotice && (
-            <p className="animate-rise mx-auto mb-1 w-fit rounded-full bg-white/10 px-3 py-1.5 text-center text-sm text-white/85">{shownNotice}</p>
-          )
-        )}
       </div>
 
       {composing && now && (
