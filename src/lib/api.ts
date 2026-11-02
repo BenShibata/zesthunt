@@ -10,6 +10,8 @@ export interface PicksQuery {
   exclude?: string[];
   craving?: string | null;
   firstOfSession?: boolean;
+  /** Search a short drive away (8 km) instead of a walk. */
+  widen?: boolean;
 }
 
 /** Same rounding as the server: two decimals ≈ 1.1 km. */

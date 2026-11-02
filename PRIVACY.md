@@ -35,13 +35,13 @@ None of this is written to disk, a database or logs. Responses carry `Cache-Cont
 
 | Service | What it gets | Why |
 | --- | --- | --- |
-| Google Places API (New) | A rounded (~1 km) area and search radius | Find open restaurants nearby |
+| Google Places API (New) | A rounded (~1 km) area and search radius. **If you set a craving**, the craving's words too ("ramen"), never combined with anything that identifies you | Find open restaurants nearby, or ones serving what you're craving |
 | Google Routes API | The same rounded point and restaurant locations | Walking times |
 | Google Geocoding API | The neighborhood or ZIP you typed (only if you typed one) | Turn it into a rounded area |
 | Google Places photos | A photo reference, fetched by our server | Your browser never talks to Google, so it never sees your IP. Your browser may keep a photo for up to an hour; no shared cache does |
 | Anthropic (Claude API) | Meal frame, mood, dietary needs, skip signals, what you typed or said, and the list of nearby places (names, types, travel minutes). **No coordinates, addresses or IP.** | Rank and describe the picks |
 
-Restaurant results are cached in server memory per ~1 km area for 5 minutes (it's restaurant data, not yours) and are gone when the server instance stops.
+Restaurant results are cached in server memory per ~1 km area for 5 minutes (it's restaurant data, not yours) and are gone when the server instance stops. Searches for a craving are never cached, because the craving is yours: those results are used for that one response.
 
 **Voice:** hold-to-speak uses your browser's on-device speech recognition only (`processLocally = true`). Audio never leaves your phone, and only the transcribed text is sent. Browsers without on-device recognition fall back to typing.
 
@@ -53,8 +53,8 @@ Restaurant results are cached in server memory per ~1 km area for 5 minutes (it'
 
 If you add Zesthunt to an assistant such as Claude or ChatGPT, the assistant calls `zesthunt.com/mcp` for you.
 
-- **What it can send:** an area (a neighborhood, cross-streets, ZIP or city, or approximate coordinates, which we round to about 1 km), your local time, a mood, and diet or allergy filters. The tools have no field for a name, address or account, so these can't be sent.
-- **What happens to it:** the same as in the app. It's used for that answer only, never stored or logged. Google gets the rounded area. Claude is **not** called, because your assistant does the ranking.
+- **What it can send:** an area (a neighborhood, cross-streets, ZIP or city, or approximate coordinates, which we round to about 1 km), your local time, a mood, an optional craving ("ramen"), and diet or allergy filters. The tools have no field for a name, address or account, so these can't be sent.
+- **What happens to it:** the same as in the app. It's used for that answer only, never stored or logged. Google gets the rounded area, and the craving's words if there is one. Claude is **not** called, because your assistant does the ranking.
 - **No IP location:** requests come from the assistant's servers, so we never guess your location from them.
 - **Party rooms** started from an assistant work like any other room, except they have no host. They hold nicknames, the places and swipes, and vanish after 10 minutes.
 - **Your assistant's own history:** Zesthunt keeps nothing, but your conversation with the assistant is subject to that assistant's own settings.

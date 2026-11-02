@@ -49,6 +49,9 @@ export const PartyCardSchema = z.object({
   labels: z.array(z.enum(["Protein", "Veg", "Whole grain"])).max(3),
   balance: z.number(),
   upgradeTip: z.string().max(160).optional(),
+  rating: z.number().min(0).max(5).nullable().optional(),
+  ratingCount: z.number().int().min(0).nullable().optional(),
+  mapsUrl: z.string().max(500).startsWith("https://").optional(),
   photo: z.union([
     z.object({ kind: z.literal("url"), url: z.string().max(600).startsWith("/api/photo?") }),
     z.object({ kind: z.literal("mock"), palette: z.tuple([z.string(), z.string(), z.string()]), motif: z.enum(["bowl", "plate", "wrap", "cup"]) }),

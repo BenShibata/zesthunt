@@ -71,6 +71,11 @@ export interface Pick {
   /** At most one gentle tip, shown on the locked-in screen. */
   upgradeTip?: string;
   photo: PickPhoto;
+  /** Google rating (1–5) and how many ratings, when Places has them. */
+  rating?: number | null;
+  ratingCount?: number | null;
+  /** The place's Google Maps page, for the menu, photos and reviews. */
+  mapsUrl?: string;
 }
 
 export interface Dietary {
@@ -97,6 +102,8 @@ export type PicksEvent =
       areaSource: AreaSource;
       /** Services this request's data was passed on to. */
       sharedWith: ThirdParty[];
+      /** With a craving: whether places matching it were found (false = showing what's open instead). */
+      cravingMatched?: boolean;
     }
   | { type: "pick"; pick: Pick }
   | { type: "need_location" }

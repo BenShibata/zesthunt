@@ -5,6 +5,8 @@ import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick
 import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
 import { applySignals, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
+import { cravingShortcuts } from "@/lib/cravings";
+import { mealFrame } from "@/lib/time";
 import { useSwipe } from "@/hooks/useSwipe";
 import { useInactivityTimer } from "@/hooks/useInactivityTimer";
 import { requestMotionPermission, useShake } from "@/hooks/useShake";
@@ -13,7 +15,8 @@ import { MoodTabs, TopBar } from "./TopBar";
 import { PickCard, PickSkeleton } from "./PickCard";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
-import { EmptyState, ErrorState, LocationPrompt } from "./FeedStates";
+import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
+import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
 import { JoinScreen, PartyBar, PartySetup } from "./Party";
 import { DietPanel } from "./DietPanel";
@@ -69,6 +72,11 @@ export function ZestApp() {
   const [notice, setNotice] = useState<string | null>(null);
   /** Undo chip: offered for a few seconds after a skip. Backspace works any time. */
   const [undoOffer, setUndoOffer] = useState(0);
+  /** The active craving: it drives the search (and every refill) until cleared. Memory only. */
+  const [craving, setCraving] = useState<string | null>(null);
+  /** The user asked to search a short drive away. Reset when the area changes. */
+  const [widened, setWidened] = useState(false);
+  const [areaOpen, setAreaOpen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const [signals, setSignals] = useState<string[]>([]);
@@ -82,6 +90,9 @@ export function ZestApp() {
   const location = useRef<{ lat: number; lng: number } | null>(null);
   const preciseLocation = useRef<{ lat: number; lng: number } | null>(null);
   const areaQuery = useRef<string | null>(null);
+  // Mirrors of `craving` and `widened` for request building inside stable callbacks.
+  const cravingRef = useRef<string | null>(null);
+  const widenRef = useRef(false);
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
@@ -115,6 +126,8 @@ export function ZestApp() {
       firstOfSession: firstOfSession.current,
       skipSignals: sig,
       dietary: hasDietary(dietRef.current) ? dietRef.current : null,
+      craving: cravingRef.current,
+      ...(widenRef.current ? { widen: true } : {}),
     }),
     [dietRef],
   );
@@ -138,6 +151,9 @@ export function ZestApp() {
             setFeedMode(e.mode);
             setLastMeta(e);
             if (e.sparse && !opts.append) setNotice("Not much open within walking distance, so these are a short drive.");
+            if (e.cravingMatched === false && !opts.append && cravingRef.current) {
+              setNotice(`Nothing for “${cravingRef.current}” open nearby, so here’s what is.`);
+            }
             break;
           case "pick":
             got++;
@@ -197,6 +213,16 @@ export function ZestApp() {
     },
     [fetchQueue],
   );
+
+  const applyCraving = useCallback((c: string | null) => {
+    cravingRef.current = c;
+    setCraving(c);
+  }, []);
+
+  const applyWiden = (on: boolean) => {
+    widenRef.current = on;
+    setWidened(on);
+  };
 
   // Open straight onto a pick (server uses a city-level IP estimate if there's no location yet).
   useEffect(() => {
@@ -279,6 +305,13 @@ export function ZestApp() {
   /** Restyles the queue instantly from picks already in hand, then streams more for the new mood behind them. */
   const changeMood = (m: Mood) => {
     if (m === mood) return;
+    setUndoOffer(0);
+    if (cravingRef.current) {
+      // Craving picks were chosen for the craving, not the mood, so re-search with both.
+      setMood(m);
+      load(m);
+      return;
+    }
     setMood(m);
     exhausted.current.delete(m);
     const pool = queue.slice(index);
@@ -307,7 +340,8 @@ export function ZestApp() {
     const ctrl = new AbortController();
     let taken = false;
     streamPicks(
-      { ...baseQuery(wildMood, signals), exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
+      // A wildcard is about stepping outside the current search, so it leaves the craving out.
+      { ...baseQuery(wildMood, signals), craving: null, exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
       (e) => {
         if (e.type === "meta") setLastMeta(e);
         if (taken || e.type !== "pick") return;
@@ -343,13 +377,24 @@ export function ZestApp() {
     (text: string) => {
       setComposing(false);
       setDraft("");
-      const craving = text.trim();
-      if (!craving) return;
-      setNotice(`Hunting: “${craving}”`);
-      load(mood, { craving });
+      const wish = text.trim().slice(0, 140);
+      if (!wish) return;
+      applyCraving(wish);
+      setNotice(`Hunting: “${wish}”`);
+      load(mood);
     },
-    [load, mood],
+    [load, mood, applyCraving],
   );
+
+  const clearCraving = () => {
+    applyCraving(null);
+    load(mood);
+  };
+
+  const searchWider = () => {
+    applyWiden(true);
+    load(mood);
+  };
 
   const onVoiceFallback = useCallback((why: VoiceFallback) => {
     setComposing(true);
@@ -362,11 +407,18 @@ export function ZestApp() {
   const voice = useVoice({ onFinal: submitCraving, onFallback: onVoiceFallback });
 
   const submitArea = (query: string) => {
+    // A typed area replaces any device location, which the server would otherwise prefer.
     areaQuery.current = query.trim() || null;
+    location.current = null;
+    preciseLocation.current = null;
+    setPrecise(null);
+    applyWiden(false);
+    setAreaOpen(false);
     load(mood);
   };
 
   const useMyLocation = async () => {
+    setAreaOpen(false);
     setFeed({ status: "loading" });
     const pos = await requestPreciseLocation();
     if (!pos) {
@@ -376,6 +428,8 @@ export function ZestApp() {
     }
     preciseLocation.current = pos;
     location.current = roundCoords(pos.lat, pos.lng);
+    areaQuery.current = null;
+    applyWiden(false);
     setPrecise(pos);
     setNotice("Rounded to ~1 km before it left your phone.");
     load(mood);
@@ -384,6 +438,7 @@ export function ZestApp() {
   const toggleReceipt = () => {
     if (dietOpen) closeDiet();
     setPartySetup(false);
+    setAreaOpen(false);
     setReceiptOpen((o) => !o);
   };
 
@@ -393,9 +448,12 @@ export function ZestApp() {
     voice.cancel();
     skipped.current = [];
     setSignals([]);
+    applyCraving(null);
+    widenRef.current = false;
+    setWidened(false);
     load(mood);
     setNotice("Picks cleared after 10 quiet minutes.");
-  }, [load, mood, voice]);
+  }, [load, mood, voice, applyCraving]);
 
   const openDiet = () => {
     if (dietOpen) return closeDiet();
@@ -616,6 +674,26 @@ export function ZestApp() {
   }
 
   const outOfPicks = !inParty && feed.status === "ready" && !current && !refilling;
+
+  // Where the search is centered, for the line under the moods. Demo places have no real area.
+  const searchArea =
+    lastMeta && lastMeta.areaSource !== "demo"
+      ? {
+          label: lastMeta.areaSource === "device" ? "you" : (lastMeta.areaLabel ?? "you"),
+          approx: lastMeta.areaSource === "ip",
+          drive: lastMeta.mode === "drive",
+        }
+      : null;
+
+  const emptyActions: EmptyActions = {
+    onClearCraving: craving ? clearCraving : undefined,
+    onWiden: outOfPicks && feedMode === "walk" && !widened ? searchWider : undefined,
+    moods: craving
+      ? []
+      : MOODS.filter((m) => m !== mood)
+          .slice(0, 3)
+          .map((m) => ({ label: MOOD_LABELS[m], onClick: () => changeMood(m) })),
+  };
   const shownNotice = party.ended ? "That party has ended. Back to solo picks." : notice;
 
   return (
@@ -655,7 +733,18 @@ export function ZestApp() {
           onLeave={leaveParty}
         />
       ) : (
-        <MoodTabs mood={mood} onChange={changeMood} onSurprise={onWildcardTap} />
+        <>
+          <MoodTabs mood={mood} onChange={changeMood} onSurprise={onWildcardTap} />
+          <SearchContext
+            area={searchArea}
+            craving={craving}
+            onChangeArea={() => {
+              setReceiptOpen(false);
+              setAreaOpen(true);
+            }}
+            onClearCraving={clearCraving}
+          />
+        </>
       )}
 
       <div
@@ -678,20 +767,31 @@ export function ZestApp() {
           </section>
         )
       ) : (
+        areaOpen ? (
+          <LocationPrompt onSubmit={submitArea} onUseLocation={useMyLocation} onCancel={() => setAreaOpen(false)} />
+        ) : (
         <>
       {(feed.status === "loading" || (feed.status === "ready" && !current && refilling)) && <PickSkeleton />}
       {feed.status === "need_location" && <LocationPrompt onSubmit={submitArea} onUseLocation={useMyLocation} />}
       {feed.status === "error" && <ErrorState message={feed.message} onRetry={() => load(mood)} />}
-      {feed.status === "empty" && <EmptyState message={feed.message} suggestion={feed.suggestion} onRetry={() => load(mood)} />}
+      {feed.status === "empty" && (
+        <EmptyState message={feed.message} suggestion={feed.suggestion} onRetry={() => load(mood)} actions={emptyActions} />
+      )}
       {outOfPicks && (
         <EmptyState
-          message={`That's every ${MOOD_LABELS[mood].toLowerCase()} pick open nearby.`}
-          suggestion="other_mood"
+          message={
+            craving
+              ? `That's every “${craving}” place open ${widened || feedMode === "drive" ? "within a short drive" : "nearby"}.`
+              : `That's every ${MOOD_LABELS[mood].toLowerCase()} pick open ${widened || feedMode === "drive" ? "within a short drive" : "nearby"}.`
+          }
+          suggestion={feedMode === "walk" ? "drive" : "order_in"}
           onRetry={() => load(mood)}
+          actions={emptyActions}
         />
       )}
       {current && now && <PickCard pick={current} now={now} swipes={swipes} swipe={swipe} />}
         </>
+        )
       )}
       </div>
 
@@ -719,6 +819,20 @@ export function ZestApp() {
         )}
       </div>
 
+      {composing && now && (
+        <div className="animate-rise flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" role="group" aria-label="Quick cravings">
+          {cravingShortcuts(mealFrame(now), dietary.diets).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => submitCraving(c)}
+              className="h-11 shrink-0 rounded-full bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
       {composing && (
         <form
           className="animate-rise flex gap-2 px-4 pb-2"

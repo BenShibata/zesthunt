@@ -325,6 +325,9 @@ function toPick(seed: Seed, i: number, now: Date): Pick {
     balance,
     upgradeTip: seed.tip,
     photo: seed.photo,
+    // Fictional, but varied so the card's rating line shows in demo mode.
+    rating: Math.round((4.0 + ((i * 7) % 9) / 10) * 10) / 10,
+    ratingCount: 40 + ((i * 131) % 900),
   };
 }
 
@@ -332,9 +335,10 @@ function toPick(seed: Seed, i: number, now: Date): Pick {
  * Builds a queue for a mood. The first pick of a session leans balanced; after
  * that, mood fit leads and balance breaks ties.
  */
-export function buildMockQueue(mood: Mood, now: Date, opts: { firstOfSession: boolean }): Pick[] {
+export function buildMockQueue(mood: Mood, now: Date, opts: { firstOfSession: boolean; allMoods?: boolean }): Pick[] {
   const all = SEEDS.map((s, i) => toPick(s, i, now));
-  const inMood = all.filter((p) => p.moods.includes(mood));
+  // A craving searches every place, mood or not; the caller narrows it down.
+  const inMood = opts.allMoods ? all : all.filter((p) => p.moods.includes(mood));
   const ranked = [...inMood].sort((a, b) => {
     const moodRank = a.moods.indexOf(mood) - b.moods.indexOf(mood);
     if (mood === "fresh" || moodRank === 0) return b.balance - a.balance;

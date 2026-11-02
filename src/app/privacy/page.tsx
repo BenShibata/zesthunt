@@ -25,7 +25,7 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "Who else is involved",
     body: [
-      "Google Places and Routes get the rounded area to find open places and walking times. Photos come through our server, so your browser never talks to Google.",
+      "Google Places and Routes get the rounded area to find open places and walking times. If you set a craving, Google also gets its words to search for places serving it; those results aren't cached. Photos come through our server, so your browser never talks to Google.",
       "Claude (Anthropic) ranks and describes the picks. It gets the place list, your mood and filters, and what you typed or said. It never gets coordinates, addresses or IP.",
     ],
   },

@@ -9,9 +9,12 @@ vi.mock("./env", () => ({
   isDemo: () => false,
 }));
 
-const places = vi.hoisted(() => ({ list: [] as Place[] }));
+const places = vi.hoisted(() => ({ list: [] as Place[], popular: [] as Place[], text: {} as Record<string, Place[]>, drive: null as Place[] | null }));
 vi.mock("./places", () => ({
-  nearbyOpenPlaces: vi.fn(async () => places.list),
+  nearbyOpenPlaces: vi.fn(async (_o: unknown, radius: number, rank?: string) =>
+    radius > 2000 ? (places.drive ?? places.list) : rank === "POPULARITY" ? places.popular : places.list,
+  ),
+  textSearchOpenPlaces: vi.fn(async (_o: unknown, query: string) => places.text[query] ?? []),
   geocodeArea: vi.fn(async () => null),
 }));
 
@@ -28,6 +31,7 @@ vi.mock("./rank", () => ({
 }));
 
 const { runPipeline } = await import("./pipeline");
+const placesApi = await import("./places");
 const { profileFor } = await import("./heuristics");
 
 function place(id: string, extra: Partial<Place> = {}): Place {
@@ -48,6 +52,9 @@ function place(id: string, extra: Partial<Place> = {}): Place {
     servesVegetarianFood: null,
     takeout: null,
     delivery: null,
+    rating: null,
+    ratingCount: null,
+    mapsUri: null,
     ...extra,
   };
 }
@@ -64,8 +71,15 @@ async function run(body: Partial<Parameters<typeof runPipeline>[0]> = {}) {
   return { events, picks };
 }
 
+// ~5 km from the origin: outside a walk, inside a short drive.
+const FAR = { lat: 37.815, lng: -122.42 };
+
 beforeEach(() => {
+  vi.clearAllMocks();
   places.list = ["a", "b", "c", "d", "e", "f"].map((id) => place(id));
+  places.popular = [];
+  places.text = {};
+  places.drive = null;
   ranked.picks = [];
   ranked.fail = false;
 });
@@ -120,5 +134,62 @@ describe("runPipeline (live)", () => {
   it("asks for a location when it has none", async () => {
     const { events } = await run({ location: null });
     expect(events).toEqual([{ type: "need_location" }]);
+  });
+
+  it("passes ratings and the Maps link through to the pick", async () => {
+    places.list = [place("a", { rating: 4.6, ratingCount: 812, mapsUri: "https://maps.google.com/?cid=1" }), ...places.list.slice(1)];
+    const { picks } = await run();
+    const a = picks.find((p) => p.id === "a")!;
+    expect(a).toMatchObject({ rating: 4.6, ratingCount: 812, mapsUrl: "https://maps.google.com/?cid=1" });
+  });
+});
+
+describe("runPipeline: finding more", () => {
+  it("searches for the craving and keeps Google's relevance order", async () => {
+    ranked.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    places.text = { ramen: [place("r2"), place("r1"), place("r3")] };
+    const { picks, events } = await run({ craving: "ramen" });
+    expect(picks.map((p) => p.id)).toEqual(["r2", "r1", "r3"]);
+    expect(events[0]).toMatchObject({ type: "meta", mode: "walk", cravingMatched: true });
+    // A user's craving is never cached on the server.
+    expect(placesApi.textSearchOpenPlaces).toHaveBeenCalledWith(expect.anything(), "ramen", 1500, { cache: false });
+  });
+
+  it("drives for a craving when nothing matching is walkable", async () => {
+    places.text = { ramen: [place("r1", { location: FAR })] };
+    const { picks, events } = await run({ craving: "ramen" });
+    expect(picks.map((p) => p.id)).toEqual(["r1"]);
+    expect(events[0]).toMatchObject({ mode: "drive", cravingMatched: true });
+  });
+
+  it("says so and shows what's open when nothing matches the craving", async () => {
+    const { picks, events } = await run({ craving: "durian pizza" });
+    expect(events[0]).toMatchObject({ type: "meta", cravingMatched: false });
+    expect(picks.length).toBeGreaterThan(0);
+  });
+
+  it("adds popular places and a mood search when the nearest run low", async () => {
+    places.popular = [place("p1"), place("a"), place("far", { location: FAR })];
+    places.text = { "salad poke healthy bowl": [place("s1")] };
+    const { picks } = await run({ mood: "fresh" });
+    const ids = picks.map((p) => p.id);
+    expect(ids).toEqual(expect.arrayContaining(["a", "b", "p1", "s1"]));
+    expect(ids).not.toContain("far");
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("doesn't spend extra searches when the nearest are plenty", async () => {
+    places.list = Array.from({ length: 12 }, (_, i) => place(`n${i}`));
+    await run();
+    expect(placesApi.nearbyOpenPlaces).toHaveBeenCalledTimes(1);
+    expect(placesApi.textSearchOpenPlaces).not.toHaveBeenCalled();
+  });
+
+  it("searches a short drive when asked, without calling it sparse", async () => {
+    places.drive = [place("d1", { location: FAR }), place("d2", { location: FAR })];
+    const { picks, events } = await run({ widen: true });
+    expect(events[0]).toMatchObject({ mode: "drive", sparse: false });
+    expect(picks.map((p) => p.id).sort()).toEqual(["d1", "d2"]);
   });
 });

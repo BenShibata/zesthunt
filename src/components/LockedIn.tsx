@@ -157,6 +157,12 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, onClos
           {order.kind === "none" && (
             <p className="text-center text-sm text-sheet-muted dark:text-white/70">Dine-in only, per Google. Just walk on over.</p>
           )}
+          {pick.mapsUrl && (
+            <a href={pick.mapsUrl} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
+              Menu, photos and reviews
+              <ExternalIcon size={16} />
+            </a>
+          )}
           <p className="pt-2 text-center text-xs text-sheet-muted dark:text-white/60">
             We never see your card. You pay in your own wallet.
           </p>

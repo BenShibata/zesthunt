@@ -56,7 +56,10 @@ Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (o
 `POST /api/picks` streams newline-delimited JSON (`meta`, `pick`…, `done`):
 
 1. **Where:** the device location rounded to ~1 km, else a typed neighborhood/ZIP (Geocoding), else the platform's city-level IP estimate, else ask.
-2. **What's open:** Places Nearby Search within 1.5 km, open now only. Fewer than 5 → widens to an 8 km drive and says so. Cached per ~1 km area for 5 minutes.
+2. **What's open:**
+   - **With a craving** ("ramen"): Places Text Search for it, open now, near the area. Two or more matches within 1.5 km → walk; otherwise matches within 8 km → drive. No matches → the usual search, and the phone says "Nothing for “ramen” open nearby, so here's what is." Craving searches are never cached.
+   - **Otherwise:** the 20 nearest open places (Nearby Search, 1.5 km). When fewer than 10 are left after the phone's exclude list, it adds the 20 most popular nearby and a Text Search for the mood ("salad poke healthy bowl" for Fresh, and so on). Fewer than 5 → widens to an 8 km drive and says so. "Try a short drive" on the empty screen asks for the 8 km search directly.
+   - Cached per ~1 km area for 5 minutes. The field list includes rating, rating count and the Google Maps link, which are in the same billing tier as the fields already requested.
 3. **How far:** Routes API route matrix (walking), with a distance estimate if it fails.
 4. **Rank and describe:** Claude picks only from those places, with output streamed as structured JSON. Each pick is sent to the phone as soon as its object closes, then validated with Zod. Invented IDs, duplicates, "they serve…" claims, and calorie or diet talk are dropped or replaced. If Claude is slower than 2.5 s for the first pick, a rule-based pick shows first.
 
@@ -67,6 +70,14 @@ Photos go through `/api/photo` so the key stays server-side and the browser neve
 ### Limits
 
 Every API route has a per-IP limit per minute: picks 40, party actions 60, party polling 150, photos 120, MCP 120. With Upstash configured, the counts are shared by all server instances. If Upstash can't be reached, each instance falls back to its own in-memory count. Live searches from the MCP connector also have a daily ceiling across all callers (`MCP_DAILY_LIMIT`). Also set a daily quota on the Google key in Google Cloud as the final backstop.
+
+## Finding the right food
+
+- **Where:** a line under the moods shows where the search is centered ("Near San Francisco · rough guess" for the IP estimate). **Change** opens the neighborhood/ZIP field or "Use my location". A typed area replaces the device location.
+- **Craving:** tap the center button and type, hold it and speak, or tap a shortcut (they change with the meal: coffee and bagels in the morning, pizza and ramen at dinner; meat-led ones are hidden for vegetarian and vegan diets). The craving shows as a chip next to the area and applies to every refill until you clear it with ✕. Switching mood keeps it.
+- **Rating:** the card shows the Google rating and count ("★ 4.6 (1.2k)"). Claude and the rule-based ranking use it only as a tie-breaker.
+- **Menu, photos and reviews:** a link on the locked-in screen opens the place on Google Maps.
+- **Out of picks:** the empty screen offers a short drive (when on foot), other moods, clearing the craving, or ordering in, instead of a dead end.
 
 ## The queue
 
@@ -108,10 +119,10 @@ There's no checkout, no stored cards and no payment processor. Three things only
 
 | Tool | What it does |
 | --- | --- |
-| `find_food_now` | Places open now near an area, with walk and closing times, ranked for meal, mood and diet. Read-only. |
+| `find_food_now` | Places open now near an area, with walk and closing times and Google ratings, ranked for meal, mood and diet. An optional `craving` ("ramen") searches for places serving it. Read-only. |
 | `start_hunt_party` | Opens a 10-minute room with no host and returns a `/#p=CODE` link. Everyone joins from the link, and two or more "go" swipes on the same place make a match. |
 
-Privacy is in the schema: the tools accept only an area (words, or coordinates rounded to ~1 km), the local time, a mood and dietary filters. There is no field for a name, address or account. The server instructions ask assistants never to send a home address. The user's own assistant does the ranking, so Claude isn't called and no other AI sees the request. IP-based location is never used here, because the caller is the assistant's server. Each answer carries a `privacy` line.
+Privacy is in the schema: the tools accept only an area (words, or coordinates rounded to ~1 km), the local time, a mood, an optional craving and dietary filters. There is no field for a name, address or account. The server instructions ask assistants never to send a home address. The user's own assistant does the ranking, so Claude isn't called and no other AI sees the request. IP-based location is never used here, because the caller is the assistant's server. Each answer carries a `privacy` line.
 
 Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, then connect to `http://localhost:3000/mcp`).
 

@@ -1,7 +1,7 @@
 "use client";
 
 import type { Pick } from "@/lib/types";
-import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText } from "@/lib/time";
+import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
 import { OverlayPaymentChip } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
@@ -19,6 +19,7 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
+  const rating = ratingText(pick.rating, pick.ratingCount);
   const { dx, progress, handlers } = swipe;
 
   return (
@@ -87,15 +88,24 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
           <p id="pick-reason" className="mt-1 text-base text-white/80">
             {pick.reason}
           </p>
-          <p className="mt-2 truncate text-sm text-white/65">
+          <p className="mt-2 line-clamp-2 text-sm text-white/65">
             <span className="font-medium text-white/90">{pick.name}</span>
+            {rating && (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span aria-hidden="true" className="text-white/85">
+                  <span className="text-star">★</span> {rating.visual}
+                </span>
+                <span className="sr-only">, {rating.spoken}</span>
+              </>
+            )}
             <span aria-hidden="true"> · </span>
             <span aria-hidden="true">{price.visual}</span>
             <span className="sr-only">, {price.spoken}</span>
             {pick.closesAt && !closingSoon && (
               <>
                 <span aria-hidden="true"> · </span>
-                Open till {formatClock(pick.closesAt)}
+                <span className="whitespace-nowrap">Open till {formatClock(pick.closesAt)}</span>
               </>
             )}
           </p>
