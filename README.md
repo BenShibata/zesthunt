@@ -24,6 +24,15 @@ npm install
 npm run dev
 ```
 
+Checks (the same ones CI runs on every push and pull request):
+
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
 Open http://localhost:3000 in a phone-sized viewport.
 
 ### Demo mode vs live
@@ -37,7 +46,8 @@ For real places, copy `.env.example` to `.env.local` and fill in:
 | `GOOGLE_MAPS_API_KEY` | Places API (New), Routes API, Geocoding API. Server-side only. |
 | `ANTHROPIC_API_KEY` | Ranks and describes picks. Without it, picks use rule-based descriptions from the place type. |
 | `ANTHROPIC_MODEL` | Optional. Defaults to `claude-opus-5-5`. |
-| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Party rooms. Needed on Vercel; locally, rooms live in memory. |
+| `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Party rooms and rate limits. Needed on Vercel; locally, both live in memory. |
+| `MCP_DAILY_LIMIT` | Optional. Most live place searches the `/mcp` connector may run per UTC day, across all callers. Defaults to 2000. |
 
 Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (or your location) on first open. On Vercel it starts from the city-level `x-vercel-ip-*` headers.
 
@@ -52,7 +62,11 @@ Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (o
 
 Prompts and the output schema are in [`src/server/prompts.ts`](src/server/prompts.ts). Claude never receives coordinates, addresses or IPs.
 
-Photos go through `/api/photo` so the key stays server-side and the browser never contacts Google.
+Photos go through `/api/photo` so the key stays server-side and the browser never contacts Google. Each one is a billed Places Photo call, so the route is rate-limited (120 a minute per IP) and the browser may keep a photo for an hour (`private`, so no CDN copies).
+
+### Limits
+
+Every API route has a per-IP limit per minute: picks 40, party actions 60, party polling 150, photos 120, MCP 120. With Upstash configured, the counts are shared by all server instances. If Upstash can't be reached, each instance falls back to its own in-memory count. Live searches from the MCP connector also have a daily ceiling across all callers (`MCP_DAILY_LIMIT`). Also set a daily quota on the Google key in Google Cloud as the final backstop.
 
 ## The queue
 
@@ -106,7 +120,7 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 1. Push the repo and import it in Vercel (framework: Next.js, no build settings needed).
 2. Add `GOOGLE_MAPS_API_KEY` and `ANTHROPIC_API_KEY` under Project → Settings → Environment Variables.
    For party rooms, add an Upstash Redis database (Vercel Marketplace → Upstash) (it sets `KV_REST_API_URL` / `KV_REST_API_TOKEN` for you, which the app reads; `UPSTASH_REDIS_REST_*` also work).
-3. Deploy. In Google Cloud, restrict the key to the three APIs above.
+3. Deploy. In Google Cloud, restrict the key to the three APIs above and set a daily quota on each one, so a traffic spike can't run up an open-ended bill.
 
 ## Controls
 
@@ -126,7 +140,7 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 - `src/components/Controls.tsx`: thumb-reach controls and the countdown ring
 - `src/components/LockedIn.tsx`: the screen after Go
 - `src/lib/`: types, time framing, map and order links, the `/api/picks` client, mock data
-- `src/server/`: Places, Routes, the Claude ranking, prompts, in-memory cache and rate limit
+- `src/server/`: Places, Routes, the Claude ranking, prompts, in-memory cache, rate limits, and the shared Upstash client (`upstash.ts`)
 - `src/app/api/picks`, `src/app/api/photo`, `src/app/api/party`: the API routes
 - `src/app/mcp` and `src/server/mcp.ts`: the AI assistant connector
 - `src/components/PrivacyReceipt.tsx`, `src/components/AreaVisual.tsx`: the "What we sent" receipt and the rounded-area drawing

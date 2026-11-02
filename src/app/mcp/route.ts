@@ -11,7 +11,7 @@ const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"
  */
 async function handle(request: Request) {
   // Many users share an assistant platform's IPs, so this limit is looser than the app's.
-  const limit = rateLimit(clientIp(request.headers), "mcp", 120);
+  const limit = await rateLimit(clientIp(request.headers), "mcp", 120);
   if (!limit.ok) {
     return Response.json(
       { jsonrpc: "2.0", error: { code: -32000, message: "Too many requests. Try again shortly." }, id: null },

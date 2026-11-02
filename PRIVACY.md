@@ -29,7 +29,7 @@ Zesthunt writes nothing else to `localStorage`, `sessionStorage`, IndexedDB or c
 
 None of this is written to disk, a database or logs. Responses carry `Cache-Control: no-store`, and every page sends `Referrer-Policy: no-referrer`. Server logs show only the method and path (e.g. `POST /api/picks 200`). On failure, the log line is the error type or a service status like `places 403`, never request content.
 
-**IP address:** when you haven't shared a location, the server reads the hosting platform's city-level IP geolocation headers once to show a first pick nearby. It isn't stored or logged. For rate limiting, the IP is hashed with a random per-instance salt into a counter that expires after one minute.
+**IP address:** when you haven't shared a location, the server reads the hosting platform's city-level IP geolocation headers once to show a first pick nearby. It isn't stored or logged. For rate limiting, the IP is turned into a one-way keyed hash that also includes the current minute, and used as a request counter that expires after two minutes. On the live site the counter is kept in the same Upstash database as party rooms, so the limit holds across all server instances. Without the database key the hash can't be traced back to an IP, and the same IP gets an unrelated hash the next minute. Locally, the counter stays in server memory with a random per-instance salt.
 
 ## Sent to third parties
 
@@ -38,7 +38,7 @@ None of this is written to disk, a database or logs. Responses carry `Cache-Cont
 | Google Places API (New) | A rounded (~1 km) area and search radius | Find open restaurants nearby |
 | Google Routes API | The same rounded point and restaurant locations | Walking times |
 | Google Geocoding API | The neighborhood or ZIP you typed (only if you typed one) | Turn it into a rounded area |
-| Google Places photos | A photo reference, fetched by our server | Your browser never talks to Google, so it never sees your IP |
+| Google Places photos | A photo reference, fetched by our server | Your browser never talks to Google, so it never sees your IP. Your browser may keep a photo for up to an hour; no shared cache does |
 | Anthropic (Claude API) | Meal frame, mood, dietary needs, skip signals, what you typed or said, and the list of nearby places (names, types, travel minutes). **No coordinates, addresses or IP.** | Rank and describe the picks |
 
 Restaurant results are cached in server memory per ~1 km area for 5 minutes (it's restaurant data, not yours) and are gone when the server instance stops.

@@ -1,4 +1,5 @@
 import "server-only";
+import { upstash, type UpstashRun } from "./upstash";
 
 /**
  * Party rooms: the only server-side state in Zesthunt.
@@ -114,28 +115,11 @@ class MemoryStore implements RoomStore {
 }
 
 // ---------------------------------------------------------------------------
-// Upstash Redis backend (REST pipeline, no SDK needed)
+// Upstash Redis backend (see ./upstash)
 // ---------------------------------------------------------------------------
 
 class UpstashStore implements RoomStore {
-  constructor(
-    private url: string,
-    private token: string,
-  ) {}
-
-  private async run(commands: (string | number)[][]): Promise<unknown[]> {
-    const res = await fetch(`${this.url}/pipeline`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json" },
-      body: JSON.stringify(commands),
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error(`upstash ${res.status}`);
-    const out = (await res.json()) as { result?: unknown; error?: string }[];
-    const failed = out.find((r) => r.error);
-    if (failed) throw new Error("upstash command failed");
-    return out.map((r) => r.result);
-  }
+  constructor(private run: UpstashRun) {}
 
   private k(code: string, part: string) {
     return `zh:room:${code}:${part}`;
@@ -200,9 +184,12 @@ let store: RoomStore | null = null;
 
 export function roomStore(): RoomStore {
   if (store) return store;
-  // KV_REST_API_* are the names Vercel's Upstash marketplace integration sets.
-  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
-  store = url && token ? new UpstashStore(url.replace(/\/$/, ""), token) : new MemoryStore();
+  const db = upstash();
+  store = db ? new UpstashStore(db.run) : new MemoryStore();
   return store;
+}
+
+/** For tests: drop the cached store (and its rooms). */
+export function resetRoomStoreForTests() {
+  store = null;
 }

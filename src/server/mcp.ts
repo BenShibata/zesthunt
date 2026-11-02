@@ -5,7 +5,8 @@ import { ALLERGIES, DIETS } from "@/lib/dietary";
 import { directionsUrl } from "@/lib/links";
 import { priceText } from "@/lib/time";
 import { MOODS, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
-import { isDemo } from "./env";
+import { env, isDemo } from "./env";
+import { dailyLimit } from "./memory";
 import { createOpenParty } from "./party";
 import { runPipeline, type PicksRequest } from "./pipeline";
 
@@ -94,6 +95,10 @@ function toRequest(input: AreaInput): { req: PicksRequest } | { error: string } 
 async function search(req: PicksRequest, want: number, signal: AbortSignal) {
   const picks: Pick[] = [];
   let problem: string | null = null;
+  // The connector is open to anyone, so live lookups (which cost per call) have a daily ceiling. Demo data is free.
+  if (!isDemo() && !(await dailyLimit("mcp-search", env.mcpDailyLimit)).ok) {
+    return { picks, problem: "Zesthunt has reached today's limit for assistant requests. Try again tomorrow, or open zesthunt.com." };
+  }
   for await (const e of runPipeline(req, new Headers(), signal, { rankWithAI: false }) as AsyncGenerator<PicksEvent>) {
     if (e.type === "pick") picks.push(e.pick);
     else if (e.type === "need_location") problem = "Couldn't find that area. Ask the user for a nearby neighborhood, cross-streets or ZIP.";

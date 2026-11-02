@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   // Polling is frequent; everything else is a human action.
-  const limit = body.action === "state" ? rateLimit(clientIp(request.headers), "party-poll", 150) : rateLimit(clientIp(request.headers), "party", 60);
+  const limit = body.action === "state" ? await rateLimit(clientIp(request.headers), "party-poll", 150) : await rateLimit(clientIp(request.headers), "party", 60);
   if (!limit.ok) {
     return Response.json({ error: "Easy there, give it a moment." }, { status: 429, headers: { ...NO_STORE, "Retry-After": String(limit.retryAfter) } });
   }
