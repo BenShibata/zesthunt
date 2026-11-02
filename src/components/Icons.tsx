@@ -37,22 +37,6 @@ export function RewindIcon(props: IconProps) {
   );
 }
 
-export function SkipIcon(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
-export function GoIcon(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="M5 12.5 10 17.5 19 7" />
-    </svg>
-  );
-}
-
 export function MicIcon(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -205,6 +189,23 @@ export function XIcon(props: IconProps) {
   return (
     <svg {...base(props)}>
       <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.2-4.2" />
+    </svg>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
     </svg>
   );
 }

@@ -73,8 +73,8 @@ Every API route has a per-IP limit per minute: picks 40, party actions 60, party
 
 ## Finding the right food
 
-- **Where:** a line under the moods shows where the search is centered ("Near San Francisco · rough guess" for the IP estimate). **Change** opens the neighborhood/ZIP field or "Use my location". A typed area replaces the device location.
-- **Craving:** tap the center button and type, hold it and speak, or tap a shortcut (they change with the meal: coffee and bagels in the morning, pizza and ramen at dinner; meat-led ones are hidden for vegetarian and vegan diets). The craving shows as a chip next to the area and applies to every refill until you clear it with ✕. Switching mood keeps it.
+- **Where:** a line under the moods shows where the search is centered ("San Francisco (approx.)" for the IP estimate, "Near you" for the device location). **Change** opens the neighborhood/ZIP field or "Use my location". A typed area replaces the device location.
+- **Craving:** tap the search button (center) and type, hold it and speak, or tap a shortcut (they change with the meal: coffee and bagels in the morning, pizza and ramen at dinner; meat-led ones are hidden for vegetarian and vegan diets). The craving shows as a chip next to the area and applies to every refill until you clear it with ✕. Switching mood keeps it.
 - **Rating:** the card shows the Google rating and count ("★ 4.6 (1.2k)"). Claude and the rule-based ranking use it only as a tie-breaker.
 - **Menu, photos and reviews:** a link on the locked-in screen opens the place on Google Maps.
 - **Out of picks:** the empty screen offers a short drive (when on foot), other moods, clearing the craving, or ordering in, instead of a dead end.
@@ -84,8 +84,8 @@ Every API route has a per-IP limit per minute: picks 40, party actions 60, party
 - The phone holds ~10 picks so skips never wait. When 3 remain it quietly asks for more, excluding everything already seen.
 - **Skip signals:** each pick has a coarse dish category. After 2 skips of the same kind, the phone forms a hint ("fewer noodles", "shorter walks", "cheaper places"). It reorders what's left right away and sends the hint with the next request. Skips themselves never leave the device.
 - **Moods:** switching re-sorts the picks already loaded, so it's instant, then streams mood-specific picks behind them.
-- **Shake:** two sharp jolts trigger a wildcard pick from another mood. iOS needs motion permission, which is requested on the first tap of the dice (Surprise) button.
-- **Voice:** holding the center button uses the Web Speech API with `processLocally = true`. The spec requires on-device recognition in that mode and fails rather than uploading audio. Browsers without on-device speech (currently Safari, Firefox and older Chrome) open the text field instead. Only the transcribed text is sent.
+- **Shake:** two sharp jolts trigger a wildcard pick from another mood. iOS needs motion permission, which is requested on the first tap of **Surprise** (on the area line).
+- **Voice:** holding the search button uses the Web Speech API with `processLocally = true`. The spec requires on-device recognition in that mode and fails rather than uploading audio. Browsers without on-device speech (currently Safari, Firefox and older Chrome) open the text field instead. Only the transcribed text is sent.
 
 ## Hunt party
 
@@ -137,12 +137,13 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 
 | Action | Touch | Keyboard |
 | --- | --- | --- |
-| Go (lock in) | swipe right / ✓ | → |
-| Skip | swipe left / ✕ | ← |
+| Let's go (lock in) | swipe right / **Let's go** | → |
+| Another (skip) | swipe left / **Another** | ← |
 | Undo a skip | "Undo skip" chip (shows for 6 s after a skip) | Backspace |
-| Tell it a craving | tap center button | Tab to it, Enter |
-| Surprise (wildcard) | dice button at the start of the mood row, or shake the phone | Tab to it, Enter |
-| Speak a craving | hold the center button | (typing is the keyboard path) |
+| Change mood | tap a mood (all five always fit on screen) | Tab to the moods, ← → |
+| Search a craving | tap the search button (center) | Tab to it, Enter |
+| Surprise (wildcard) | **Surprise** on the area line, or shake the phone | Tab to it, Enter |
+| Speak a craving | hold the search button (it turns into a mic while listening) | (typing is the keyboard path) |
 
 ## Project layout
 

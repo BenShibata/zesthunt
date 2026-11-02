@@ -1,14 +1,17 @@
 "use client";
 
 import { useRef } from "react";
-import { GoIcon, MicIcon, SkipIcon } from "./Icons";
+import { ArrowRightIcon, CarIcon, MicIcon, SearchIcon, WalkIcon } from "./Icons";
 
 /**
- * The bottom bar: Skip, the craving button (inside the idle countdown ring) and Go.
- * Rewind lives in an Undo chip after a skip, and the wildcard sits at the end of the mood row.
+ * The bottom bar, in words rather than symbols: "Another" (skip), search (tap to type a
+ * craving, hold to speak, inside the idle countdown ring) and "Let's go" (lock in and head
+ * there). Rewind lives in an Undo chip after a skip; Surprise sits on the area line.
  */
 interface Props {
   disabled: boolean;
+  /** How the current pick is reached, so "Let's go" shows walking or driving. */
+  travelMode: "walk" | "drive";
   listening: boolean;
   /** 1 → 0, time left before picks clear. */
   timeLeft: number;
@@ -29,13 +32,17 @@ export function Controls(p: Props) {
   const ring = 2 * Math.PI * 41;
   const urgent = p.timeLeft < 0.1;
 
-  const main =
-    "grid size-16 place-items-center rounded-full text-white shadow-lg transition active:scale-95 disabled:opacity-40";
+  // Labeled pills: words say what happens ("close the app?" was what a bare ✕ suggested).
+  const pill =
+    "flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-2 text-base font-semibold whitespace-nowrap text-white shadow-lg transition active:scale-95 disabled:opacity-40";
+  // Icons are a bonus; on the narrowest phones the words alone have to fit.
+  const pillIcon = "hidden shrink-0 min-[360px]:block";
 
   return (
-    <div className="flex items-center justify-center gap-6 px-4 pt-2 pb-1">
-      <button type="button" className={`${main} bg-white/15 hover:bg-white/20`} onClick={p.onSkip} disabled={p.disabled} aria-label="Skip this pick">
-        <SkipIcon size={28} />
+    <div className="flex items-center gap-2 px-4 pt-2 pb-1 min-[360px]:gap-3">
+      <button type="button" className={`${pill} bg-white/12 hover:bg-white/18`} onClick={p.onSkip} disabled={p.disabled} aria-label="Another pick">
+        Another
+        <ArrowRightIcon size={18} className={pillIcon} />
       </button>
 
       {/* Center: tap to type, hold to speak, wrapped in the countdown ring */}
@@ -61,7 +68,7 @@ export function Controls(p: Props) {
             p.listening ? "scale-110 bg-paprika text-white" : "bg-white text-ink"
           }`}
           aria-pressed={p.listening}
-          aria-label={`Tell Zesthunt what you're craving. Tap to type, hold to speak. Picks clear in ${p.minutesLeft} minute${p.minutesLeft === 1 ? "" : "s"}.`}
+          aria-label={`Search for a craving. Tap to type, or hold to speak. Picks clear in ${p.minutesLeft} minute${p.minutesLeft === 1 ? "" : "s"}.`}
           onPointerDown={(e) => {
             if (e.button !== 0) return;
             held.current = false;
@@ -87,18 +94,19 @@ export function Controls(p: Props) {
           }}
           onContextMenu={(e) => e.preventDefault()}
         >
-          <MicIcon size={30} />
+          {p.listening ? <MicIcon size={30} /> : <SearchIcon size={30} />}
         </button>
       </div>
 
       <button
         type="button"
-        className={`${main} bg-paprika hover:bg-paprika-deep`}
+        className={`${pill} bg-paprika hover:bg-paprika-deep`}
         onClick={p.onGo}
         disabled={p.disabled}
-        aria-label="Go: lock in this pick"
+        aria-label={`Let's go: ${p.travelMode === "drive" ? "drive" : "walk"} to this pick`}
       >
-        <GoIcon size={30} />
+        {p.travelMode === "drive" ? <CarIcon size={20} className={pillIcon} /> : <WalkIcon size={20} className={pillIcon} />}
+        Let&apos;s go
       </button>
     </div>
   );

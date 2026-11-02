@@ -1,5 +1,5 @@
 import { MOODS, MOOD_LABELS, type Mood } from "@/lib/types";
-import { CompassMark, DiceIcon, LeafIcon, PartyIcon } from "./Icons";
+import { CompassMark, LeafIcon, PartyIcon } from "./Icons";
 
 export function TopBar({
   dietaryBadge,
@@ -58,21 +58,14 @@ export function TopBar({
   );
 }
 
-export function MoodTabs({ mood, onChange, onSurprise }: { mood: Mood; onChange: (m: Mood) => void; onSurprise?: () => void }) {
+/**
+ * Mood picker: a segmented control where all five moods always fit on screen, so there's
+ * nothing hidden off the edge to discover by scrolling.
+ */
+export function MoodTabs({ mood, onChange }: { mood: Mood; onChange: (m: Mood) => void }) {
   return (
-    <div className="flex gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none]">
-      {onSurprise && (
-        <button
-          type="button"
-          onClick={onSurprise}
-          aria-label="Surprise me: a pick from another mood (or shake your phone)"
-          title="Surprise me"
-          className="grid size-11 shrink-0 place-items-center rounded-full border border-white/20 text-white/80 transition hover:bg-white/10 active:scale-95"
-        >
-          <DiceIcon size={18} />
-        </button>
-      )}
-      <div role="tablist" aria-label="Mood" className="flex gap-1.5">
+    <div className="px-4 pb-2">
+      <div role="tablist" aria-label="Mood" className="flex gap-0.5 rounded-full bg-white/8 p-1">
         {MOODS.map((m) => {
           const selected = m === mood;
           return (
@@ -95,15 +88,15 @@ export function MoodTabs({ mood, onChange, onSurprise }: { mood: Mood; onChange:
                 }
               }}
               tabIndex={selected ? 0 : -1}
-              className={`h-11 shrink-0 rounded-full px-4 text-sm font-semibold transition ${
-                selected ? "bg-white text-ink" : "bg-white/8 text-white/75 hover:bg-white/14"
+              className={`h-10 flex-auto rounded-full px-1.5 text-[13px] font-semibold whitespace-nowrap transition min-[380px]:text-sm ${
+                selected ? "bg-white text-ink shadow" : "text-white/75 hover:bg-white/10 hover:text-white"
               }`}
             >
               {MOOD_LABELS[m]}
             </button>
           );
         })}
-    </div>
+      </div>
     </div>
   );
 }

@@ -734,7 +734,7 @@ export function ZestApp() {
         />
       ) : (
         <>
-          <MoodTabs mood={mood} onChange={changeMood} onSurprise={onWildcardTap} />
+          <MoodTabs mood={mood} onChange={changeMood} />
           <SearchContext
             area={searchArea}
             craving={craving}
@@ -743,6 +743,7 @@ export function ZestApp() {
               setAreaOpen(true);
             }}
             onClearCraving={clearCraving}
+            onSurprise={onWildcardTap}
           />
         </>
       )}
@@ -862,6 +863,7 @@ export function ZestApp() {
       )}
 
       <Controls
+        travelMode={shown?.travelMode ?? "walk"}
         disabled={!shown || receiptOpen}
         listening={voice.listening}
         timeLeft={timer.fraction}
