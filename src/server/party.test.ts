@@ -77,6 +77,7 @@ describe("hunt party", () => {
     await recordSwipe(host.code, others[1].memberId, others[1].key, "x", "go");
     const state = await partyState(host.code, host.memberId, host.key, 0);
     expect(state.match).toBe("x");
+    // Once there's a result, every vote is shown.
     expect(state.likes.x).toHaveLength(3);
     expect(state.needed).toBe(3);
   });
@@ -110,5 +111,21 @@ describe("hunt party", () => {
     const { steer } = await partyState(host.code, host.memberId, host.key, 0);
     expect(steer).toEqual({ mood: "comfort", seq: 1, at: 2, by: a.memberId });
     expect(JSON.stringify(steer)).not.toMatch(/craving/);
+  });
+
+  it("keeps votes secret until there's a result, but shows you your own", async () => {
+    const host = await createParty(undefined, [card("x"), card("y")]);
+    const a = await joinParty(host.code);
+    const b = await joinParty(host.code);
+    await recordSwipe(host.code, a.memberId, a.key, "x", "go");
+    await recordSwipe(host.code, b.memberId, b.key, "y", "go");
+    const before = await partyState(host.code, a.memberId, a.key, 0);
+    expect(before.likes).toEqual({});
+    expect(before.myVotes).toEqual(["x"]);
+    expect(JSON.stringify(before)).not.toContain(b.memberId + '"]');
+    await decideNow(host.code, host.memberId, host.key);
+    const after = await partyState(host.code, a.memberId, a.key, 0);
+    expect(after.match).toBe("x");
+    expect(after.likes).toEqual({ x: [a.memberId], y: [b.memberId] });
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef } from "react";
-import { ArrowRightIcon, CarIcon, MicIcon, SearchIcon, WalkIcon } from "./Icons";
+import { ArrowRightIcon, CarIcon, HeartIcon, MicIcon, SearchIcon, WalkIcon } from "./Icons";
 
 /**
  * The bottom bar, in words rather than symbols: "Another" (skip), search (tap to type a
@@ -12,6 +12,11 @@ interface Props {
   disabled: boolean;
   /** How the current pick is reached, so "Let's go" shows walking or driving. */
   travelMode: "walk" | "drive";
+  /**
+   * In a party this is a vote, not a decision: "Pass" and "♥ I'm in", with your progress
+   * through the shared deck in the middle (cravings are solo-only, so no search there).
+   */
+  vote?: { done: number; total: number };
   listening: boolean;
   /** 1 → 0, time left before picks clear. */
   timeLeft: number;
@@ -37,6 +42,28 @@ export function Controls(p: Props) {
     "flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-2 text-base font-semibold whitespace-nowrap text-white shadow-lg transition active:scale-95 disabled:opacity-40";
   // Icons are a bonus; on the narrowest phones the words alone have to fit.
   const pillIcon = "hidden shrink-0 min-[360px]:block";
+
+  if (p.vote) {
+    return (
+      <div className="flex items-center gap-2 px-4 pt-2 pb-1 min-[360px]:gap-3">
+        <button type="button" className={`${pill} bg-white/12 hover:bg-white/18`} onClick={p.onSkip} disabled={p.disabled} aria-label="Pass on this place">
+          Pass
+        </button>
+        <div className="grid size-[88px] shrink-0 place-items-center rounded-full border-2 border-white/15 text-center" role="status" aria-label={`You've voted on ${p.vote.done} of ${p.vote.total} places`}>
+          <span aria-hidden="true" className="leading-tight">
+            <span className="block font-display text-xl font-bold tabular-nums">
+              {p.vote.done}/{p.vote.total}
+            </span>
+            <span className="text-[11px] text-white/60">voted</span>
+          </span>
+        </div>
+        <button type="button" className={`${pill} bg-social hover:brightness-110`} onClick={p.onGo} disabled={p.disabled} aria-label="I'm in: vote for this place">
+          <HeartIcon size={20} className={pillIcon} />
+          I&apos;m in
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex items-center gap-2 px-4 pt-2 pb-1 min-[360px]:gap-3">

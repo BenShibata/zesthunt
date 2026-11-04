@@ -132,8 +132,13 @@ export interface PartyState {
   progress: Record<string, number>;
   /** The pick the group settled on (enough "go"s, or "Decide for us"), once there is one. */
   match: string | null;
-  /** Who said go to each card, by member id, for live "♥ 2 of 3". */
+  /**
+   * Who said "I'm in" to each card, by member id. Empty until the reveal (a match): votes
+   * are a secret ballot, so nobody's pick sways anyone else's.
+   */
   likes: Record<string, string[]>;
+  /** The cards this member said "I'm in" to (their own votes are never secret from them). */
+  myVotes: string[];
   /** "Go"s a card needs to be a match: everyone in groups of up to 3, all but one in bigger groups. */
   needed: number;
   /** The one-time "+5 minutes" has been used. */
