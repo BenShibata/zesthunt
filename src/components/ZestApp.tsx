@@ -19,7 +19,7 @@ import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
-import { JoinScreen, PartyBar, PartySetup } from "./Party";
+import { InviteSheet, JoinScreen, PartyBar } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
 import { LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon } from "./Icons";
@@ -116,7 +116,7 @@ export function ZestApp() {
   // Hunt party (rooms live 10 minutes on the server; everything here is memory only).
   const party = useParty();
   const joinCode = useSyncExternalStore(subscribeHash, codeFromHash, () => null);
-  const [partySetup, setPartySetup] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [partyBusy, setPartyBusy] = useState(false);
   const [partyError, setPartyError] = useState<string | null>(null);
   const [pIndex, setPIndex] = useState(0);
@@ -442,7 +442,7 @@ export function ZestApp() {
 
   const toggleReceipt = () => {
     if (dietOpen) closeDiet();
-    setPartySetup(false);
+    setInviteOpen(false);
     setAreaOpen(false);
     setReceiptOpen((o) => !o);
   };
@@ -463,7 +463,7 @@ export function ZestApp() {
   const openDiet = () => {
     if (dietOpen) return closeDiet();
     dietAtOpen.current = JSON.stringify(dietary);
-    setPartySetup(false);
+    setInviteOpen(false);
     setReceiptOpen(false);
     setDietOpen(true);
   };
@@ -498,13 +498,17 @@ export function ZestApp() {
   const partyPicks = useMemo(() => party.deck.map(toLocalPick), [party.deck, toLocalPick]);
   const partyCurrent = party.active ? (partyPicks[pIndex] ?? null) : null;
 
-  /** Only the host has a location, so only the host's device fetches more cards for the room. */
-  const hostRefill = useCallback(() => {
-    if (hostRefilling.current) return;
+  /**
+   * Only the host has a location, so only the host's device fetches more cards for the room.
+   * A group nudge ("Heartier") passes its mood and always runs, even mid-refill.
+   */
+  const hostRefill = useCallback((nudge?: Mood) => {
+    if (hostRefilling.current && !nudge) return;
     hostRefilling.current = true;
     const got: Pick[] = [];
     streamPicks(
-      { ...baseQuery(mood, signals), exclude: party.deck.map((c) => c.id) },
+      // A nudge follows the group's word, not the host's own craving.
+      { ...baseQuery(nudge ?? mood, signals), ...(nudge ? { craving: null } : {}), exclude: party.deck.map((c) => c.id) },
       (e) => {
         if (e.type === "meta") setLastMeta(e);
         if (e.type === "pick") got.push(e.pick);
@@ -532,6 +536,10 @@ export function ZestApp() {
     setPHistory((h) => [...h, pIndex]);
     setPIndex((i) => i + 1);
     setSwipes((s) => s + 1);
+    if (dir === "skip") {
+      skipsSinceNudge.current += 1;
+      if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
+    }
     if (party.isHost && party.deck.length - (pIndex + 1) <= REFILL_AT) hostRefill();
   };
 
@@ -541,34 +549,35 @@ export function ZestApp() {
     setPHistory(pHistory.slice(0, -1));
   };
 
-  const startParty = async (nickname: string) => {
+  /** One tap: open the room with the picks in hand, then show the invite (QR, link, share). */
+  const startParty = async () => {
     const cards = queue.slice(index).map(toPartyCard);
     if (cards.length === 0) {
-      setPartyError("Wait for a pick to load first.");
+      setNotice("Wait for a pick to load, then start hunting together.");
       return;
     }
     setPartyBusy(true);
     setPartyError(null);
     try {
-      const code = await party.create(nickname, cards);
+      await party.create(cards);
       setPIndex(0);
       setPHistory([]);
-      setPartySetup(false);
       setNow(new Date());
-      setNotice(`Party ${code} is open. Tap Invite to bring friends.`);
+      setInviteOpen(true);
     } catch (e) {
-      setPartyError(e instanceof Error ? e.message : "Couldn't start a party.");
+      setNotice(e instanceof Error ? e.message : "Couldn't start a party.");
     } finally {
       setPartyBusy(false);
     }
   };
 
-  const joinParty = async (nickname: string) => {
+  /** Opening an invite link joins straight away: no form, a food name is handed out. */
+  const joinParty = useCallback(async () => {
     if (!joinCode) return;
     setPartyBusy(true);
     setPartyError(null);
     try {
-      await party.join(joinCode, nickname);
+      await party.join(joinCode);
       setPIndex(0);
       setPHistory([]);
       setNow(new Date());
@@ -577,7 +586,28 @@ export function ZestApp() {
     } finally {
       setPartyBusy(false);
     }
-  };
+  }, [joinCode, party]);
+
+  const joinTried = useRef<string | null>(null);
+  useEffect(() => {
+    if (!joinCode || party.active || joinTried.current === joinCode) return;
+    joinTried.current = joinCode;
+    void joinParty();
+  }, [joinCode, party.active, joinParty]);
+
+  // A nudge from anyone: everyone jumps to the cards that follow it, and the host fetches them.
+  const steerSeq = party.steer?.seq ?? 0;
+  const lastSteer = useRef(0);
+  useEffect(() => {
+    const s = party.steer;
+    if (!s || s.seq === lastSteer.current) return;
+    lastSteer.current = s.seq;
+    setPIndex((i) => Math.max(i, s.at));
+    const who = s.by === party.memberId ? "You" : (party.members.find((m) => m.id === s.by)?.nickname ?? "Someone");
+    setNotice(`${who} asked for ${NUDGE_LABEL[s.mood].toLowerCase()} picks.`);
+    if (party.isHost) hostRefill(s.mood);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per nudge
+  }, [steerSeq]);
 
   const leaveParty = () => {
     party.leave();
@@ -602,15 +632,11 @@ export function ZestApp() {
   };
 
   const onPartyButton = () => {
-    if (party.active) {
-      void shareParty();
-      return;
-    }
-    setPartyError(null);
     // Through closeDiet so choices made in the open sheet still apply.
     if (dietOpen) closeDiet();
     setReceiptOpen(false);
-    setPartySetup((o) => !o);
+    if (party.active) setInviteOpen((o) => !o);
+    else if (!partyBusy) void startParty();
   };
 
   useEffect(() => {
@@ -651,7 +677,7 @@ export function ZestApp() {
 
   // Lingering on a pick is interest: open its details without being asked.
   const shownId = shown?.id ?? null;
-  const busy = dietOpen || composing || areaOpen || receiptOpen || partySetup;
+  const busy = dietOpen || composing || areaOpen || receiptOpen || inviteOpen;
   useEffect(() => {
     if (!shownId || busy || expandedId === shownId) return;
     const t = setTimeout(() => setExpandedId(shownId), DWELL_MS);
@@ -683,8 +709,7 @@ export function ZestApp() {
         }}
         onDecideTogether={() => {
           setLocked(null);
-          setPartyError(null);
-          setPartySetup(true);
+          void startParty();
         }}
         onClose={() => {
           setLocked(null);
@@ -703,7 +728,7 @@ export function ZestApp() {
     return (
       <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
         <TopBar demo={feedMode === "demo"} items={[]} />
-        <JoinScreen code={joinCode} onJoin={joinParty} onSolo={clearHash} busy={partyBusy} error={partyError} />
+        <JoinScreen code={joinCode} busy={partyBusy} error={partyError} onRetry={() => void joinParty()} onSolo={clearHash} />
       </main>
     );
   }
@@ -730,7 +755,18 @@ export function ZestApp() {
           .map((m) => ({ label: NUDGE_LABEL[m], onClick: () => nudgeMood(m) })),
   };
   const shownNotice = party.ended ? "That party has ended. Back to solo picks." : notice;
-  const steering = tuneOpen && !inParty;
+  const steering = tuneOpen;
+  // In a party a nudge goes to the whole group (as a mood word only); everything else is solo.
+  const partyNudge = (m: Mood) => {
+    settleNudge();
+    void party.steerTo(m).catch(() => setNotice("Couldn't reach the group. Try again."));
+  };
+
+  // Live group taste: who said go to the card on screen, and the most-liked card so far.
+  const likesFor = (id: string) => party.likes[id]?.length ?? 0;
+  const topId = Object.keys(party.likes).sort((a, b) => likesFor(b) - likesFor(a))[0];
+  const topCard = topId ? party.deck.find((c) => c.id === topId) : undefined;
+  const topPick = topCard && likesFor(topCard.id) > 0 ? { name: topCard.name, likes: likesFor(topCard.id) } : null;
 
   // "Not quite?" answers. Each closes the row; skipping twice more brings it back.
   const settleNudge = (wait = 0) => {
@@ -769,19 +805,33 @@ export function ZestApp() {
         openDiet();
       },
     },
-    ...(inParty
-      ? []
-      : [
-          { label: "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) },
-          { label: "Change area", icon: <PinIcon size={18} />, onSelect: openArea },
-        ]),
-    { label: inParty ? "Invite friends" : "Decide with friends", icon: <PartyIcon size={18} />, onSelect: onPartyButton },
+    { label: "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) },
+    ...(inParty ? [] : [{ label: "Change area", icon: <PinIcon size={18} />, onSelect: openArea }]),
+    { label: inParty ? "Invite friends" : "Hunt together", icon: <PartyIcon size={18} />, onSelect: onPartyButton },
     { label: "What we sent", icon: <LockIcon size={18} />, onSelect: toggleReceipt },
   ];
 
   return (
     <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
-      <TopBar demo={feedMode === "demo"} items={menu} badge={dietCount} />
+      <TopBar
+        demo={feedMode === "demo"}
+        items={menu}
+        badge={dietCount}
+        action={
+          inParty ? null : (
+            // The group hunt is the headline feature, so it gets a visible button, not a menu entry.
+            <button
+              type="button"
+              onClick={onPartyButton}
+              disabled={partyBusy}
+              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-social/25 px-3.5 text-sm font-semibold whitespace-nowrap text-social-bright transition hover:bg-social/35 disabled:opacity-60"
+            >
+              <PartyIcon size={18} className="hidden shrink-0 min-[360px]:block" />
+              {partyBusy ? "Opening…" : "Hunt together"}
+            </button>
+          )
+        }
+      />
       {dietOpen && (
         // A sheet over the content (not pushing it) so the card never squeezes into the buttons.
         <div className="relative z-30 h-0">
@@ -800,8 +850,19 @@ export function ZestApp() {
         />
         </div>
       )}
-      {partySetup && !inParty && (
-        <PartySetup onStart={startParty} onCancel={() => setPartySetup(false)} busy={partyBusy} error={partyError} />
+      {inviteOpen && inParty && party.code && (
+        <div className="relative z-30 h-0">
+          <button type="button" aria-label="Close invite" tabIndex={-1} onClick={() => setInviteOpen(false)} className="fixed inset-0 -z-10 cursor-default bg-black/55" />
+          <InviteSheet
+            code={party.code}
+            link={partyLink(party.code)}
+            nickname={party.nickname}
+            memberCount={party.members.length}
+            onShare={shareParty}
+            onRename={(name) => party.rename(name).catch(() => setNotice("Couldn't rename. Try again."))}
+            onClose={() => setInviteOpen(false)}
+          />
+        </div>
       )}
       {inParty && party.code && party.memberId ? (
         <PartyBar
@@ -810,8 +871,12 @@ export function ZestApp() {
           members={party.members}
           progress={party.progress}
           meId={party.memberId}
-          onShare={shareParty}
+          topPick={party.match ? null : topPick}
+          extended={party.extended}
+          onInvite={() => setInviteOpen(true)}
           onLeave={leaveParty}
+          onDecide={() => void party.decide().catch((e: unknown) => setNotice(e instanceof Error ? e.message : "Couldn't decide."))}
+          onExtend={() => void party.extend().then(() => setNotice("5 more minutes for everyone.")).catch(() => setNotice("Couldn't add time."))}
         />
       ) : (
         <>
@@ -838,14 +903,19 @@ export function ZestApp() {
             <div className="pointer-events-auto">
               <NotQuite
                 mood={mood}
-                moodChosen={moodChosen}
-                onMood={nudgeMood}
-                onSurprise={() => {
-                  settleNudge();
-                  onWildcardTap();
-                }}
-                onCantEat={current ? cantEat : undefined}
-                onElsewhere={openArea}
+                moodChosen={moodChosen && !inParty}
+                group={inParty}
+                onMood={inParty ? partyNudge : nudgeMood}
+                onSurprise={
+                  inParty
+                    ? undefined
+                    : () => {
+                        settleNudge();
+                        onWildcardTap();
+                      }
+                }
+                onCantEat={!inParty && current ? cantEat : undefined}
+                onElsewhere={inParty ? undefined : openArea}
                 onClose={() => settleNudge(1)}
                 onBack={canGoBack ? rewind : undefined}
               />
@@ -887,6 +957,7 @@ export function ZestApp() {
             swipes={swipes}
             swipe={swipe}
             quietBadge={Boolean(shownNotice)}
+            groupLikes={{ count: likesFor(partyCurrent.id), needed: party.needed, total: party.members.length }}
             expanded={expandedId === partyCurrent.id}
             onExpand={() => setExpandedId(partyCurrent.id)}
           />

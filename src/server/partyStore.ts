@@ -1,5 +1,6 @@
 import "server-only";
 import { upstash, type UpstashRun } from "./upstash";
+import type { PartySteer } from "@/lib/types";
 
 /**
  * Party rooms: the only server-side state in Zesthunt.
@@ -28,12 +29,18 @@ export interface RoomMeta {
   /** Null for an open room started from an AI assistant: no host, everyone joins by link. */
   hostId: string | null;
   expiresAt: number;
+  /** The one-time "+5 minutes" was used. */
+  extended?: boolean;
+  /** Latest group nudge: a mood word only, never typed text. */
+  steer?: PartySteer;
 }
 
 export interface RoomStore {
   /** Creates the room only if the code is free. */
   create(code: string, meta: RoomMeta, host: StoredMember | null): Promise<boolean>;
   meta(code: string): Promise<RoomMeta | null>;
+  /** Replaces the meta and moves every key's expiry to meta.expiresAt (used by "+5 minutes" and nudges). */
+  updateMeta(code: string, meta: RoomMeta): Promise<void>;
   addMember(code: string, m: StoredMember, expiresAt: number): Promise<void>;
   members(code: string): Promise<StoredMember[]>;
   appendDeck(code: string, cardsJson: string[], expiresAt: number): Promise<number>;
@@ -82,6 +89,10 @@ class MemoryStore implements RoomStore {
   }
   async meta(code: string) {
     return this.get(code)?.meta ?? null;
+  }
+  async updateMeta(code: string, meta: RoomMeta) {
+    const room = this.get(code);
+    if (room) room.meta = meta;
   }
   async addMember(code: string, m: StoredMember) {
     this.get(code)?.members.set(m.id, m);
@@ -140,6 +151,13 @@ class UpstashStore implements RoomStore {
   async meta(code: string) {
     const [raw] = await this.run([["GET", this.k(code, "meta")]]);
     return typeof raw === "string" ? (JSON.parse(raw) as RoomMeta) : null;
+  }
+  async updateMeta(code: string, meta: RoomMeta) {
+    const ttl = Math.max(1, Math.ceil((meta.expiresAt - Date.now()) / 1000));
+    await this.run([
+      ["SET", this.k(code, "meta"), JSON.stringify(meta), "XX", "EX", ttl],
+      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "match"),
+    ]);
   }
   async addMember(code: string, m: StoredMember, expiresAt: number) {
     await this.run([["HSET", this.k(code, "members"), m.id, JSON.stringify(m)], ...this.expire(code, expiresAt, "members")]);

@@ -103,10 +103,15 @@ The area line appears only when it matters: a rough IP guess ("San Francisco (ap
 
 ## Hunt party
 
-1. Choose **Decide with friends** in the ⋯ menu (or on the screen after Let's go), enter a nickname, and the current picks become the shared deck. **Invite** opens the share sheet (or copies the link) with `zesthunt.com/#p=CODE`. The code sits after the `#`, so it never reaches the server or its logs.
-2. Friends open the link, type a nickname and swipe the same cards. When every member (2+) swipes right on the same pick, every device shows "It's a match!" with haptics and confetti.
-3. Rooms have a hard 10-minute TTL from creation that activity doesn't extend. The room holds only the code, nicknames (plus a hashed join key), restaurant cards and swipes. Never location, cravings or travel times; each device works out its own walk time.
-4. Only the host's device adds cards (it's the one with a location). Party traffic goes through one `POST /api/party` endpoint so codes and keys stay out of URLs. Members poll every 2 s.
+The headline feature, so it has its own button: **Hunt together** in the top bar (also in the ⋯ menu and on the screen after Let's go).
+
+1. **One tap to start.** The room opens with the picks in hand and the invite shows straight away: a **QR code** (drawn on the phone, for friends standing nearby), the code, **Share link** (share sheet, or copies the link) for everyone else, and the name you were handed (**"You're Ramen to the group" · Rename**). Links look like `zesthunt.com/#p=CODE`; the code sits after the `#`, so it never reaches the server or its logs.
+2. **No form to join.** Opening the link joins straight away with a food name ("Taco", "Dumpling"…), renamable from Invite.
+3. **Live taste.** Each card shows **♥ 2 of 3** as people swipe (and "1 more to match"), and the bar shows the leading pick.
+4. **Matches that happen.** Everyone has to say go in groups of up to 3; from 4 people it's everyone but one, so one holdout can't stall it. **Decide for us** makes the most-liked card the match at any time. In the last 2 minutes the bar shows the top pick with **Go with it**, plus a one-time **+5 min** for the whole room.
+5. **Group steering.** "Not quite? Steer the group's picks" (after two skips, or ⋯ → Steer the picks) offers Lighter, Heartier, Quicker, Cheaper and A treat. Only the mood word goes to the room; the host's phone (the one with a location) fetches matching cards, and everyone jumps to them with "Taco asked for heartier picks."
+6. **Privacy.** Rooms have a hard 10-minute TTL from creation (15 with the one-time extension) that activity doesn't extend. A room holds only the code, nicknames (plus a hashed join key), restaurant cards, swipes, the match, the latest nudge word and whether time was added. Never location, cravings, typed text or travel times; each device works out its own walk time.
+7. Party traffic goes through one `POST /api/party` endpoint (create, join, state, swipe, cards, rename, decide, extend, steer) so codes and keys stay out of URLs. Members poll every 2 s.
 
 ## Paying (without Zesthunt touching money)
 

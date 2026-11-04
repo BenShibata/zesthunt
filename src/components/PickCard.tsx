@@ -24,6 +24,8 @@ interface Props {
    */
   expanded?: boolean;
   onExpand?: () => void;
+  /** In a party: how many said go to this card, how many it needs, and the group size. */
+  groupLikes?: { count: number; needed: number; total: number };
 }
 
 /** What each health label searches for when tapped. */
@@ -33,7 +35,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, groupLikes }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -70,7 +72,17 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
           SKIP
         </span>
 
-        {expanded && (
+        {/* In a party, the group's live "♥ 2 of 3" takes the badge's place, always visible. */}
+        {groupLikes && groupLikes.total > 1 && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-social/85 px-3 text-sm font-semibold text-white backdrop-blur-md">
+              <span aria-hidden="true">♥</span>
+              {groupLikes.count} of {groupLikes.total}
+              {groupLikes.count > 0 && groupLikes.count === groupLikes.needed - 1 && <span className="font-normal"> · 1 more to match</span>}
+            </span>
+          </div>
+        )}
+        {expanded && !groupLikes && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
               {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}

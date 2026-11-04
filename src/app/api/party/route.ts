@@ -1,6 +1,21 @@
 import { z } from "zod";
 import { clientIp, rateLimit, safeErrorLabel } from "@/server/memory";
-import { CODE_RE, NicknameSchema, PartyCardSchema, PartyError, addCards, createParty, joinParty, partyState, recordSwipe } from "@/server/party";
+import {
+  CODE_RE,
+  NicknameSchema,
+  PartyCardSchema,
+  PartyError,
+  addCards,
+  createParty,
+  decideNow,
+  extendParty,
+  joinParty,
+  partyState,
+  recordSwipe,
+  renameMember,
+  steerParty,
+} from "@/server/party";
+import { MOODS } from "@/lib/types";
 import type { PartyCard } from "@/lib/types";
 
 const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
@@ -9,8 +24,13 @@ const Code = z.string().toUpperCase().regex(CODE_RE);
 const Auth = { code: Code, memberId: z.string().max(32), key: z.string().max(64) };
 
 const Body = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("create"), nickname: NicknameSchema, cards: z.array(PartyCardSchema).min(1).max(40) }),
-  z.object({ action: z.literal("join"), code: Code, nickname: NicknameSchema }),
+  // Nicknames are optional: the room hands out a food name, renamable later.
+  z.object({ action: z.literal("create"), nickname: NicknameSchema.optional(), cards: z.array(PartyCardSchema).min(1).max(40) }),
+  z.object({ action: z.literal("join"), code: Code, nickname: NicknameSchema.optional() }),
+  z.object({ action: z.literal("rename"), ...Auth, nickname: NicknameSchema }),
+  z.object({ action: z.literal("decide"), ...Auth }),
+  z.object({ action: z.literal("extend"), ...Auth }),
+  z.object({ action: z.literal("steer"), ...Auth, mood: z.enum(MOODS) }),
   z.object({ action: z.literal("state"), ...Auth, since: z.number().int().min(0).max(1000) }),
   z.object({ action: z.literal("swipe"), ...Auth, pickId: z.string().max(200), dir: z.enum(["go", "skip"]) }),
   z.object({ action: z.literal("cards"), ...Auth, cards: z.array(PartyCardSchema).max(40) }),
@@ -45,6 +65,14 @@ export async function POST(request: Request) {
       case "swipe":
         await recordSwipe(body.code, body.memberId, body.key, body.pickId, body.dir);
         return Response.json({ ok: true }, { headers: NO_STORE });
+      case "rename":
+        return Response.json(await renameMember(body.code, body.memberId, body.key, body.nickname), { headers: NO_STORE });
+      case "decide":
+        return Response.json(await decideNow(body.code, body.memberId, body.key), { headers: NO_STORE });
+      case "extend":
+        return Response.json(await extendParty(body.code, body.memberId, body.key), { headers: NO_STORE });
+      case "steer":
+        return Response.json(await steerParty(body.code, body.memberId, body.key, body.mood), { headers: NO_STORE });
       case "cards":
         return Response.json({ deckSize: await addCards(body.code, body.memberId, body.key, body.cards as PartyCard[]) }, { headers: NO_STORE });
     }

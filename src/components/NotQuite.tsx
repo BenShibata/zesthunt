@@ -25,16 +25,19 @@ export function NotQuite({
   onElsewhere,
   onClose,
   onBack,
+  group,
 }: {
+  /** In a party: the nudge goes to everyone, and only the mood nudges apply. */
+  group?: boolean;
   /** The row covers the photo's Back button, so it carries its own. */
   onBack?: () => void;
   mood: Mood;
   /** Only highlight a nudge the person picked, not the default mood. */
   moodChosen: boolean;
   onMood: (m: Mood) => void;
-  onSurprise: () => void;
+  onSurprise?: () => void;
   onCantEat?: () => void;
-  onElsewhere: () => void;
+  onElsewhere?: () => void;
   onClose: () => void;
 }) {
   // Compact so the whole row fits over the photo even on small phones; ::after pads taps to 44px.
@@ -44,7 +47,7 @@ export function NotQuite({
     <section aria-labelledby="not-quite-title" className="animate-rise rounded-3xl bg-ink-3/95 p-3 shadow-2xl ring-1 ring-white/10 backdrop-blur-md">
       <div className="flex items-center justify-between gap-2">
         <h2 id="not-quite-title" className="pl-1 text-[13px] font-semibold text-white min-[380px]:text-sm">
-          Not quite? Steer the next picks
+          {group ? "Not quite? Steer the group's picks" : "Not quite? Steer the next picks"}
         </h2>
         <div className="-my-1.5 flex shrink-0 items-center">
           {onBack && (
@@ -72,20 +75,24 @@ export function NotQuite({
             </button>
           );
         })}
-        <button type="button" onClick={onSurprise} className={`${chip} bg-white/10 text-white hover:bg-white/15`} aria-label="Surprise me: a pick from another mood (or shake your phone)">
-          <DiceIcon size={15} />
-          Surprise me
-        </button>
+        {onSurprise && (
+          <button type="button" onClick={onSurprise} className={`${chip} bg-white/10 text-white hover:bg-white/15`} aria-label="Surprise me: a pick from another mood (or shake your phone)">
+            <DiceIcon size={15} />
+            Surprise me
+          </button>
+        )}
         {onCantEat && (
           <button type="button" onClick={onCantEat} className={`${chip} bg-teal/25 text-teal-bright hover:bg-teal/35`}>
             <UtensilsIcon size={15} />
             Can&apos;t eat this
           </button>
         )}
-        <button type="button" onClick={onElsewhere} className={`${chip} bg-white/10 text-white hover:bg-white/15`}>
-          <PinIcon size={15} />
-          Somewhere else
-        </button>
+        {onElsewhere && (
+          <button type="button" onClick={onElsewhere} className={`${chip} bg-white/10 text-white hover:bg-white/15`}>
+            <PinIcon size={15} />
+            Somewhere else
+          </button>
+        )}
       </div>
     </section>
   );

@@ -15,7 +15,7 @@ export interface MenuItem {
  * Just the brand and one ⋯ menu. Everything that used to sit up here (what you eat,
  * Party, privacy) is one tap away in the menu, or comes to the person when it's relevant.
  */
-export function TopBar({ demo, items, badge = 0 }: { demo?: boolean; items: MenuItem[]; badge?: number }) {
+export function TopBar({ demo, items, badge = 0, action }: { demo?: boolean; items: MenuItem[]; badge?: number; action?: ReactNode }) {
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
 
@@ -35,13 +35,16 @@ export function TopBar({ demo, items, badge = 0 }: { demo?: boolean; items: Menu
     <header className="relative z-40 flex h-14 items-center justify-between gap-2 px-4 pt-[env(safe-area-inset-top)]">
       <div className="flex min-w-0 items-center gap-2">
         <CompassMark size={26} className="shrink-0 text-paprika-bright" />
-        <span className="font-display text-xl font-extrabold tracking-tight">zesthunt</span>
+        {/* The mark alone under 400 px, so the action button keeps its words. */}
+        <span className="hidden font-display text-xl font-extrabold tracking-tight min-[400px]:inline">zesthunt</span>
         {demo && (
           <span className="rounded-full border border-white/25 px-2 py-0.5 text-xs font-semibold text-white/70" title="No API keys set: showing fictional places">
             Demo
           </span>
         )}
       </div>
+      <div className="flex shrink-0 items-center gap-2">
+      {action}
       {items.length > 0 && (
       <div ref={wrap} className="relative">
         <button
@@ -86,6 +89,7 @@ export function TopBar({ demo, items, badge = 0 }: { demo?: boolean; items: Menu
         )}
       </div>
       )}
+      </div>
     </header>
   );
 }

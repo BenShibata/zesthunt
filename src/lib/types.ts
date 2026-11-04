@@ -130,6 +130,22 @@ export interface PartyState {
   deckSize: number;
   /** How many cards each member has swiped, for "waiting on…" hints. */
   progress: Record<string, number>;
-  /** The pick everyone swiped right on, once there is one. */
+  /** The pick the group settled on (enough "go"s, or "Decide for us"), once there is one. */
   match: string | null;
+  /** Who said go to each card, by member id, for live "♥ 2 of 3". */
+  likes: Record<string, string[]>;
+  /** "Go"s a card needs to be a match: everyone in groups of up to 3, all but one in bigger groups. */
+  needed: number;
+  /** The one-time "+5 minutes" has been used. */
+  extended: boolean;
+  /** The latest group nudge ("Heartier"): the host's phone fetches matching cards from deck position `at`. */
+  steer: PartySteer | null;
+}
+
+export interface PartySteer {
+  mood: Mood;
+  seq: number;
+  /** Deck size when the nudge was made; cards from here on follow it. */
+  at: number;
+  by: string;
 }

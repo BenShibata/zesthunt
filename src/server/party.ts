@@ -2,7 +2,22 @@ import "server-only";
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 import { MAX_DECK, MAX_MEMBERS, ROOM_TTL_MS, roomStore, type StoredMember } from "./partyStore";
-import type { PartyCard, PartyState } from "@/lib/types";
+import type { Mood, PartyCard, PartyState } from "@/lib/types";
+
+/** Friendly names handed out on join, so nobody has to fill in a form. Tap to rename. */
+const FOOD_NAMES = ["Taco", "Ramen", "Dumpling", "Mango", "Biscuit", "Noodle", "Pickle", "Waffle", "Mochi", "Falafel", "Churro", "Kimchi", "Bao", "Pretzel"];
+
+export function pickName(taken: string[]): string {
+  const free = FOOD_NAMES.filter((n) => !taken.includes(n));
+  return free.length > 0 ? free[randomInt(free.length)] : `Guest ${taken.length + 1}`;
+}
+
+/** "Go"s needed for a match: everyone in groups of up to 3, all but one in bigger groups (so one holdout can't stall it). */
+export function matchNeeded(members: number): number {
+  return members <= 3 ? members : members - 1;
+}
+
+const EXTEND_MS = 5 * 60_000;
 
 // No 0/O/1/I/L so codes are easy to read out loud.
 const ALPHABET = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -87,15 +102,16 @@ async function authed(code: string, memberId: string, key: string) {
   return { meta, member };
 }
 
-export async function createParty(nickname: string, cards: PartyCard[]) {
+export async function createParty(nickname: string | undefined, cards: PartyCard[]) {
   const store = roomStore();
   const expiresAt = Date.now() + ROOM_TTL_MS;
-  const { member, key } = newMember(nickname);
+  const name = nickname ?? pickName([]);
+  const { member, key } = newMember(name);
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newCode();
     if (await store.create(code, { hostId: member.id, expiresAt }, member)) {
       await store.appendDeck(code, cards.slice(0, MAX_DECK).map((c) => JSON.stringify(c)), expiresAt);
-      return { code, memberId: member.id, key, expiresAt };
+      return { code, memberId: member.id, key, expiresAt, nickname: name };
     }
   }
   throw new PartyError(503, "Couldn't open a room. Try again.");
@@ -115,13 +131,20 @@ export async function createOpenParty(cards: PartyCard[]) {
   throw new PartyError(503, "Couldn't open a room. Try again.");
 }
 
-export async function joinParty(code: string, nickname: string) {
+export async function joinParty(code: string, nickname?: string) {
   const meta = await liveMeta(code);
   const members = await roomStore().members(code);
   if (members.length >= MAX_MEMBERS) throw new PartyError(409, "This party is full.");
-  const { member, key } = newMember(nickname);
+  const name = nickname ?? pickName(members.map((m) => m.nickname));
+  const { member, key } = newMember(name);
   await roomStore().addMember(code, member, meta.expiresAt);
-  return { code, memberId: member.id, key, expiresAt: meta.expiresAt };
+  return { code, memberId: member.id, key, expiresAt: meta.expiresAt, nickname: name };
+}
+
+export async function renameMember(code: string, memberId: string, key: string, nickname: string) {
+  const { meta, member } = await authed(code, memberId, key);
+  await roomStore().addMember(code, { ...member, nickname }, meta.expiresAt);
+  return { nickname };
 }
 
 export async function addCards(code: string, memberId: string, key: string, cards: PartyCard[]) {
@@ -132,16 +155,59 @@ export async function addCards(code: string, memberId: string, key: string, card
   return roomStore().appendDeck(code, cards.slice(0, room).map((c) => JSON.stringify(c)), meta.expiresAt);
 }
 
-/** Records a swipe, then checks for a match: a pick every member (2+) swiped right on. */
+/** Who said go to each card. */
+function likesFrom(swipes: Record<string, "go" | "skip">, memberIds: string[]): Record<string, string[]> {
+  const likes: Record<string, string[]> = {};
+  for (const [k, dir] of Object.entries(swipes)) {
+    const [member, pickId] = k.split("|");
+    if (dir === "go" && memberIds.includes(member)) (likes[pickId] ??= []).push(member);
+  }
+  return likes;
+}
+
+/** Records a swipe, then checks for a match: a pick enough members (2+) swiped right on. */
 export async function recordSwipe(code: string, memberId: string, key: string, pickId: string, dir: "go" | "skip") {
   const { meta } = await authed(code, memberId, key);
   const store = roomStore();
   await store.swipe(code, memberId, pickId, dir, meta.expiresAt);
   if (dir !== "go") return;
   const [members, swipes] = await Promise.all([store.members(code), store.swipes(code)]);
-  if (members.length >= 2 && members.every((m) => swipes[`${m.id}|${pickId}`] === "go")) {
+  const goes = likesFrom(swipes, members.map((m) => m.id))[pickId]?.length ?? 0;
+  if (members.length >= 2 && goes >= matchNeeded(members.length)) {
     await store.setMatch(code, pickId, meta.expiresAt);
   }
+}
+
+/** "Decide for us": the most-liked card wins (earliest in the deck breaks ties). Needs at least one "go". */
+export async function decideNow(code: string, memberId: string, key: string) {
+  const { meta } = await authed(code, memberId, key);
+  const store = roomStore();
+  const [members, swipes, deck] = await Promise.all([store.members(code), store.swipes(code), store.deck(code, 0)]);
+  const likes = likesFrom(swipes, members.map((m) => m.id));
+  const order = deck.cards.map((c) => (JSON.parse(c) as PartyCard).id);
+  let best: string | null = null;
+  for (const id of order) if ((likes[id]?.length ?? 0) > (best ? likes[best].length : 0)) best = id;
+  if (!best) throw new PartyError(409, "Nobody has said go to anything yet.");
+  await store.setMatch(code, best, meta.expiresAt);
+  return { match: best };
+}
+
+/** "+5 minutes", once per room. */
+export async function extendParty(code: string, memberId: string, key: string) {
+  const { meta } = await authed(code, memberId, key);
+  if (meta.extended) throw new PartyError(409, "This party already got its extra 5 minutes.");
+  const next = { ...meta, extended: true, expiresAt: meta.expiresAt + EXTEND_MS };
+  await roomStore().updateMeta(code, next);
+  return { expiresAt: next.expiresAt };
+}
+
+/** A group nudge ("Heartier"). Only the mood word is stored; the host's phone fetches matching cards. */
+export async function steerParty(code: string, memberId: string, key: string, mood: Mood) {
+  const { meta } = await authed(code, memberId, key);
+  const { size } = await roomStore().deck(code, 0);
+  const steer = { mood, seq: (meta.steer?.seq ?? 0) + 1, at: size, by: memberId };
+  await roomStore().updateMeta(code, { ...meta, steer });
+  return { steer };
 }
 
 export async function partyState(code: string, memberId: string, key: string, since: number): Promise<PartyState> {
@@ -162,5 +228,9 @@ export async function partyState(code: string, memberId: string, key: string, si
     deckSize: deck.size,
     progress,
     match,
+    likes: likesFrom(swipes, members.map((m) => m.id)),
+    needed: matchNeeded(Math.max(2, members.length)),
+    extended: Boolean(meta.extended),
+    steer: meta.steer ?? null,
   };
 }

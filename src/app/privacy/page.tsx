@@ -36,8 +36,8 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "Hunt parties",
     body: [
-      "A party room holds only its code, nicknames, the shared restaurant cards and everyone's swipes. Never location or what anyone typed.",
-      "Rooms vanish 10 minutes after they're created, no matter what.",
+      "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's swipes and the latest group nudge as a mood word. Never location or what anyone typed.",
+      "Rooms vanish 10 minutes after they're created (15 if someone taps +5 min, once), no matter what.",
     ],
   },
   {
