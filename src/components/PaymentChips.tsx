@@ -3,15 +3,6 @@ import { BagIcon, CardIcon, CashIcon, TapIcon } from "./Icons";
 
 type Chip = { key: string; label: string; Icon: typeof CardIcon };
 
-/** Single most useful payment fact for the photo overlay. Unknown = nothing. */
-export function primaryPayment(p: PaymentOptions | null): Chip | null {
-  if (!p) return null;
-  if (p.acceptsCashOnly) return { key: "cash", label: "Cash only", Icon: CashIcon };
-  if (p.acceptsNfc) return { key: "nfc", label: "Tap to pay", Icon: TapIcon };
-  if (p.acceptsCreditCards || p.acceptsDebitCards) return { key: "cards", label: "Cards", Icon: CardIcon };
-  return null;
-}
-
 /** All known payment facts for the locked-in sheet. Never guesses. */
 export function paymentChips(p: PaymentOptions | null, hasOnlineOrdering: boolean): Chip[] {
   const chips: Chip[] = [];
@@ -25,15 +16,28 @@ export function paymentChips(p: PaymentOptions | null, hasOnlineOrdering: boolea
   return chips;
 }
 
-export function OverlayPaymentChip({ payment }: { payment: PaymentOptions | null }) {
-  const chip = primaryPayment(payment);
-  if (!chip) return null;
-  const { Icon, label } = chip;
+/**
+ * One quiet line in a pick's details ("Pays by tap or card"), instead of a chip on the photo
+ * that competes with the decision. "Cash only" stands out, since it can change your mind.
+ * Unknown = nothing.
+ */
+export function PaymentLine({ payment }: { payment: PaymentOptions | null }) {
+  if (!payment) return null;
+  if (payment.acceptsCashOnly) {
+    return (
+      <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-star/15 px-2.5 py-1 text-sm font-semibold text-star">
+        <CashIcon size={15} />
+        Cash only
+      </p>
+    );
+  }
+  const ways = [payment.acceptsNfc && "tap", (payment.acceptsCreditCards || payment.acceptsDebitCards) && "card"].filter(Boolean);
+  if (ways.length === 0) return null;
   return (
-    <span className="inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
-      <Icon size={16} />
-      {label}
-    </span>
+    <p className="mt-1.5 flex items-center gap-1.5 text-sm text-white/60">
+      {payment.acceptsNfc ? <TapIcon size={15} /> : <CardIcon size={15} />}
+      Pays by {ways.join(" or ")}
+    </p>
   );
 }
 

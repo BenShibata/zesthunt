@@ -14,7 +14,11 @@ Zesthunt has no accounts, no login, no cookies, no analytics, no tracking script
 | Dietary needs and allergies | In memory by default | Same as above |
 | …if you turn on **"Remember this on this device"** under What I eat (off by default) | This browser's `localStorage`, key `zesthunt:dietary:v1`, holding only your diet and allergy selections | Until you tap **Forget me** (deletes it immediately), turn the switch off, or clear site data |
 
+| …if you turn on **"Remember [place] for next time"** after Let's go (off by default, per place) | This browser's `localStorage`, key `zesthunt:wins:v1`, holding up to 5 entries of place ID, place name and when you chose it | Until you turn that switch off, choose **Forget remembered places** in the ⋯ menu, or clear site data. Used only on the phone, to offer that place first when it's open nearby; never sent anywhere. |
+
 Zesthunt writes nothing else to `localStorage`, `sessionStorage`, IndexedDB or cookies.
+
+**"Want to come?"** builds a short message on your phone (the place's name, the dish, its closing time and a Maps link to the place) and opens your own share sheet. It never includes where you are, and nothing goes through our server.
 
 ## Sent to our server, per request
 
@@ -65,6 +69,7 @@ Party rooms are the only thing the server keeps, and only briefly.
 
 - **Contents:** the 6-character room code, each member's nickname (a handed-out food name unless they rename) and a hash of their join key, the shared deck of restaurant cards, each member's swipes on those cards, the match, the latest group nudge as one of five mood words ("comfort") with who sent it, and whether the one-time 5 extra minutes were used.
 - **Never in a room:** location, travel times, what anyone typed or said, dietary needs, or IP addresses.
+- **Places someone removes:** each phone reads the cards against its own "What I eat" on the phone and shows its owner a private note; nothing about anyone's needs is sent. When a person taps **Can't eat this**, or a place would close before their phone says they could get there, only that card's ID goes to the room. The room keeps that list (so those places drop out for everyone), never who sent it or why.
 - **Votes are a secret ballot:** until the group has a result, the server sends each member only their own votes, never anyone else's. At the result, everyone sees who was in on the top picks.
 - **Lifetime:** a hard 10 minutes from creation. Activity doesn't extend it; the only way to add time is the one-time "+5 min" any member can tap, for 15 minutes at most. Every key expires at the same moment (Redis `EXPIREAT` in production; an in-memory map in local development).
 - **Share links** look like `zesthunt.com/#p=CODE`. The code sits after the `#`, which browsers never send to servers, so it doesn't appear in request logs. Party API calls carry the code and key in the request body, not the URL.

@@ -1,11 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { HealthLabel, Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
-import { OverlayPaymentChip } from "./PaymentChips";
+import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, WalkIcon } from "./Icons";
+import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import type { useSwipe } from "@/hooks/useSwipe";
 
 interface Props {
@@ -26,6 +27,15 @@ interface Props {
   onExpand?: () => void;
   /** In a party: you already voted for this card (others' votes stay secret). */
   voted?: boolean;
+  /** In a party: remove this place for everyone (anonymously) because I can't eat there. */
+  onCantEat?: () => void;
+  /** In a party: a private heads-up for me only ("this looks meat-focused"). Never removes anything. */
+  fitNote?: { kind: "food" | "time"; text: string } | null;
+  /** A place you chose before and asked to remember: offered first, with a badge. */
+  returning?: boolean;
+  /** First card of the session: lean left and right once to show it can be swiped. */
+  hint?: boolean;
+  onHinted?: () => void;
 }
 
 /** What each health label searches for when tapped. */
@@ -35,7 +45,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, returning, fitNote }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -47,7 +57,8 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
       {/* Photo: swipe surface */}
       <div
         {...handlers}
-        className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
+        className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx ? "animate-nudge" : ""}`}
+        onAnimationEnd={(e) => e.animationName === "nudge" && onHinted?.()}
         style={{
           transform: dx ? `translateX(${dx}px) rotate(${dx / 40}deg)` : undefined,
           transition: dx ? "none" : "transform 220ms ease-out",
@@ -80,7 +91,14 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
             </span>
           </div>
         )}
-        {expanded && voted === undefined && (
+        {returning && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-paprika/90 px-3 text-sm font-semibold text-white backdrop-blur-md">
+              <span aria-hidden="true">♥</span> Your pick last time
+            </span>
+          </div>
+        )}
+        {expanded && voted === undefined && !returning && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
               {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
@@ -104,7 +122,6 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </span>
             </p>
           )}
-          {expanded && <OverlayPaymentChip payment={pick.payment} />}
         </div>
       </div>
 
@@ -143,6 +160,27 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </>
             )}
           </p>
+          {onCantEat && fitNote ? (
+            // A private heads-up with the choice right beside it: the person decides, not us.
+            <div className="mt-2 rounded-2xl bg-star/12 px-3 py-2 text-sm text-white/90 ring-1 ring-star/30" role="note">
+              <p>{fitNote.text}</p>
+              <button type="button" onClick={onCantEat} className="-ml-1 mt-0.5 inline-flex min-h-11 items-center gap-1 rounded-full px-1 font-semibold text-star hover:underline">
+                {fitNote.kind === "food" ? <UtensilsIcon size={14} /> : <ClockIcon size={14} />}
+                {fitNote.kind === "food" ? "Can't eat this? Remove it for everyone" : "Too tight? Remove it for everyone"}
+              </button>
+            </div>
+          ) : (
+            onCantEat && (
+              <button
+                type="button"
+                onClick={onCantEat}
+                className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
+              >
+                <UtensilsIcon size={14} />
+                Can&apos;t eat this
+              </button>
+            )
+          )}
           {closingSoon && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-paprika/20 px-2.5 py-1 text-sm font-semibold text-paprika-bright">
               <ClockIcon size={15} />
@@ -151,6 +189,8 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
           )}
           {expanded ? (
             <div className="animate-rise">
+              {/* How to pay is a "getting there" detail: not shown while a group is voting. */}
+              {voted === undefined && <PaymentLine payment={pick.payment} />}
               <TangentChips pick={pick} onTangent={onTangent} />
             </div>
           ) : (
@@ -215,11 +255,22 @@ function TangentChips({ pick, onTangent }: { pick: Pick; onTangent?: (query: str
   );
 }
 
-/** Skeleton shaped like the card so nothing jumps when the first pick lands. */
+const LOADING_LINES = ["Sniffing out what's open nearby…", "Checking who's still serving…", "Counting the steps to each door…", "Picking something worth the walk…"];
+
+/** Skeleton shaped like the card so nothing jumps when the first pick lands, with a little company while it loads. */
 export function PickSkeleton() {
+  const [line, setLine] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setLine((i) => (i + 1) % LOADING_LINES.length), 1600);
+    return () => clearInterval(t);
+  }, []);
   return (
     <div className="flex min-h-0 flex-1 flex-col" aria-busy="true" aria-label="Finding a pick near you">
-      <div className="skeleton min-h-0 flex-1" />
+      <div className="skeleton relative grid min-h-0 flex-1 place-items-center">
+        <p key={line} aria-hidden="true" className="animate-rise px-6 text-center text-base font-medium text-white/70">
+          {LOADING_LINES[line]}
+        </p>
+      </div>
       <div className="flex items-start gap-4 px-4 pt-4 pb-2">
         <div className="flex-1 space-y-2">
           <div className="skeleton h-3 w-16 rounded" />

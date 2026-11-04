@@ -63,6 +63,7 @@ export function useParty() {
   const [result, setResult] = useState<PartyResult | null>(null);
   const [likes, setLikes] = useState<Record<string, string[]>>({});
   const [myVotes, setMyVotes] = useState<string[]>([]);
+  const [unfit, setUnfit] = useState<string[]>([]);
   const [needed, setNeeded] = useState(2);
   const [extended, setExtended] = useState(false);
   const [steer, setSteer] = useState<PartySteer | null>(null);
@@ -82,6 +83,7 @@ export function useParty() {
     setMatch(null);
     setLikes({});
     setMyVotes([]);
+    setUnfit([]);
     setExtended(false);
     setSteer(null);
     deckLen.current = 0;
@@ -146,6 +148,17 @@ export function useParty() {
     setExtended(true);
   }, [auth]);
 
+  /** "Doesn't fit someone": only card ids go to the room. Applied here at once, so the card leaves now. */
+  const markUnfit = useCallback(
+    async (pickIds: string[]) => {
+      const a = auth();
+      if (!a || pickIds.length === 0) return;
+      setUnfit((prev) => [...new Set([...prev, ...pickIds])]);
+      await call({ action: "unfit", ...a, pickIds });
+    },
+    [auth],
+  );
+
   /** A group nudge: only the mood word goes to the room. */
   const steerTo = useCallback(
     async (mood: Mood) => {
@@ -189,6 +202,7 @@ export function useParty() {
         setProgress(s.progress);
         setLikes(s.likes);
         setMyVotes(s.myVotes);
+        setUnfit((prev) => [...new Set([...prev, ...s.unfit])]);
         setNeeded(s.needed);
         setExtended(s.extended);
         setSteer((prev) => (prev?.seq === s.steer?.seq ? prev : s.steer));
@@ -232,6 +246,8 @@ export function useParty() {
     nickname: members.find((m) => m.id === session?.memberId)?.nickname ?? null,
     likes,
     myVotes,
+    unfit,
+    markUnfit,
     needed,
     extended,
     steer,

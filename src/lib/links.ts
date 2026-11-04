@@ -43,3 +43,15 @@ export function orderAhead(pick: Pick): OrderAhead {
     ],
   };
 }
+
+/**
+ * "Want to come?": one place to send a friend, lighter than a party. Built on the phone and
+ * sent from the user's own share sheet; it names the place, never where the sender is.
+ */
+export function inviteMessage(pick: Pick): { title: string; text: string; url: string } {
+  const url = pick.mapsUrl ?? directionsUrl(pick);
+  const closes = pick.closesAt
+    ? ` Open till ${new Date(pick.closesAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
+    : "";
+  return { title: `Want to come to ${pick.name}?`, text: `Want to come? ${pick.name}: ${pick.suggestion.replace(/^Try /, "")}.${closes}`, url };
+}

@@ -124,12 +124,36 @@ body {
   animation: march 1.2s linear infinite;
 }
 
+/* The first card of a session leans left and right once, so swiping is discovered, not explained. */
+@keyframes nudge {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  22% { transform: translateX(-18px) rotate(-1.5deg); }
+  50% { transform: translateX(14px) rotate(1.2deg); }
+  74% { transform: translateX(-4px) rotate(-0.3deg); }
+}
+
+.animate-nudge {
+  animation: nudge 1.1s ease-in-out 1.4s both;
+}
+
+/* Votes being counted before the reveal. */
+@keyframes beat {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  40% { transform: scale(1.25); opacity: 1; }
+}
+
+.animate-beat {
+  animation: beat 0.9s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-develop,
   .animate-rise,
   .skeleton,
   .route-march,
-  .confetti {
+  .confetti,
+  .animate-nudge,
+  .animate-beat {
     animation: none;
   }
 }
