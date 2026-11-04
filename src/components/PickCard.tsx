@@ -24,7 +24,7 @@ interface Props {
    */
   expanded?: boolean;
   onExpand?: () => void;
-  /** In a party: you already said "I'm in" to this card (others' votes stay secret). */
+  /** In a party: you already voted for this card (others' votes stay secret). */
   voted?: boolean;
 }
 
@@ -62,7 +62,7 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
           className="pointer-events-none absolute left-5 top-1/3 rotate-[-12deg] rounded-lg border-4 border-paprika-bright px-3 py-1 font-display text-3xl font-extrabold text-paprika-bright"
           style={{ opacity: Math.max(0, progress) }}
         >
-          {voted === undefined ? "GO" : "I'M IN"}
+          {voted === undefined ? "GO" : "VOTE"}
         </span>
         <span
           aria-hidden="true"
@@ -76,7 +76,7 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
         {voted && (
           <div className="pointer-events-none absolute right-3 top-3">
             <span className="inline-flex h-8 items-center gap-1 rounded-full bg-social/85 px-3 text-sm font-semibold text-white backdrop-blur-md">
-              <span aria-hidden="true">♥</span> You&apos;re in
+              <span aria-hidden="true">♥</span> You voted
             </span>
           </div>
         )}

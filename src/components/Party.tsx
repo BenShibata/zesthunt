@@ -209,7 +209,10 @@ export function PartyBar({
   onLeave,
   onReveal,
   onExtend,
+  onRequest,
 }: {
+  /** Ask the group for something different (only where a host can fetch new cards). */
+  onRequest?: () => void;
   code: string;
   expiresAt: number;
   members: PartyMember[];
@@ -235,8 +238,11 @@ export function PartyBar({
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Avatars members={members} progress={progress} deckSize={deckSize} meId={meId} />
           <span className={`truncate text-sm ${lowTime ? "font-semibold text-paprika-bright" : "text-white/80"}`}>
-            <span className="font-mono font-semibold tracking-widest text-white">{code}</span>
-            <span aria-hidden="true"> · </span>
+            {/* On small phones the clock matters more than the code (which Invite shows). */}
+            <span className="hidden min-[380px]:inline">
+              <span className="font-mono font-semibold tracking-widest text-white">{code}</span>
+              <span aria-hidden="true"> · </span>
+            </span>
             <Countdown seconds={seconds} />
           </span>
         </div>
@@ -252,13 +258,18 @@ export function PartyBar({
           {allDone ? (
             <span className="font-semibold text-white">Everyone&apos;s voted!</span>
           ) : members.length < 2 ? (
-            "Invite someone to vote with you."
+            "Invite friends to vote."
           ) : (
             <>
               <span aria-hidden="true">🔒 </span>Votes are secret · {finished} of {members.length} done
             </>
           )}
         </span>
+        {onRequest && !lowTime && (
+          <button type="button" onClick={onRequest} className="h-11 shrink-0 rounded-full bg-white/10 px-4 font-semibold text-white hover:bg-white/15">
+            Request
+          </button>
+        )}
         {lowTime && !extended && (
           <button type="button" onClick={onExtend} className="h-11 shrink-0 rounded-full px-3 font-semibold text-social-bright hover:bg-white/10">
             +5 min
@@ -331,7 +342,7 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
         <p className="text-white/80">{winner.card.suggestion}</p>
         <p className="flex items-center gap-1.5 text-lg font-semibold">
           <HeartIcon size={20} className="text-paprika-bright" />
-          {winner.likers.length} of {voters} in
+          {winner.likers.length} of {voters} voted for it
         </p>
         {winner.likers.length > 0 && <p className="text-sm text-white/70">{winner.likers.join(", ")}</p>}
       </section>

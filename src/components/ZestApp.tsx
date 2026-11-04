@@ -42,7 +42,7 @@ const IDLE_MS = 10 * 60 * 1000;
 const DWELL_MS = 4000;
 /** Skips in a row before "Not quite?" offers to steer. */
 const SKIPS_BEFORE_NUDGE = 2;
-const PARTY_COACH = "Vote on each place: ♥ I'm in or Pass. Votes stay secret until the reveal.";
+const PARTY_COACH = "Vote for the places you'd go, or Pass. Votes stay secret until the reveal.";
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
 
@@ -534,13 +534,13 @@ export function ZestApp() {
     party.swipe(partyCurrent.id, dir);
     if (dir === "go") {
       haptic(12);
-      setNotice(party.members.length > 1 ? "You're in. Votes stay secret until the reveal." : "You're in. Invite friends to vote too.");
+      setNotice(party.members.length > 1 ? "Voted. Votes stay secret until the reveal." : "Voted. Invite friends to vote too.");
     }
     setPHistory((h) => [...h, pIndex]);
     setPIndex((i) => i + 1);
     setSwipes((s) => s + 1);
     // Passing is normal in a vote, not a sign of being stuck, so the group's "Not quite?"
-    // opens only from the menu (⋯ → Steer the picks).
+    // opens only from Request (or ⋯ → Request something different).
     // The ballot is the deck the party started with (plus cards from a group nudge), so
     // everyone can finish it and reveal. No endless refills mid-vote.
   };
@@ -598,19 +598,30 @@ export function ZestApp() {
     void joinParty();
   }, [joinCode, party.active, joinParty]);
 
-  // A nudge from anyone: everyone jumps to the cards that follow it, and the host fetches them.
+  // A request from anyone: the host's phone fetches places that fit and adds them to the end
+  // of everyone's list. Nobody skips ahead, so everyone can still vote on every card.
   const steerSeq = party.steer?.seq ?? 0;
   const lastSteer = useRef(0);
+  const pendingRequest = useRef<{ label: string; at: number } | null>(null);
   useEffect(() => {
     const s = party.steer;
     if (!s || s.seq === lastSteer.current) return;
     lastSteer.current = s.seq;
-    setPIndex((i) => Math.max(i, s.at));
+    const label = NUDGE_LABEL[s.mood].toLowerCase();
     const who = s.by === party.memberId ? "You" : (party.members.find((m) => m.id === s.by)?.nickname ?? "Someone");
-    setNotice(`${who} asked for ${NUDGE_LABEL[s.mood].toLowerCase()} picks.`);
+    pendingRequest.current = { label, at: s.at };
+    setNotice(`${who} asked for ${label} places. Adding a few to everyone's list…`);
     if (party.isHost) hostRefill(s.mood);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per nudge
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request
   }, [steerSeq]);
+  const deckLength = party.deck.length;
+  useEffect(() => {
+    const req = pendingRequest.current;
+    if (!req || deckLength <= req.at) return;
+    pendingRequest.current = null;
+    const added = deckLength - req.at;
+    setNotice(`${added} ${req.label} place${added === 1 ? "" : "s"} added to the end of the list.`);
+  }, [deckLength]);
 
   const leaveParty = () => {
     party.leave();
@@ -820,7 +831,9 @@ export function ZestApp() {
         openDiet();
       },
     },
-    { label: "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) },
+    ...(inParty && !party.hasHost
+      ? []
+      : [{ label: inParty ? "Request something different" : "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) }]),
     ...(inParty ? [] : [{ label: "Change area", icon: <PinIcon size={18} />, onSelect: openArea }]),
     { label: inParty ? "Invite friends" : "Hunt together", icon: <PartyIcon size={18} />, onSelect: onPartyButton },
     { label: "What we sent", icon: <LockIcon size={18} />, onSelect: toggleReceipt },
@@ -894,6 +907,7 @@ export function ZestApp() {
           onInvite={() => setInviteOpen(true)}
           onLeave={leaveParty}
           onReveal={reveal}
+          onRequest={party.hasHost ? () => setTuneOpen((o) => !o) : undefined}
           onExtend={() => void party.extend().then(() => setNotice("5 more minutes for everyone.")).catch(() => setNotice("Couldn't add time."))}
         />
       ) : (
@@ -1089,7 +1103,7 @@ export function ZestApp() {
           className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2 text-xs text-white/60 hover:text-white/85"
         >
           <LockIcon size={12} className="text-teal-bright" />
-          {inParty ? "Nothing saved. Room ends at 10 min." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
+          {inParty ? "Nothing kept after the party." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
           <span className="font-semibold text-teal-bright">What we sent</span>
         </button>
       </div>

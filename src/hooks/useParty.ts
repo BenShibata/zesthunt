@@ -240,6 +240,8 @@ export function useParty() {
     extend,
     steerTo,
     isHost: Boolean(session && hostId === session.memberId),
+    /** Rooms opened by an AI assistant have no host, so nobody can fetch cards for a request. */
+    hasHost: hostId !== null,
     members,
     deck,
     progress,

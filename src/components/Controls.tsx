@@ -13,7 +13,7 @@ interface Props {
   /** How the current pick is reached, so "Let's go" shows walking or driving. */
   travelMode: "walk" | "drive";
   /**
-   * In a party this is a vote, not a decision: "Pass" and "♥ I'm in", with your progress
+   * In a party this is a vote, not a decision: "Pass" and "♥ Vote for it", with your progress
    * through the shared deck in the middle (cravings are solo-only, so no search there).
    */
   vote?: { done: number; total: number };
@@ -57,9 +57,9 @@ export function Controls(p: Props) {
             <span className="text-[11px] text-white/60">voted</span>
           </span>
         </div>
-        <button type="button" className={`${pill} bg-social hover:brightness-110`} onClick={p.onGo} disabled={p.disabled} aria-label="I'm in: vote for this place">
+        <button type="button" className={`${pill} bg-social hover:brightness-110`} onClick={p.onGo} disabled={p.disabled} aria-label="Vote for this place">
           <HeartIcon size={20} className={pillIcon} />
-          I&apos;m in
+          Vote for it
         </button>
       </div>
     );
