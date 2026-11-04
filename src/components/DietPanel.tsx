@@ -53,7 +53,10 @@ export function DietPanel({
   onRemember,
   onForget,
   onClose,
+  suggested,
 }: {
+  /** Opened from "Can't eat this": choices the pick on screen hints at, offered first. */
+  suggested?: { diets: string[]; allergies: string[] };
   dietary: Dietary;
   remembered: boolean;
   onChange: (update: (d: Dietary) => Dietary) => void;
@@ -89,6 +92,33 @@ export function DietPanel({
         </button>
       </div>
 
+      {suggested && suggested.diets.length + suggested.allergies.length > 0 && (
+        <fieldset className="rounded-2xl bg-white/6 p-3">
+          <legend className="sr-only">Based on this pick</legend>
+          <p className="text-sm font-semibold text-white">Based on this pick, maybe:</p>
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {[
+              ...suggested.diets.map((v) => ({ v, text: eatsLabel(v), on: dietary.diets.includes(v), flip: () => onChange((d) => ({ ...d, diets: toggle(d.diets, v) })) })),
+              ...suggested.allergies.map((v) => ({
+                v,
+                text: `Keep away from ${v.toLowerCase()}`,
+                on: dietary.allergies.includes(v),
+                flip: () => onChange((d) => ({ ...d, allergies: toggle(d.allergies, v) })),
+              })),
+            ].map((c) => (
+              <button
+                key={c.v}
+                type="button"
+                aria-pressed={c.on}
+                onClick={c.flip}
+                className={`h-11 rounded-full px-3.5 text-sm font-semibold transition ${c.on ? "bg-teal text-white" : "bg-white/12 text-white ring-1 ring-teal-bright/50 hover:bg-white/18"}`}
+              >
+                {c.text}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      )}
       <Chips
         legend="I'm looking for"
         options={DIETS}

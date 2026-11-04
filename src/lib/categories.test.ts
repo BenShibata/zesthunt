@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dietSafeSuggestion } from "./categories";
+import { cantEatHints, dietSafeSuggestion } from "./categories";
 
 describe("dietSafeSuggestion", () => {
   it("leaves suggestions alone with no diet set", () => {
@@ -23,5 +23,26 @@ describe("dietSafeSuggestion", () => {
 
   it("doesn't touch diets that allow meat", () => {
     expect(dietSafeSuggestion("Try the chicken shawarma", ["Halal"])).toBe("Try the chicken shawarma");
+  });
+});
+
+describe("cantEatHints", () => {
+  const pick = (suggestion: string, category: string | null = null) => ({ suggestion, category }) as Parameters<typeof cantEatHints>[0];
+
+  it("offers no-meat choices for a meat dish", () => {
+    expect(cantEatHints(pick("Try the chicken shawarma")).diets).toEqual(["Vegetarian", "Pescatarian"]);
+  });
+
+  it("offers fish and shellfish allergies for seafood", () => {
+    expect(cantEatHints(pick("Try a salmon poke bowl", "poke bowls"))).toEqual({ diets: ["Vegetarian"], allergies: ["Fish"] });
+    expect(cantEatHints(pick("Try the shrimp tacos")).allergies).toEqual(["Shellfish"]);
+  });
+
+  it("offers gluten and dairy for pizza", () => {
+    expect(cantEatHints(pick("Try a margherita pizza", "pizza")).diets).toEqual(["Gluten-free", "Dairy-free"]);
+  });
+
+  it("offers nothing when the dish gives no hint", () => {
+    expect(cantEatHints(pick("Try a quick sit-down lunch here"))).toEqual({ diets: [], allergies: [] });
   });
 });

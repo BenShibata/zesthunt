@@ -37,7 +37,7 @@ Open http://localhost:3000 in a phone-sized viewport.
 
 ### Demo mode vs live
 
-With no keys, the app runs in **demo mode**: the same `/api/picks` stream serves fictional places, and "Demo · fictional places" shows under the moods, where the area line would be.
+With no keys, the app runs in **demo mode**: the same `/api/picks` stream serves fictional places, and a "Demo" badge shows next to the logo.
 
 For real places, copy `.env.example` to `.env.local` and fill in:
 
@@ -71,27 +71,39 @@ Photos go through `/api/photo` so the key stays server-side and the browser neve
 
 Every API route has a per-IP limit per minute: picks 40, party actions 60, party polling 150, photos 120, MCP 120. With Upstash configured, the counts are shared by all server instances. If Upstash can't be reached, each instance falls back to its own in-memory count. Live searches from the MCP connector also have a daily ceiling across all callers (`MCP_DAILY_LIMIT`). Also set a daily quota on the Google key in Google Cloud as the final backstop.
 
+## Start simple, ask as you get closer
+
+The first screen is one pick and three buttons: **Another**, **search** and **Let's go**. Nothing to set up. Options arrive when behaviour says they'd help:
+
+1. **Open:** the photo, the walk time, the dish, the place and when it closes. Everything else (what you eat, parties, privacy receipt, area, steering) is in the **⋯** menu. The ⋯ shows a small count when food choices are on.
+2. **After two skips in a row:** a **"Not quite? Steer the next picks"** row slides in under the logo: **Lighter, Heartier, Quicker, Cheaper, A treat** (the five moods, worded as a nudge), **Surprise me**, **Can't eat this** and **Somewhere else**. One tap closes it; ✕ hides it for a few more skips. It's always in the menu as "Steer the picks".
+   - **Can't eat this** skips the pick and opens "What do you eat?" with what that dish hints at offered first ("Based on this pick, maybe: No meat or fish / Keep away from shellfish"). So food needs are asked for when they matter, not up front.
+3. **Lingering on a pick** (4 seconds) or tapping **Details** opens the rest: rating, price, payment, the "More like this" chips and the plate estimate.
+4. **After Let's go:** if no allergies are set, **"Anything to keep away from?"** with one-tap chips (picks refresh when you go back), and **"Eating with others? Decide together"**, which opens a party with this pick in the deck.
+
+The area line appears only when it matters: a rough IP guess ("San Francisco (approx.) · Change"), a widened drive, or an active craving.
+
 ## Finding the right food
 
-- **Where:** a line under the moods shows where the search is centered ("San Francisco (approx.)" for the IP estimate, "Near you" for the device location). **Change** opens the neighborhood/ZIP field or "Use my location". A typed area replaces the device location.
-- **Craving:** tap the search button (center) and type, hold it and speak, or tap a shortcut (they change with the meal: coffee and bagels in the morning, pizza and ramen at dinner; meat-led ones are hidden for vegetarian and vegan diets). The craving shows as a chip next to the area and applies to every refill until you clear it with ✕. Switching mood keeps it.
+- **Where:** when the area is a rough guess or widened to a drive, a line under the top bar says so ("San Francisco (approx.) · Change"). **Change**, the menu's "Change area" or "Somewhere else" opens the neighborhood/ZIP field or "Use my location". A typed area replaces the device location.
+- **Craving:** tap the search button (center) and type, hold it and speak, or tap a shortcut (they change with the meal: coffee and bagels in the morning, pizza and ramen at dinner; meat-led ones are hidden for vegetarian and vegan diets). The craving shows as a chip under the top bar and applies to every refill until you clear it with ✕. Steering (Lighter, Heartier…) keeps it.
 - **Rating:** the card shows the Google rating and count ("★ 4.6 (1.2k)"). Claude and the rule-based ranking use it only as a tie-breaker.
 - **Menu, photos and reviews:** a link on the locked-in screen opens the place on Google Maps.
-- **Every chip is a way forward:** the dish type and health labels on the card are buttons. "More noodles" searches for noodles nearby, and "Protein", "Veg" and "Whole grain" search for high-protein, veggie and whole-grain places. They set the craving, so ✕ on the craving chip goes back to the mood. (In a party they're plain labels, since cravings are solo-only.)
+- **Every chip is a way forward:** the dish type and health labels on the card are buttons. "More noodles" searches for noodles nearby, and "Protein", "Veg" and "Whole grain" search for high-protein, veggie and whole-grain places. They set the craving, so ✕ on the craving chip goes back to plain picks. (In a party they're plain labels, since cravings are solo-only.)
 - **Notices float, nothing jumps:** "Got it: fewer salads" and other notices appear over the top of the photo, in place of the swipe-count badge, and **Back** sits in the photo's top-left corner whenever there's a pick to return to. Neither pushes the card or the buttons around.
-- **Out of picks:** the empty screen offers a short drive (when on foot), other moods, clearing the craving, or ordering in, instead of a dead end.
+- **Out of picks:** the empty screen offers a short drive (when on foot), other directions (Heartier, Quicker…), clearing the craving, or ordering in, instead of a dead end.
 
 ## The queue
 
 - The phone holds ~10 picks so skips never wait. When 3 remain it quietly asks for more, excluding everything already seen.
 - **Skip signals:** each pick has a coarse dish category. After 2 skips of the same kind, the phone forms a hint ("fewer noodles", "shorter walks", "cheaper places"). It reorders what's left right away and sends the hint with the next request. Skips themselves never leave the device.
-- **Moods:** switching re-sorts the picks already loaded, so it's instant, then streams mood-specific picks behind them.
-- **Shake:** two sharp jolts trigger a wildcard pick from another mood. iOS needs motion permission, which is requested on the first tap of **Surprise** (on the area line).
+- **Moods (steering):** Lighter, Heartier, Quicker, Cheaper and A treat map to the fresh, comfort, fast, cheap and treat moods. Switching re-sorts the picks already loaded, so it's instant, then streams mood-specific picks behind them.
+- **Shake:** two sharp jolts trigger a wildcard pick from another mood. iOS needs motion permission, which is requested on the first tap of **Surprise me**.
 - **Voice:** holding the search button uses the Web Speech API with `processLocally = true`. The spec requires on-device recognition in that mode and fails rather than uploading audio. Browsers without on-device speech (currently Safari, Firefox and older Chrome) open the text field instead. Only the transcribed text is sent.
 
 ## Hunt party
 
-1. Tap **Party**, enter a nickname, and the current picks become the shared deck. **Invite** opens the share sheet (or copies the link) with `zesthunt.com/#p=CODE`. The code sits after the `#`, so it never reaches the server or its logs.
+1. Choose **Decide with friends** in the ⋯ menu (or on the screen after Let's go), enter a nickname, and the current picks become the shared deck. **Invite** opens the share sheet (or copies the link) with `zesthunt.com/#p=CODE`. The code sits after the `#`, so it never reaches the server or its logs.
 2. Friends open the link, type a nickname and swipe the same cards. When every member (2+) swipes right on the same pick, every device shows "It's a match!" with haptics and confetti.
 3. Rooms have a hard 10-minute TTL from creation that activity doesn't extend. The room holds only the code, nicknames (plus a hashed join key), restaurant cards and swipes. Never location, cravings or travel times; each device works out its own walk time.
 4. Only the host's device adds cards (it's the one with a location). Party traffic goes through one `POST /api/party` endpoint so codes and keys stay out of URLs. Members poll every 2 s.
@@ -113,7 +125,7 @@ There's no checkout, no stored cards and no payment processor. Three things only
 - **What you eat is a hard rule:** the panel asks "What do you eat?" and words every choice as food ("No meat or fish", "Nothing from animals", "No gluten"; allergies under "Keep away from"), never as a label for the person. The stored values (`Vegetarian`, `Vegan`…) are unchanged, so saved choices and server rules still work. Places that can't meet a choice are filtered out, and any suggestion naming meat or fish that it excludes is replaced. With allergies set, the locked-in screen says "Check allergens with the restaurant."
 - **Strict headers:** a same-origin-only Content-Security-Policy, `frame-ancestors 'none'`, `nosniff`, COOP, a minimal `Permissions-Policy`, `Referrer-Policy: no-referrer` on every response, and `no-store` on the API.
 - **Logs** never include request bodies. Failures log only the error type or a service status like `places 403`.
-- **Accessibility:** real buttons and labels throughout, 44px minimum touch targets, keyboard support (← → Backspace, arrow keys in the mood tabs), live regions for notices, focus moved to the locked-in heading, AA contrast on the colour pairs we checked, and `prefers-reduced-motion` turns off the photo develop-in, confetti and route animations.
+- **Accessibility:** real buttons and labels throughout, 44px minimum touch targets, keyboard support (← → Backspace, Escape closes the menu and sheets), live regions for notices, focus moved to the locked-in heading, AA contrast on the colour pairs we checked, and `prefers-reduced-motion` turns off the photo develop-in, confetti and route animations.
 
 ## AI assistant connector (MCP)
 
@@ -143,11 +155,12 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | Another (skip) | swipe left / **Another** | ← |
 | Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
-| Change mood | tap a mood (all five always fit on screen) | Tab to the moods, ← → |
-| What you eat and allergies | **What I eat** (top right; a small count shows how many choices are on, never the choices themselves) | Tab to it, Enter |
-| Start a hunt party | **Party** (top right) | Tab to it, Enter |
+| Steer (Lighter, Heartier…) | **Not quite?** row after two skips, or ⋯ → Steer the picks | Tab to it, Enter |
+| See details | tap **Details**, or linger on a pick | Tab to it, Enter |
+| What you eat and allergies | ⋯ → **What I eat** (a small count shows how many choices are on, never the choices themselves), or **Can't eat this** | Tab to it, Enter |
+| Start a hunt party | ⋯ → **Decide with friends**, or after Let's go | Tab to it, Enter |
 | Search a craving | tap the search button (center) | Tab to it, Enter |
-| Surprise (wildcard) | **Surprise** on the area line, or shake the phone | Tab to it, Enter |
+| Surprise (wildcard) | **Surprise me** in the Not quite? row, or shake the phone | Tab to it, Enter |
 | Speak a craving | hold the search button (it turns into a mic while listening) | (typing is the keyboard path) |
 
 ## Project layout
