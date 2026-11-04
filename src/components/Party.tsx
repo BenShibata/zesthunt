@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import type { PartyMember } from "@/lib/types";
-import { PartyIcon } from "./Icons";
+import { HeartIcon, PartyIcon } from "./Icons";
+import type { PartyResult } from "@/lib/partyResults";
 import { QrCode } from "./QrCode";
 
 /** Ticks the clock, so a moved deadline ("+5 min") shows at once. */
@@ -166,56 +167,82 @@ export function InviteSheet({
 
 const initials = (n: string) => n.trim().slice(0, 1).toUpperCase() || "?";
 
+/** Who's finished voting (never what they voted for: that stays secret until the reveal). */
+function Avatars({ members, progress, deckSize, meId }: { members: PartyMember[]; progress: Record<string, number>; deckSize: number; meId: string }) {
+  return (
+    <ul className="flex -space-x-2" aria-label={`In the party: ${members.map((m) => `${m.nickname}${(progress[m.id] ?? 0) >= deckSize && deckSize > 0 ? " (done)" : ""}`).join(", ")}`}>
+      {members.map((m) => {
+        const done = deckSize > 0 && (progress[m.id] ?? 0) >= deckSize;
+        return (
+          <li
+            key={m.id}
+            title={`${m.nickname}${m.id === meId ? " (you)" : ""} · ${Math.min(progress[m.id] ?? 0, deckSize)}/${deckSize} voted`}
+            className={`relative grid size-8 place-items-center rounded-full border-2 border-ink text-xs font-bold ${m.id === meId ? "bg-social text-white" : "bg-social-bright text-ink"}`}
+          >
+            {initials(m.nickname)}
+            {done && (
+              <span aria-hidden="true" className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-teal-bright text-[9px] text-ink ring-2 ring-ink">
+                ✓
+              </span>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /**
- * Who's here, the clock, and the ways to finish: "Decide for us" once anything has a "go",
- * the top pick so far as time runs low, and a one-time "+5 min".
+ * Who's here, the clock, and how the vote ends. Votes are a secret ballot, so the bar only
+ * says who has finished. When time is short it offers "Reveal results" (until you're done,
+ * when the waiting screen has it) and a one-time "+5 min".
  */
 export function PartyBar({
   code,
   expiresAt,
   members,
   progress,
+  deckSize,
   meId,
-  topPick,
   extended,
   onInvite,
   onLeave,
-  onDecide,
+  onReveal,
   onExtend,
+  onRequest,
 }: {
+  /** Ask the group for something different (only where a host can fetch new cards). */
+  onRequest?: () => void;
   code: string;
   expiresAt: number;
   members: PartyMember[];
   progress: Record<string, number>;
+  deckSize: number;
   meId: string;
-  /** The most-liked card so far, if any. */
-  topPick: { name: string; likes: number } | null;
   extended: boolean;
   onInvite: () => void;
   onLeave: () => void;
-  onDecide: () => void;
+  onReveal: () => void;
   onExtend: () => void;
 }) {
   const seconds = useSecondsLeft(expiresAt);
   const lowTime = seconds <= 120;
+  const finished = members.filter((m) => deckSize > 0 && (progress[m.id] ?? 0) >= deckSize).length;
+  const allDone = members.length > 1 && finished === members.length;
+  const meDone = deckSize > 0 && (progress[meId] ?? 0) >= deckSize;
+  // Once you've voted on everything, the reveal lives on the waiting screen instead.
+  const canReveal = lowTime && !meDone;
   return (
-    <div className="mx-4 mb-2 space-y-1.5">
+    <div className="mx-4 mb-2 space-y-1">
       <div className="flex items-center gap-2 rounded-full bg-social/15 py-1 pr-1 pl-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <ul className="flex -space-x-2" aria-label={`In the party: ${members.map((m) => m.nickname).join(", ")}`}>
-            {members.map((m) => (
-              <li
-                key={m.id}
-                title={`${m.nickname}${m.id === meId ? " (you)" : ""} · ${progress[m.id] ?? 0} swiped`}
-                className={`grid size-8 place-items-center rounded-full border-2 border-ink text-xs font-bold ${m.id === meId ? "bg-social text-white" : "bg-social-bright text-ink"}`}
-              >
-                {initials(m.nickname)}
-              </li>
-            ))}
-          </ul>
+          <Avatars members={members} progress={progress} deckSize={deckSize} meId={meId} />
           <span className={`truncate text-sm ${lowTime ? "font-semibold text-paprika-bright" : "text-white/80"}`}>
-            <span className="font-mono font-semibold tracking-widest text-white">{code}</span>
-            <span aria-hidden="true"> · </span>
+            {/* On small phones the clock matters more than the code (which Invite shows). */}
+            <span className="hidden min-[380px]:inline">
+              <span className="font-mono font-semibold tracking-widest text-white">{code}</span>
+              <span aria-hidden="true"> · </span>
+            </span>
             <Countdown seconds={seconds} />
           </span>
         </div>
@@ -226,28 +253,125 @@ export function PartyBar({
           Leave
         </button>
       </div>
-      {(topPick || (lowTime && !extended)) && (
-        <div className="flex items-center gap-2 pl-2 text-sm">
-          {topPick && (
-            <span className="min-w-0 flex-1 truncate text-white/75">
-              {/* When time is short, the name is what matters; the button says what to do with it. */}
-              {lowTime ? <span className="sr-only">Top pick so far: </span> : "Leading: "}
-              <span className="font-semibold text-white">{topPick.name}</span> <span aria-hidden="true">♥</span>
-              <span className="sr-only">, liked by</span> {topPick.likes}
-            </span>
+      <div className="flex min-h-11 items-center gap-2 pl-2 text-sm" aria-live="polite">
+        <span className="min-w-0 flex-1 truncate text-white/70">
+          {allDone ? (
+            <span className="font-semibold text-white">Everyone&apos;s voted!</span>
+          ) : members.length < 2 ? (
+            "Invite friends to vote."
+          ) : (
+            <>
+              <span aria-hidden="true">🔒 </span>Votes are secret · {finished} of {members.length} done
+            </>
           )}
-          {lowTime && !extended && (
-            <button type="button" onClick={onExtend} className="ml-auto h-11 shrink-0 rounded-full px-3 font-semibold text-social-bright hover:bg-white/10">
-              +5 min
-            </button>
-          )}
-          {topPick && (
-            <button type="button" onClick={onDecide} className={`${lowTime && !extended ? "" : "ml-auto"} h-11 shrink-0 rounded-full bg-white px-4 font-semibold text-ink`}>
-              {lowTime ? "Go with it" : "Decide for us"}
-            </button>
-          )}
-        </div>
-      )}
+        </span>
+        {onRequest && !lowTime && (
+          <button type="button" onClick={onRequest} className="h-11 shrink-0 rounded-full bg-white/10 px-4 font-semibold text-white hover:bg-white/15">
+            Request
+          </button>
+        )}
+        {lowTime && !extended && (
+          <button type="button" onClick={onExtend} className="h-11 shrink-0 rounded-full px-3 font-semibold text-social-bright hover:bg-white/10">
+            +5 min
+          </button>
+        )}
+        {canReveal && (
+          <button type="button" onClick={onReveal} className="h-11 shrink-0 rounded-full bg-white px-4 font-semibold text-ink">
+            Reveal results
+          </button>
+        )}
+      </div>
     </div>
+  );
+}
+
+/** Shown once you've voted on every card: who's still going, and the reveal. */
+export function PartyWaiting({
+  members,
+  progress,
+  deckSize,
+  meId,
+  onReveal,
+}: {
+  members: PartyMember[];
+  progress: Record<string, number>;
+  deckSize: number;
+  meId: string;
+  onReveal: () => void;
+}) {
+  const waiting = members.filter((m) => (progress[m.id] ?? 0) < deckSize);
+  return (
+    <section className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center" aria-live="polite">
+      <p className="font-display text-2xl font-bold">You&apos;ve voted on all {deckSize}.</p>
+      {waiting.length > 0 ? (
+        <>
+          <ul className="space-y-1 text-white/75">
+            {waiting.map((m) => (
+              <li key={m.id}>
+                {m.nickname}
+                {m.id === meId ? " (you)" : ""} is on {Math.min(progress[m.id] ?? 0, deckSize)} of {deckSize}…
+              </li>
+            ))}
+          </ul>
+          <button type="button" onClick={onReveal} className="h-12 rounded-full bg-white/12 px-6 font-semibold text-white">
+            Reveal now (ends the vote)
+          </button>
+        </>
+      ) : (
+        <button type="button" onClick={onReveal} className="h-14 rounded-full bg-white px-8 text-lg font-bold text-ink">
+          Reveal results
+        </button>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The reveal: what the group picked, who was in, and the runners-up. Every vote is shown
+ * now, and only now.
+ */
+export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; onGo: () => void; onLeave: () => void }) {
+  const { winner, others, voters } = result;
+  return (
+    <main className="mx-auto flex h-dvh max-w-md flex-col justify-center gap-5 bg-ink px-6 text-white">
+      <p className="animate-rise text-sm font-semibold tracking-wide text-social-bright uppercase">The group picked…</p>
+      <section aria-labelledby="result-title" className="animate-rise space-y-2 rounded-3xl bg-social/20 p-5 ring-1 ring-social/40">
+        <h1 id="result-title" className="font-display text-4xl leading-tight font-extrabold tracking-tight">
+          {winner.card.name}
+        </h1>
+        <p className="text-white/80">{winner.card.suggestion}</p>
+        <p className="flex items-center gap-1.5 text-lg font-semibold">
+          <HeartIcon size={20} className="text-paprika-bright" />
+          {winner.likers.length} of {voters} voted for it
+        </p>
+        {winner.likers.length > 0 && <p className="text-sm text-white/70">{winner.likers.join(", ")}</p>}
+      </section>
+      {others.length > 0 && (
+        <section aria-labelledby="runners-title" className="animate-rise">
+          <h2 id="runners-title" className="mb-2 text-sm font-semibold text-white/60">
+            Also popular
+          </h2>
+          <ul className="space-y-1.5">
+            {others.map((o) => (
+              <li key={o.card.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/6 px-4 py-3">
+                <span className="min-w-0 truncate font-semibold">{o.card.name}</span>
+                <span className="flex shrink-0 items-center gap-1 text-sm text-white/75" aria-label={`${o.likers.length} in: ${o.likers.join(", ")}`}>
+                  <HeartIcon size={14} />
+                  {o.likers.length}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      <div className="flex flex-col gap-2">
+        <button type="button" onClick={onGo} autoFocus className="h-14 rounded-2xl bg-paprika text-lg font-semibold text-white shadow-md hover:bg-paprika-deep">
+          Let&apos;s go to {winner.card.name}
+        </button>
+        <button type="button" onClick={onLeave} className="h-11 font-semibold text-white/70 hover:text-white">
+          Back to solo picks
+        </button>
+      </div>
+    </main>
   );
 }

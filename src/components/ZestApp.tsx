@@ -19,7 +19,7 @@ import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
-import { InviteSheet, JoinScreen, PartyBar } from "./Party";
+import { InviteSheet, JoinScreen, PartyBar, PartyResults, PartyWaiting } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
 import { LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon } from "./Icons";
@@ -42,6 +42,7 @@ const IDLE_MS = 10 * 60 * 1000;
 const DWELL_MS = 4000;
 /** Skips in a row before "Not quite?" offers to steer. */
 const SKIPS_BEFORE_NUDGE = 2;
+const PARTY_COACH = "Vote for the places you'd go, or Pass. Votes stay secret until the reveal.";
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
 
@@ -88,6 +89,8 @@ export function ZestApp() {
   const [dietSuggest, setDietSuggest] = useState<{ diets: string[]; allergies: string[] } | null>(null);
   const skipsSinceNudge = useRef(0);
   const allergiesChanged = useRef(false);
+  /** The reveal screen comes first; "Let's go" from it opens the locked-in screen. */
+  const [resultSeen, setResultSeen] = useState(false);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const [signals, setSignals] = useState<string[]>([]);
@@ -531,16 +534,15 @@ export function ZestApp() {
     party.swipe(partyCurrent.id, dir);
     if (dir === "go") {
       haptic(12);
-      setNotice(party.members.length > 1 ? "You said go. Waiting on the others." : "You said go. Invite friends to match.");
+      setNotice(party.members.length > 1 ? "Voted. Votes stay secret until the reveal." : "Voted. Invite friends to vote too.");
     }
     setPHistory((h) => [...h, pIndex]);
     setPIndex((i) => i + 1);
     setSwipes((s) => s + 1);
-    if (dir === "skip") {
-      skipsSinceNudge.current += 1;
-      if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
-    }
-    if (party.isHost && party.deck.length - (pIndex + 1) <= REFILL_AT) hostRefill();
+    // Passing is normal in a vote, not a sign of being stuck, so the group's "Not quite?"
+    // opens only from Request (or ⋯ → Request something different).
+    // The ballot is the deck the party started with (plus cards from a group nudge), so
+    // everyone can finish it and reveal. No endless refills mid-vote.
   };
 
   const partyRewind = () => {
@@ -581,6 +583,7 @@ export function ZestApp() {
       setPIndex(0);
       setPHistory([]);
       setNow(new Date());
+      setNotice(PARTY_COACH);
     } catch (e) {
       setPartyError(e instanceof Error ? e.message : "Couldn't join.");
     } finally {
@@ -595,19 +598,30 @@ export function ZestApp() {
     void joinParty();
   }, [joinCode, party.active, joinParty]);
 
-  // A nudge from anyone: everyone jumps to the cards that follow it, and the host fetches them.
+  // A request from anyone: the host's phone fetches places that fit and adds them to the end
+  // of everyone's list. Nobody skips ahead, so everyone can still vote on every card.
   const steerSeq = party.steer?.seq ?? 0;
   const lastSteer = useRef(0);
+  const pendingRequest = useRef<{ label: string; at: number } | null>(null);
   useEffect(() => {
     const s = party.steer;
     if (!s || s.seq === lastSteer.current) return;
     lastSteer.current = s.seq;
-    setPIndex((i) => Math.max(i, s.at));
+    const label = NUDGE_LABEL[s.mood].toLowerCase();
     const who = s.by === party.memberId ? "You" : (party.members.find((m) => m.id === s.by)?.nickname ?? "Someone");
-    setNotice(`${who} asked for ${NUDGE_LABEL[s.mood].toLowerCase()} picks.`);
+    pendingRequest.current = { label, at: s.at };
+    setNotice(`${who} asked for ${label} places. Adding a few to everyone's list…`);
     if (party.isHost) hostRefill(s.mood);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per nudge
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per request
   }, [steerSeq]);
+  const deckLength = party.deck.length;
+  useEffect(() => {
+    const req = pendingRequest.current;
+    if (!req || deckLength <= req.at) return;
+    pendingRequest.current = null;
+    const added = deckLength - req.at;
+    setNotice(`${added} ${req.label} place${added === 1 ? "" : "s"} added to the end of the list.`);
+  }, [deckLength]);
 
   const leaveParty = () => {
     party.leave();
@@ -684,6 +698,18 @@ export function ZestApp() {
     return () => clearTimeout(t);
   }, [shownId, busy, expandedId]);
 
+  if (party.matchedCard && party.result && !resultSeen) {
+    return (
+      <PartyResults
+        result={party.result}
+        onGo={() => setResultSeen(true)}
+        onLeave={() => {
+          party.dismissMatch();
+          leaveParty();
+        }}
+      />
+    );
+  }
   if (party.matchedCard && now) {
     return (
       <LockedIn
@@ -692,7 +718,10 @@ export function ZestApp() {
         partyMatch
         partySize={party.members.length || 2}
         allergyNote={dietary.allergies.length > 0}
-        onClose={party.dismissMatch}
+        onClose={() => {
+          setResultSeen(false);
+          party.dismissMatch();
+        }}
       />
     );
   }
@@ -762,11 +791,8 @@ export function ZestApp() {
     void party.steerTo(m).catch(() => setNotice("Couldn't reach the group. Try again."));
   };
 
-  // Live group taste: who said go to the card on screen, and the most-liked card so far.
-  const likesFor = (id: string) => party.likes[id]?.length ?? 0;
-  const topId = Object.keys(party.likes).sort((a, b) => likesFor(b) - likesFor(a))[0];
-  const topCard = topId ? party.deck.find((c) => c.id === topId) : undefined;
-  const topPick = topCard && likesFor(topCard.id) > 0 ? { name: topCard.name, likes: likesFor(topCard.id) } : null;
+  const reveal = () =>
+    void party.reveal().catch((e: unknown) => setNotice(e instanceof Error ? e.message : "Couldn't reveal. Try again."));
 
   // "Not quite?" answers. Each closes the row; skipping twice more brings it back.
   const settleNudge = (wait = 0) => {
@@ -805,7 +831,9 @@ export function ZestApp() {
         openDiet();
       },
     },
-    { label: "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) },
+    ...(inParty && !party.hasHost
+      ? []
+      : [{ label: inParty ? "Request something different" : "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) }]),
     ...(inParty ? [] : [{ label: "Change area", icon: <PinIcon size={18} />, onSelect: openArea }]),
     { label: inParty ? "Invite friends" : "Hunt together", icon: <PartyIcon size={18} />, onSelect: onPartyButton },
     { label: "What we sent", icon: <LockIcon size={18} />, onSelect: toggleReceipt },
@@ -860,7 +888,10 @@ export function ZestApp() {
             memberCount={party.members.length}
             onShare={shareParty}
             onRename={(name) => party.rename(name).catch(() => setNotice("Couldn't rename. Try again."))}
-            onClose={() => setInviteOpen(false)}
+            onClose={() => {
+              setInviteOpen(false);
+              if (party.members.length <= 1 && pIndex === 0) setNotice(PARTY_COACH);
+            }}
           />
         </div>
       )}
@@ -871,11 +902,12 @@ export function ZestApp() {
           members={party.members}
           progress={party.progress}
           meId={party.memberId}
-          topPick={party.match ? null : topPick}
+          deckSize={party.deck.length}
           extended={party.extended}
           onInvite={() => setInviteOpen(true)}
           onLeave={leaveParty}
-          onDecide={() => void party.decide().catch((e: unknown) => setNotice(e instanceof Error ? e.message : "Couldn't decide."))}
+          onReveal={reveal}
+          onRequest={party.hasHost ? () => setTuneOpen((o) => !o) : undefined}
           onExtend={() => void party.extend().then(() => setNotice("5 more minutes for everyone.")).catch(() => setNotice("Couldn't add time."))}
         />
       ) : (
@@ -957,17 +989,12 @@ export function ZestApp() {
             swipes={swipes}
             swipe={swipe}
             quietBadge={Boolean(shownNotice)}
-            groupLikes={{ count: likesFor(partyCurrent.id), needed: party.needed, total: party.members.length }}
+            voted={party.myVotes.includes(partyCurrent.id)}
             expanded={expandedId === partyCurrent.id}
             onExpand={() => setExpandedId(partyCurrent.id)}
           />
         ) : (
-          <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
-            <p className="font-display text-2xl font-bold">You&apos;ve swiped them all.</p>
-            <p className="text-white/75">
-              {party.isHost ? "Fetching more picks for the group…" : "Waiting for the others, or for more picks from the host."}
-            </p>
-          </section>
+          <PartyWaiting members={party.members} progress={party.progress} deckSize={party.deck.length} meId={party.memberId ?? ""} onReveal={reveal} />
         )
       ) : (
         areaOpen ? (
@@ -1053,6 +1080,7 @@ export function ZestApp() {
 
       <Controls
         travelMode={shown?.travelMode ?? "walk"}
+        vote={inParty ? { done: Math.min(pIndex, party.deck.length), total: party.deck.length } : undefined}
         disabled={!shown || receiptOpen}
         listening={voice.listening}
         timeLeft={timer.fraction}
@@ -1075,7 +1103,7 @@ export function ZestApp() {
           className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2 text-xs text-white/60 hover:text-white/85"
         >
           <LockIcon size={12} className="text-teal-bright" />
-          {inParty ? "Nothing saved. Room ends at 10 min." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
+          {inParty ? "Nothing kept after the party." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
           <span className="font-semibold text-teal-bright">What we sent</span>
         </button>
       </div>

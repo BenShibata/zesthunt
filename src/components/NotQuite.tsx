@@ -47,7 +47,7 @@ export function NotQuite({
     <section aria-labelledby="not-quite-title" className="animate-rise rounded-3xl bg-ink-3/95 p-3 shadow-2xl ring-1 ring-white/10 backdrop-blur-md">
       <div className="flex items-center justify-between gap-2">
         <h2 id="not-quite-title" className="pl-1 text-[13px] font-semibold text-white min-[380px]:text-sm">
-          {group ? "Not quite? Steer the group's picks" : "Not quite? Steer the next picks"}
+          {group ? "Ask the group for something different" : "Not quite? Steer the next picks"}
         </h2>
         <div className="-my-1.5 flex shrink-0 items-center">
           {onBack && (
@@ -66,6 +66,11 @@ export function NotQuite({
           </button>
         </div>
       </div>
+      {group && (
+        <p className="mt-0.5 pl-1 text-[13px] text-white/70">
+          Pick one. A few places that fit get added to the end of everyone&apos;s list to vote on. Nothing gets skipped.
+        </p>
+      )}
       <div className="mt-1 flex flex-wrap gap-1.5">
         {NUDGES.map((n) => {
           const on = moodChosen && n.mood === mood;

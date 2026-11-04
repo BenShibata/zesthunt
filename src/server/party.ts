@@ -178,7 +178,7 @@ export async function recordSwipe(code: string, memberId: string, key: string, p
   }
 }
 
-/** "Decide for us": the most-liked card wins (earliest in the deck breaks ties). Needs at least one "go". */
+/** "Reveal results": the most-liked card wins (earliest in the deck breaks ties) and every vote is shown. Needs at least one "I'm in". */
 export async function decideNow(code: string, memberId: string, key: string) {
   const { meta } = await authed(code, memberId, key);
   const store = roomStore();
@@ -187,7 +187,7 @@ export async function decideNow(code: string, memberId: string, key: string) {
   const order = deck.cards.map((c) => (JSON.parse(c) as PartyCard).id);
   let best: string | null = null;
   for (const id of order) if ((likes[id]?.length ?? 0) > (best ? likes[best].length : 0)) best = id;
-  if (!best) throw new PartyError(409, "Nobody has said go to anything yet.");
+  if (!best) throw new PartyError(409, "Nobody's said I'm in to anything yet. Keep voting!");
   await store.setMatch(code, best, meta.expiresAt);
   return { match: best };
 }
@@ -214,6 +214,7 @@ export async function partyState(code: string, memberId: string, key: string, si
   const { meta } = await authed(code, memberId, key);
   const store = roomStore();
   const [members, deck, swipes, match] = await Promise.all([store.members(code), store.deck(code, since), store.swipes(code), store.match(code)]);
+  const allLikes = likesFrom(swipes, members.map((m) => m.id));
   const progress: Record<string, number> = {};
   for (const k of Object.keys(swipes)) {
     const id = k.split("|")[0];
@@ -228,7 +229,9 @@ export async function partyState(code: string, memberId: string, key: string, si
     deckSize: deck.size,
     progress,
     match,
-    likes: likesFrom(swipes, members.map((m) => m.id)),
+    // Secret ballot: other people's votes only leave the server once there's a result.
+    likes: match ? allLikes : {},
+    myVotes: Object.keys(allLikes).filter((id) => allLikes[id].includes(memberId)),
     needed: matchNeeded(Math.max(2, members.length)),
     extended: Boolean(meta.extended),
     steer: meta.steer ?? null,

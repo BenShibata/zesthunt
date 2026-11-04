@@ -28,7 +28,7 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("create"), nickname: NicknameSchema.optional(), cards: z.array(PartyCardSchema).min(1).max(40) }),
   z.object({ action: z.literal("join"), code: Code, nickname: NicknameSchema.optional() }),
   z.object({ action: z.literal("rename"), ...Auth, nickname: NicknameSchema }),
-  z.object({ action: z.literal("decide"), ...Auth }),
+  z.object({ action: z.literal("reveal"), ...Auth }),
   z.object({ action: z.literal("extend"), ...Auth }),
   z.object({ action: z.literal("steer"), ...Auth, mood: z.enum(MOODS) }),
   z.object({ action: z.literal("state"), ...Auth, since: z.number().int().min(0).max(1000) }),
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
         return Response.json({ ok: true }, { headers: NO_STORE });
       case "rename":
         return Response.json(await renameMember(body.code, body.memberId, body.key, body.nickname), { headers: NO_STORE });
-      case "decide":
+      case "reveal":
         return Response.json(await decideNow(body.code, body.memberId, body.key), { headers: NO_STORE });
       case "extend":
         return Response.json(await extendParty(body.code, body.memberId, body.key), { headers: NO_STORE });

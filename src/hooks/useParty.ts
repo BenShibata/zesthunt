@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mood, PartyCard, PartyMember, PartyState, PartySteer, Pick } from "@/lib/types";
 import { haptic } from "@/lib/haptics";
+import { rankResult, type PartyResult } from "@/lib/partyResults";
 
 const POLL_MS = 2000;
 
@@ -58,7 +59,10 @@ export function useParty() {
   const [ended, setEnded] = useState(false);
   // Kept after the room expires, until the user closes the locked-in screen.
   const [matchedCard, setMatchedCard] = useState<PartyCard | null>(null);
+  // The reveal, kept (like matchedCard) after the room expires, until it's dismissed.
+  const [result, setResult] = useState<PartyResult | null>(null);
   const [likes, setLikes] = useState<Record<string, string[]>>({});
+  const [myVotes, setMyVotes] = useState<string[]>([]);
   const [needed, setNeeded] = useState(2);
   const [extended, setExtended] = useState(false);
   const [steer, setSteer] = useState<PartySteer | null>(null);
@@ -77,6 +81,7 @@ export function useParty() {
     setProgress({});
     setMatch(null);
     setLikes({});
+    setMyVotes([]);
     setExtended(false);
     setSteer(null);
     deckLen.current = 0;
@@ -126,10 +131,10 @@ export function useParty() {
     [auth],
   );
 
-  /** "Decide for us": the most-liked card becomes the match (shows up on the next poll for everyone). */
-  const decide = useCallback(async () => {
+  /** "Reveal results": the most-liked card wins and everyone's votes are shown (on the next poll for all). */
+  const reveal = useCallback(async () => {
     const a = auth();
-    if (a) await call({ action: "decide", ...a });
+    if (a) await call({ action: "reveal", ...a });
   }, [auth]);
 
   const extend = useCallback(async () => {
@@ -183,6 +188,7 @@ export function useParty() {
         setHostId(s.hostId);
         setProgress(s.progress);
         setLikes(s.likes);
+        setMyVotes(s.myVotes);
         setNeeded(s.needed);
         setExtended(s.extended);
         setSteer((prev) => (prev?.seq === s.steer?.seq ? prev : s.steer));
@@ -199,6 +205,7 @@ export function useParty() {
           matchRef.current = s.match;
           setMatch(s.match);
           setMatchedCard(deckRef.current.find((c) => c.id === s.match) ?? null);
+          setResult(rankResult(deckRef.current, s.likes, s.members, s.match));
           haptic([30, 60, 30, 60, 90]);
         }
       } catch (e) {
@@ -224,20 +231,27 @@ export function useParty() {
     expiresAt: session ? expiresAt : 0,
     nickname: members.find((m) => m.id === session?.memberId)?.nickname ?? null,
     likes,
+    myVotes,
     needed,
     extended,
     steer,
     rename,
-    decide,
+    reveal,
     extend,
     steerTo,
     isHost: Boolean(session && hostId === session.memberId),
+    /** Rooms opened by an AI assistant have no host, so nobody can fetch cards for a request. */
+    hasHost: hostId !== null,
     members,
     deck,
     progress,
     match,
     matchedCard,
-    dismissMatch: () => setMatchedCard(null),
+    result,
+    dismissMatch: () => {
+      setMatchedCard(null);
+      setResult(null);
+    },
     ended,
     clearEnded: () => setEnded(false),
     create,

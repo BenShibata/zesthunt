@@ -65,6 +65,7 @@ Party rooms are the only thing the server keeps, and only briefly.
 
 - **Contents:** the 6-character room code, each member's nickname (a handed-out food name unless they rename) and a hash of their join key, the shared deck of restaurant cards, each member's swipes on those cards, the match, the latest group nudge as one of five mood words ("comfort") with who sent it, and whether the one-time 5 extra minutes were used.
 - **Never in a room:** location, travel times, what anyone typed or said, dietary needs, or IP addresses.
+- **Votes are a secret ballot:** until the group has a result, the server sends each member only their own votes, never anyone else's. At the result, everyone sees who was in on the top picks.
 - **Lifetime:** a hard 10 minutes from creation. Activity doesn't extend it; the only way to add time is the one-time "+5 min" any member can tap, for 15 minutes at most. Every key expires at the same moment (Redis `EXPIREAT` in production; an in-memory map in local development).
 - **Share links** look like `zesthunt.com/#p=CODE`. The code sits after the `#`, which browsers never send to servers, so it doesn't appear in request logs. Party API calls carry the code and key in the request body, not the URL.
 
