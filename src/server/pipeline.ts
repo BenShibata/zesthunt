@@ -328,7 +328,7 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     balance: balanceScore([plate.protein, plate.veg, plate.grain]),
     upgradeTip: tip || undefined,
     photo: place.photoName
-      ? { kind: "url", url: `/api/photo?name=${encodeURIComponent(place.photoName)}` }
+      ? { kind: "url", url: `/api/photo?name=${encodeURIComponent(place.photoName)}`, attribution: place.photoAuthor ?? undefined }
       : { kind: "mock", palette: ["#c8401f", "#3f8f6b", "#efe3c8"], motif: "plate" },
     rating: place.rating,
     ratingCount: place.ratingCount,

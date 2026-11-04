@@ -122,6 +122,15 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </span>
             </p>
           )}
+          {/* Google's terms: Places content shown without a Google map carries a "Google Maps"
+              credit, and a Places photo carries its photographer's name. */}
+          {!pick.placeId.startsWith("mock-") && (
+            <span className="flex min-w-0 max-w-[40%] shrink flex-col items-end text-right text-[11px] leading-tight text-white/75 drop-shadow">
+              {pick.photo.kind === "url" && pick.photo.attribution && <span className="max-w-full truncate">Photo: {pick.photo.attribution}</span>}
+              {/* Never truncated: the "Google Maps" credit has to stay readable. */}
+              <span className="whitespace-nowrap">Google Maps</span>
+            </span>
+          )}
         </div>
       </div>
 

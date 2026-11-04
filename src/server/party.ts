@@ -70,7 +70,7 @@ export const PartyCardSchema = z.object({
   vegetarianOptions: z.boolean().nullable().optional(),
   placeTypes: z.array(z.string().max(40)).max(8).optional(),
   photo: z.union([
-    z.object({ kind: z.literal("url"), url: z.string().max(600).startsWith("/api/photo?") }),
+    z.object({ kind: z.literal("url"), url: z.string().max(600).startsWith("/api/photo?"), attribution: z.string().max(80).optional() }),
     z.object({ kind: z.literal("mock"), palette: z.tuple([z.string(), z.string(), z.string()]), motif: z.enum(["bowl", "plate", "wrap", "cup"]) }),
   ]),
 });

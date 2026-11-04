@@ -27,3 +27,13 @@ describe("createPicksScanner", () => {
     expect(scan(['{"picks":[{"id":"p1"},{"id":"p2"'])).toEqual(['{"id":"p1"}']);
   });
 });
+
+describe("supportsServerFallback", () => {
+  it("is on for models with a server-side fallback and off for Haiku", async () => {
+    const { supportsServerFallback } = await import("./rank");
+    expect(supportsServerFallback("claude-opus-5-5")).toBe(true);
+    expect(supportsServerFallback("claude-sonnet-5-5")).toBe(true);
+    expect(supportsServerFallback("claude-fable-5-1")).toBe(true);
+    expect(supportsServerFallback("claude-haiku-5-5")).toBe(false);
+  });
+});

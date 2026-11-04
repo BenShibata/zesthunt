@@ -43,9 +43,10 @@ For real places, copy `.env.example` to `.env.local` and fill in:
 
 | Variable | What it's for |
 | --- | --- |
-| `GOOGLE_MAPS_API_KEY` | Places API (New), Routes API, Geocoding API. Server-side only. |
+| `GOOGLE_MAPS_API_KEY` | Places API (New) and Geocoding API (plus Routes API if `USE_ROUTES_API=true`). Server-side only. |
 | `ANTHROPIC_API_KEY` | Ranks and describes picks. Without it, picks use rule-based descriptions from the place type. |
-| `ANTHROPIC_MODEL` | Optional. Defaults to `claude-opus-5-5`. |
+| `ANTHROPIC_MODEL` | Optional. Defaults to `claude-haiku-5-5`, the smallest current model (about a tenth of a cent per search). Set a larger model if you want richer descriptions. |
+| `USE_ROUTES_API` | Optional. `true` uses the paid Google Routes API for walk and drive times. Off by default: times are estimated from distance and shown with "~". |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Party rooms and rate limits. Needed on Vercel; locally, both live in memory. |
 | `MCP_DAILY_LIMIT` | Optional. Most live place searches the `/mcp` connector may run per UTC day, across all callers. Defaults to 2000. |
 
@@ -60,12 +61,14 @@ Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (o
    - **With a craving** ("ramen"): Places Text Search for it, open now, near the area. Two or more matches within 1.5 km → walk; otherwise matches within 8 km → drive. No matches → the usual search, and the phone says "Nothing for “ramen” open nearby, so here's what is." Craving searches are never cached.
    - **Otherwise:** the 20 nearest open places (Nearby Search, 1.5 km). When fewer than 10 are left after the phone's exclude list, it adds the 20 most popular nearby and a Text Search for the mood ("salad poke healthy bowl" for Fresh, and so on). Fewer than 5 → widens to an 8 km drive and says so. "Try a short drive" on the empty screen asks for the 8 km search directly.
    - Cached per ~1 km area for 5 minutes. The field list includes rating, rating count and the Google Maps link, which are in the same billing tier as the fields already requested.
-3. **How far:** Routes API route matrix (walking), with a distance estimate if it fails.
+3. **How far:** estimated from straight-line distance by default (free, shown with "~"). With `USE_ROUTES_API=true`, the Routes API route matrix (walking), falling back to the estimate if it fails.
 4. **Rank and describe:** Claude picks only from those places, with output streamed as structured JSON. Each pick is sent to the phone as soon as its object closes, then validated with Zod. Invented IDs, duplicates, "they serve…" claims, and calorie or diet talk are dropped or replaced. If Claude is slower than 2.5 s for the first pick, a rule-based pick shows first.
 
 Prompts and the output schema are in [`src/server/prompts.ts`](src/server/prompts.ts). Claude never receives coordinates, addresses or IPs.
 
-Photos go through `/api/photo` so the key stays server-side and the browser never contacts Google. Each one is a billed Places Photo call, so the route is rate-limited (120 a minute per IP) and the browser may keep a photo for an hour (`private`, so no CDN copies).
+Photos go through `/api/photo` so the key stays server-side and the browser never contacts Google. Each one is a billed Places Photo call, so the route is rate-limited (120 a minute per IP) and the browser may keep a photo for an hour (`private`, so no CDN copies). A card's photo loads only after the card has been on screen for about a second, so quickly skipped picks cost nothing. Real places show Google's required credit on the photo: the photographer's name and "Google Maps".
+
+`GET /api/health` reports what the deployment is running on (places, walk times, ranking, rooms) and returns 503 if it has fallen back to demo places or in-memory rooms. Point an uptime monitor at it.
 
 ### Limits
 

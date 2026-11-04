@@ -13,8 +13,8 @@ export interface Travel {
 const cache = new TtlCache<Travel>(10 * 60_000, 5000);
 
 /**
- * Walking (or driving) times from the rounded origin to each destination via the
- * Routes API route matrix. Falls back to a distance estimate per destination.
+ * Walking (or driving) times from the rounded origin to each destination: a distance
+ * estimate by default (free), or the Routes API route matrix when USE_ROUTES_API=true.
  */
 export async function travelTimes(
   origin: LatLng,
@@ -29,7 +29,8 @@ export async function travelTimes(
     return !hit;
   });
 
-  if (todo.length > 0) {
+  // Routes is a paid call per place; by default the distance estimate below is used instead.
+  if (todo.length > 0 && env.useRoutes) {
     try {
       const res = await fetch("https://routes.googleapis.com/distanceMatrix/v2:computeRouteMatrix", {
         method: "POST",

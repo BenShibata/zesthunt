@@ -48,6 +48,7 @@ function place(id: string, extra: Partial<Place> = {}): Place {
     openNow: true,
     nextCloseTime: null,
     photoName: null,
+    photoAuthor: null,
     summary: null,
     servesVegetarianFood: null,
     takeout: null,
@@ -206,5 +207,11 @@ describe("runPipeline: finding more", () => {
     places.list = ["a", "b", "c", "d", "e", "f"].map((id) => place(id, { nextCloseTime: new Date(Date.now() + 10 * 60000).toISOString() }));
     const { events } = await run();
     expect(events.at(-1)).toMatchObject({ type: "empty", message: expect.stringMatching(/closes before/) });
+  });
+
+  it("carries the photographer's name with a Places photo (Google requires the credit)", async () => {
+    places.list = [place("a", { photoName: "places/a/photos/p1", photoAuthor: "Sam Lee" }), ...places.list.slice(1)];
+    const { picks } = await run();
+    expect(picks.find((p) => p.id === "a")!.photo).toMatchObject({ kind: "url", attribution: "Sam Lee" });
   });
 });

@@ -1,5 +1,24 @@
 /* eslint-disable @next/next/no-img-element -- Places photos are proxied per request; next/image adds nothing here. */
+import { useEffect, useState } from "react";
 import type { PickPhoto as Photo } from "@/lib/types";
+
+/**
+ * Each Places photo is a paid call, so it loads only once a card has been on screen this
+ * long: quick skips cost nothing. The card shows a soft gradient until then.
+ */
+const PHOTO_DELAY_MS = 900;
+
+function RemotePhoto({ url, alt }: { url: string; alt: string }) {
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setReady(true), PHOTO_DELAY_MS);
+    return () => clearTimeout(t);
+  }, [url]);
+  if (!ready) {
+    return <div role="img" aria-label={alt} className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_40%,#2a2620_0%,#141210_70%)]" />;
+  }
+  return <img src={url} alt={alt} referrerPolicy="no-referrer" className="animate-develop absolute inset-0 size-full object-cover" />;
+}
 
 /**
  * Edge-to-edge photo for a pick: the Places photo, served through our own proxy so
@@ -7,16 +26,7 @@ import type { PickPhoto as Photo } from "@/lib/types";
  * places without photos) get a painterly placeholder from a palette.
  */
 export function PickPhoto({ photo, alt }: { photo: Photo; alt: string }) {
-  if (photo.kind === "url") {
-    return (
-      <img
-        src={photo.url}
-        alt={alt}
-        referrerPolicy="no-referrer"
-        className="animate-develop absolute inset-0 size-full object-cover"
-      />
-    );
-  }
+  if (photo.kind === "url") return <RemotePhoto url={photo.url} alt={alt} />;
 
   const [a, b, c] = photo.palette;
   const layers: Record<typeof photo.motif, string> = {
