@@ -22,7 +22,7 @@ import { JoinScreen, PartyBar, PartySetup } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
 import { LockIcon, RewindIcon } from "./Icons";
-import { dietaryBadge, dietaryShort, readStoredDietary, useDietary } from "@/hooks/useDietary";
+import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
 const hasDietary = (d: Dietary | null): d is Dietary => Boolean(d && d.diets.length + d.allergies.length > 0);
@@ -456,7 +456,7 @@ export function ZestApp() {
   const closeDiet = () => {
     setDietOpen(false);
     if (JSON.stringify(dietRef.current) !== dietAtOpen.current && !party.active) {
-      setNotice(hasDietary(dietRef.current) ? "Picks updated for your dietary needs." : "Dietary filter off.");
+      setNotice(hasDietary(dietRef.current) ? "Picks updated to fit what you eat." : "Showing everything again.");
       load(mood);
     }
   };
@@ -590,7 +590,8 @@ export function ZestApp() {
       return;
     }
     setPartyError(null);
-    setDietOpen(false);
+    // Through closeDiet so choices made in the open sheet still apply.
+    if (dietOpen) closeDiet();
     setReceiptOpen(false);
     setPartySetup((o) => !o);
   };
@@ -683,13 +684,16 @@ export function ZestApp() {
     <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
       <TopBar
         dietaryBadge={dietaryBadge(dietary)}
-        dietaryShort={dietaryShort(dietary)}
+        dietaryCount={dietary.diets.length + dietary.allergies.length}
         dietOpen={dietOpen}
         onDiet={openDiet}
         onParty={onPartyButton}
         hideParty={inParty}
       />
       {dietOpen && (
+        // A sheet over the content (not pushing it) so the card never squeezes into the buttons.
+        <div className="relative z-30 h-0">
+          <button type="button" aria-label="Close what you eat" tabIndex={-1} onClick={closeDiet} className="fixed inset-0 -z-10 cursor-default bg-black/55" />
         <DietPanel
           dietary={dietary}
           remembered={dietRemembered}
@@ -697,10 +701,11 @@ export function ZestApp() {
           onRemember={setRemember}
           onForget={() => {
             forgetDiet();
-            setNotice("Forgotten. Nothing about your diet is stored on this device.");
+            setNotice("Forgotten. Nothing about what you eat is stored on this device.");
           }}
           onClose={closeDiet}
         />
+        </div>
       )}
       {partySetup && !inParty && (
         <PartySetup onStart={startParty} onCancel={() => setPartySetup(false)} busy={partyBusy} error={partyError} />

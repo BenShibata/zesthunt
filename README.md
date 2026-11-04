@@ -109,8 +109,8 @@ There's no checkout, no stored cards and no payment processor. Three things only
 [PRIVACY.md](PRIVACY.md) lists exactly what is processed and where. The short version is also in the app at `/privacy`.
 
 - **"What we sent":** the footer's lock button opens a receipt built from the exact request body that last left the phone. It shows the rounded area on a drawn map (your exact spot as a dot that stays on the phone), the time without a date, mood, diet, craving and skip hints. It also lists what wasn't sent, which services got what, and the raw JSON.
-- **Nothing persisted** except the opt-in "Remember my dietary needs on this device" (`localStorage` key `zesthunt:dietary:v1`, diet and allergy selections only). **Forget me** deletes it instantly.
-- **Dietary needs are hard rules:** places that can't meet them are filtered out. Any suggestion naming meat or fish that the diet excludes is replaced. With allergies set, the locked-in screen says "Check allergens with the restaurant."
+- **Nothing persisted** except the opt-in "Remember this on this device" under **What I eat** (`localStorage` key `zesthunt:dietary:v1`, diet and allergy selections only). **Forget me** deletes it instantly.
+- **What you eat is a hard rule:** the panel asks "What do you eat?" and words every choice as food ("No meat or fish", "Nothing from animals", "No gluten"; allergies under "Keep away from"), never as a label for the person. The stored values (`Vegetarian`, `Vegan`…) are unchanged, so saved choices and server rules still work. Places that can't meet a choice are filtered out, and any suggestion naming meat or fish that it excludes is replaced. With allergies set, the locked-in screen says "Check allergens with the restaurant."
 - **Strict headers:** a same-origin-only Content-Security-Policy, `frame-ancestors 'none'`, `nosniff`, COOP, a minimal `Permissions-Policy`, `Referrer-Policy: no-referrer` on every response, and `no-store` on the API.
 - **Logs** never include request bodies. Failures log only the error type or a service status like `places 403`.
 - **Accessibility:** real buttons and labels throughout, 44px minimum touch targets, keyboard support (← → Backspace, arrow keys in the mood tabs), live regions for notices, focus moved to the locked-in heading, AA contrast on the colour pairs we checked, and `prefers-reduced-motion` turns off the photo develop-in, confetti and route animations.
@@ -144,7 +144,7 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
 | Change mood | tap a mood (all five always fit on screen) | Tab to the moods, ← → |
-| Diet and allergies | **Diet** (top right; shows e.g. "Vegan +1" when set) | Tab to it, Enter |
+| What you eat and allergies | **What I eat** (top right; a small count shows how many choices are on, never the choices themselves) | Tab to it, Enter |
 | Start a hunt party | **Party** (top right) | Tab to it, Enter |
 | Search a craving | tap the search button (center) | Tab to it, Enter |
 | Surprise (wildcard) | **Surprise** on the area line, or shake the phone | Tab to it, Enter |

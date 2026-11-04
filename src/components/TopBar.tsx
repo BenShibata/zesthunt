@@ -3,34 +3,37 @@ import { ChevronDownIcon, CompassMark, PartyIcon, UtensilsIcon } from "./Icons";
 
 /**
  * Brand on the left; the two things people look for on the right, as labeled buttons:
- * Diet (dietary needs and allergies) and Party. The demo notice lives on the area line.
+ * "What I eat" (food needs and allergies, worded as food rather than labels for people)
+ * and Party. The demo notice lives on the area line.
  */
 export function TopBar({
   dietaryBadge,
-  dietaryShort,
+  dietaryCount = 0,
   dietOpen,
   onDiet,
   onParty,
   partyActive,
   hideParty,
 }: {
-  /** Everything set, for screen readers ("Vegan · Allergies"). */
+  /** Everything set, for screen readers ("No meat or fish; keeping away from peanuts"). */
   dietaryBadge: string | null;
-  /** What fits on the button ("Vegan +1"). */
-  dietaryShort?: string | null;
+  /** How many choices are on, shown as a small count on the button (never the choices themselves). */
+  dietaryCount?: number;
   dietOpen?: boolean;
   onDiet?: () => void;
   onParty: () => void;
   partyActive?: boolean;
   hideParty?: boolean;
 }) {
-  const pill = "inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold transition";
+  const pill = "inline-flex h-11 min-w-0 items-center gap-1.5 rounded-full px-3 text-sm font-semibold transition min-[360px]:px-3.5";
+  // Icons are a bonus; on the narrowest phones the words have to fit.
+  const pillIcon = "hidden shrink-0 min-[360px]:block";
   return (
-    <header className="flex h-14 items-center justify-between gap-2 px-4 pt-[env(safe-area-inset-top)]">
+    <header className="relative z-40 flex h-14 items-center justify-between gap-2 px-4 pt-[env(safe-area-inset-top)]">
       <div className="flex shrink-0 items-center gap-2">
         <CompassMark size={26} className="text-paprika-bright" />
-        {/* The mark alone on the narrowest phones, so the buttons keep their words. */}
-        <span className="hidden font-display text-xl font-extrabold tracking-tight min-[360px]:inline">zesthunt</span>
+        {/* The mark alone under 400 px, so both buttons keep their full words (and the count). */}
+        <span className="hidden font-display text-xl font-extrabold tracking-tight min-[400px]:inline">zesthunt</span>
       </div>
       <div className="flex min-w-0 items-center gap-2">
         {onDiet && (
@@ -39,11 +42,16 @@ export function TopBar({
             onClick={onDiet}
             aria-expanded={dietOpen}
             aria-controls="diet-panel"
-            aria-label={dietaryBadge ? `Diet and allergies: ${dietaryBadge}. Change` : "Diet and allergies"}
+            aria-label={dietaryBadge ? `What you eat: ${dietaryBadge}. Change` : "What you eat"}
             className={`${pill} ${dietaryBadge ? "bg-teal/30 text-teal-bright hover:bg-teal/40" : "bg-white/10 text-white hover:bg-white/15"}`}
           >
-            <UtensilsIcon size={17} className="shrink-0" />
-            <span className="min-w-0 truncate">{dietaryShort ?? dietaryBadge ?? "Diet"}</span>
+            <UtensilsIcon size={17} className={pillIcon} />
+            <span className="min-w-0 truncate">What I eat</span>
+            {dietaryCount > 0 && (
+              <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded-full bg-teal-bright text-xs font-bold text-ink">
+                {dietaryCount}
+              </span>
+            )}
             <ChevronDownIcon size={15} className={`shrink-0 opacity-70 transition-transform ${dietOpen ? "rotate-180" : ""}`} />
           </button>
         )}
@@ -54,7 +62,7 @@ export function TopBar({
             aria-label={partyActive ? "Invite friends to this party" : "Start a hunt party"}
             className={`${pill} shrink-0 bg-social/25 text-social-bright hover:bg-social/35`}
           >
-            <PartyIcon size={18} className="shrink-0" />
+            <PartyIcon size={18} className={pillIcon} />
             {partyActive ? "Invite" : "Party"}
           </button>
         )}

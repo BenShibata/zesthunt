@@ -1,16 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { dietaryBadge, dietaryShort } from "./useDietary";
+import { dietaryBadge } from "./useDietary";
 
-describe("diet labels", () => {
-  it("fits the top-bar button as first choice plus a count", () => {
-    expect(dietaryShort({ diets: [], allergies: [] })).toBeNull();
-    expect(dietaryShort({ diets: ["Vegan"], allergies: [] })).toBe("Vegan");
-    expect(dietaryShort({ diets: ["Vegan"], allergies: ["Peanuts"] })).toBe("Vegan +1");
-    expect(dietaryShort({ diets: [], allergies: ["Peanuts", "Soy"] })).toBe("Allergies");
-    expect(dietaryShort({ diets: ["Halal", "Gluten-free"], allergies: ["Soy"] })).toBe("Halal +2");
+describe("what-you-eat labels", () => {
+  it("never names people, only food", () => {
+    const all = dietaryBadge({ diets: ["Vegetarian", "Vegan", "Pescatarian", "Gluten-free", "Dairy-free"], allergies: [] }) ?? "";
+    expect(all).not.toMatch(/vegetarian|vegan|pescatarian/i);
   });
 
-  it("keeps the full list for screen readers", () => {
-    expect(dietaryBadge({ diets: ["Vegan"], allergies: ["Peanuts"] })).toBe("Vegan · Allergies");
+  it("spells everything out for screen readers", () => {
+    expect(dietaryBadge({ diets: ["Vegetarian"], allergies: ["Peanuts", "Sesame"] })).toBe("No meat or fish; keeping away from peanuts, sesame");
   });
 });

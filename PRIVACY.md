@@ -12,7 +12,7 @@ Zesthunt has no accounts, no login, no cookies, no analytics, no tracking script
 | Skip signals ("fewer noodles") | Worked out on the device from your skips | Same as above. Only the short phrase is sent with the next request, never the skips themselves. |
 | Bill split amounts | On the device only | Same as above. Only the message you choose to send from your own share sheet leaves the phone. |
 | Dietary needs and allergies | In memory by default | Same as above |
-| …if you turn on **"Remember my dietary needs on this device"** (off by default) | This browser's `localStorage`, key `zesthunt:dietary:v1`, holding only your diet and allergy selections | Until you tap **Forget me** (deletes it immediately), turn the switch off, or clear site data |
+| …if you turn on **"Remember this on this device"** under What I eat (off by default) | This browser's `localStorage`, key `zesthunt:dietary:v1`, holding only your diet and allergy selections | Until you tap **Forget me** (deletes it immediately), turn the switch off, or clear site data |
 
 Zesthunt writes nothing else to `localStorage`, `sessionStorage`, IndexedDB or cookies.
 

@@ -41,9 +41,9 @@ const sections: { title: string; body: string[] }[] = [
     ],
   },
   {
-    title: "Dietary needs",
+    title: "What you eat",
     body: [
-      "Off by default and kept in memory. If you turn on “Remember my dietary needs on this device”, only your diet and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
+      "Off by default and kept in memory. If you turn on “Remember this on this device” under What I eat, only those food and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
     ],
   },
   {
