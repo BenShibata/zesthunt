@@ -37,7 +37,7 @@ const sections: { title: string; body: string[] }[] = [
     title: "Hunt parties",
     body: [
       "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's swipes, the latest group nudge as a mood word, and which places don't fit someone. Never location, what anyone eats, or what anyone typed.",
-      "Each phone checks the places against its own needs and travel time, on the phone, and tells the room only which places to drop. Never who or why.",
+      "Your phone reads the places against what you eat and shows you a private note; it never removes a place on a guess. If you tap “Can't eat this”, or a place would close before you could get there, the room learns only which place to drop. Never who or why.",
       "Rooms vanish 10 minutes after they're created (15 if someone taps +5 min, once), no matter what.",
     ],
   },

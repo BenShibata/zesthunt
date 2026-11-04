@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { PartyCard } from "./types";
-import { misfit, tooLate } from "./partyFit";
+import { fitNote, misfit, tooLate } from "./partyFit";
 
 const card = (extra: Partial<PartyCard>) => ({ id: "x", name: "Place", suggestion: "Try something", category: null, placeTypes: [], vegetarianOptions: null, closesAt: null, ...extra }) as PartyCard;
 const eats = (diets: string[], allergies: string[] = []) => ({ diets, allergies });
@@ -26,6 +26,8 @@ describe("misfit", () => {
   it("keeps fish for fish-but-no-meat, removes it for no meat or fish", () => {
     expect(misfit(card({ suggestion: "Try a salmon poke bowl" }), eats(["Pescatarian"]))).toBeNull();
     expect(misfit(card({ suggestion: "Try a salmon poke bowl" }), eats(["Vegetarian"]))).toBe("fish-led");
+    // A poke bar suggesting a tofu bowl has something for you: no note.
+    expect(misfit(card({ name: "Kai Poke Bar", suggestion: "Try a tofu poke bowl" }), eats(["Vegetarian"]))).toBeNull();
   });
 
   it("handles halal, kosher, no gluten, no dairy and allergies by place type and dish", () => {
@@ -39,18 +41,40 @@ describe("misfit", () => {
   });
 });
 
-describe("tooLate", () => {
+describe("tooLate (the only automatic removal)", () => {
   const now = new Date("2026-11-04T19:00:00Z");
   const closesIn = (min: number) => new Date(now.getTime() + min * 60000).toISOString();
 
-  it("needs time to vote, get there and eat", () => {
-    // 10 to vote + 15 to walk + 30 to eat = 55 minutes.
-    expect(tooLate(card({ closesAt: closesIn(50) }), 15, now)).toBe(true);
-    expect(tooLate(card({ closesAt: closesIn(60) }), 15, now)).toBe(false);
+  it("removes only when you'd arrive with under 10 minutes before closing", () => {
+    // 10 to vote + 15 to walk = arrive at 25; under 10 minutes there means closing before 35.
+    expect(tooLate(card({ closesAt: closesIn(34) }), 15, now)).toBe(true);
+    expect(tooLate(card({ closesAt: closesIn(36) }), 15, now)).toBe(false);
   });
 
-  it("assumes yes when hours or travel are unknown", () => {
+  it("keeps the place when hours or travel are unknown", () => {
     expect(tooLate(card({ closesAt: null }), 15, now)).toBe(false);
     expect(tooLate(card({ closesAt: closesIn(5) }), null, now)).toBe(false);
+  });
+});
+
+describe("fitNote (a private hint, never a removal)", () => {
+  const now = new Date("2026-11-04T19:00:00Z");
+  const closesIn = (min: number) => new Date(now.getTime() + min * 60000).toISOString();
+
+  it("says what might not fit, as a maybe, and that only you see it", () => {
+    const { kind, text: note } = fitNote(card({ placeTypes: ["steak_house"] }), eats(["Vegetarian"]), 10, now)!;
+    expect(kind).toBe("food");
+    expect(note).toMatch(/meat-focused/);
+    expect(note).toMatch(/may still work for you/);
+    expect(note).toMatch(/Only you see this/);
+  });
+
+  it("flags a tight time window without removing it", () => {
+    expect(fitNote(card({ closesAt: closesIn(45) }), eats([]), 15, now)).toEqual({ kind: "time", text: "Heads up: it closes about 20 min after you'd get there." });
+    expect(fitNote(card({ closesAt: closesIn(120) }), eats([]), 15, now)).toBeNull();
+  });
+
+  it("has nothing to say when nothing stands out", () => {
+    expect(fitNote(card({ suggestion: "Try a veggie curry" }), eats(["Vegan"]), 10, now)).toBeNull();
   });
 });

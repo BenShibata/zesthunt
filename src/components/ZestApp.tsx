@@ -6,7 +6,7 @@ import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, 
 import { applySignals, cantEatHints, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
 import { cravingShortcuts } from "@/lib/cravings";
-import { misfit, tooLate } from "@/lib/partyFit";
+import { fitNote, tooLate } from "@/lib/partyFit";
 import { forgetAllWins, readWins } from "@/lib/wins";
 import { mealFrame } from "@/lib/time";
 import { useSwipe } from "@/hooks/useSwipe";
@@ -535,11 +535,12 @@ export function ZestApp() {
   const partyCurrent = party.active ? (partyPicks[pAt] ?? null) : null;
   const votableCount = partyPicks.filter((p) => !unfitSet.has(p.id)).length;
   const votedCount = partyPicks.slice(0, pAt).filter((p) => !unfitSet.has(p.id)).length;
-  /** Fits me, and there's time to vote, get there and eat (my own travel time). Checked on this phone only. */
-  const worksForMe = useCallback(
-    (p: Pick) => !misfit(p, dietRef.current) && !tooLate(p, p.travelUnknown ? null : p.walkMinutes, new Date()),
-    [dietRef],
-  );
+  /**
+   * The only automatic removal: the place would close before I could realistically get there
+   * (after the vote and my own trip). Food mismatches are never removed for me: they're a
+   * private note on the card, and "Can't eat this" is my call.
+   */
+  const worksForMe = useCallback((p: Pick) => !tooLate(p, p.travelUnknown ? null : p.walkMinutes, new Date()), []);
 
   /**
    * Only the host has a location, so only the host's device fetches more cards for the room.
@@ -560,7 +561,7 @@ export function ZestApp() {
       setLastSent,
     )
       .then(() => {
-        // Only places that work for the host and leave time to get there go to the room.
+        // Only places the host could actually reach before closing go to the room.
         const fit = got.filter(worksForMe);
         setHostExtra((x) => [...x, ...fit]);
         return party.addCards(fit.map(toPartyCard));
@@ -596,8 +597,8 @@ export function ZestApp() {
     setPHistory(h.slice(0, -1));
   };
 
-  // Each phone checks the list against its own needs and travel time, and tells the room only
-  // which cards don't fit (never who or why). They disappear for everyone.
+  // Each phone drops places that would close before its owner could get there, telling the room
+  // only which cards (never who or why). Food is never auto-removed: see the private note.
   const reportedUnfit = useRef(new Set<string>());
   useEffect(() => {
     if (!party.active) return;
@@ -605,8 +606,8 @@ export function ZestApp() {
     if (bad.length === 0) return;
     for (const id of bad) reportedUnfit.current.add(id);
     void party.markUnfit(bad).catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check when the cards, removals or my needs change
-  }, [partyPicks, unfitSet, dietary, party.active]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check when the cards or removals change
+  }, [partyPicks, unfitSet, party.active]);
 
   // Say so when someone else's phone removed places, without saying whose or why.
   const lastOthersRemoved = useRef(0);
@@ -614,7 +615,7 @@ export function ZestApp() {
     const othersRemoved = party.unfit.filter((id) => !reportedUnfit.current.has(id)).length;
     if (othersRemoved > lastOthersRemoved.current) {
       const n = othersRemoved - lastOthersRemoved.current;
-      setNotice(`${n} place${n === 1 ? "" : "s"} removed so the list works for everyone.`);
+      setNotice(`${n} place${n === 1 ? "" : "s"} removed: someone can't eat there, or it closes too soon.`);
     }
     lastOthersRemoved.current = othersRemoved;
   }, [party.unfit]);
@@ -636,7 +637,7 @@ export function ZestApp() {
 
   /** One tap: open the room with the picks in hand, then show the invite (QR, link, share). */
   const startParty = async () => {
-    // Only places with time to vote, get there and eat (and that fit the host) start the party.
+    // Only places the host could reach before closing start the party.
     const cards = queue.slice(index).filter(worksForMe).map(toPartyCard);
     if (cards.length === 0) {
       setNotice("Wait for a pick to load, then start hunting together.");
@@ -1097,6 +1098,7 @@ export function ZestApp() {
             quietBadge={Boolean(shownNotice)}
             voted={party.myVotes.includes(partyCurrent.id)}
             onCantEat={() => cantEatInParty(partyCurrent.id)}
+            fitNote={now ? fitNote(partyCurrent, dietary, partyCurrent.travelUnknown ? null : partyCurrent.walkMinutes, now) : null}
             expanded={expandedId === partyCurrent.id}
             onExpand={() => setExpandedId(partyCurrent.id)}
           />

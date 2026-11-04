@@ -29,6 +29,8 @@ interface Props {
   voted?: boolean;
   /** In a party: remove this place for everyone (anonymously) because I can't eat there. */
   onCantEat?: () => void;
+  /** In a party: a private heads-up for me only ("this looks meat-focused"). Never removes anything. */
+  fitNote?: { kind: "food" | "time"; text: string } | null;
   /** A place you chose before and asked to remember: offered first, with a badge. */
   returning?: boolean;
   /** First card of the session: lean left and right once to show it can be swiped. */
@@ -43,7 +45,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, returning }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, returning, fitNote }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -158,15 +160,26 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </>
             )}
           </p>
-          {onCantEat && (
-            <button
-              type="button"
-              onClick={onCantEat}
-              className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
-            >
-              <UtensilsIcon size={14} />
-              Can&apos;t eat this
-            </button>
+          {onCantEat && fitNote ? (
+            // A private heads-up with the choice right beside it: the person decides, not us.
+            <div className="mt-2 rounded-2xl bg-star/12 px-3 py-2 text-sm text-white/90 ring-1 ring-star/30" role="note">
+              <p>{fitNote.text}</p>
+              <button type="button" onClick={onCantEat} className="-ml-1 mt-0.5 inline-flex min-h-11 items-center gap-1 rounded-full px-1 font-semibold text-star hover:underline">
+                {fitNote.kind === "food" ? <UtensilsIcon size={14} /> : <ClockIcon size={14} />}
+                {fitNote.kind === "food" ? "Can't eat this? Remove it for everyone" : "Too tight? Remove it for everyone"}
+              </button>
+            </div>
+          ) : (
+            onCantEat && (
+              <button
+                type="button"
+                onClick={onCantEat}
+                className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
+              >
+                <UtensilsIcon size={14} />
+                Can&apos;t eat this
+              </button>
+            )
           )}
           {closingSoon && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-paprika/20 px-2.5 py-1 text-sm font-semibold text-paprika-bright">

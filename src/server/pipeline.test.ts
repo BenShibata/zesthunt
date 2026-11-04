@@ -193,10 +193,10 @@ describe("runPipeline: finding more", () => {
     expect(picks.map((p) => p.id).sort()).toEqual(["d1", "d2"]);
   });
 
-  it("leaves out places that close before you'd get there with time to eat", async () => {
+  it("leaves out only places that close before you could realistically get there", async () => {
     const soon = (min: number) => new Date(Date.now() + min * 60000).toISOString();
-    // Travel in the mock is 5 + i minutes; a needs 5 + 20 = 25 minutes, b needs 26.
-    places.list = [place("a", { nextCloseTime: soon(15) }), place("b", { nextCloseTime: soon(40) }), place("c"), place("d"), place("e"), place("f")];
+    // Travel in the mock is 5 + i minutes: a (5 min away) needs 15 minutes open, b (6 min away) needs 16.
+    places.list = [place("a", { nextCloseTime: soon(12) }), place("b", { nextCloseTime: soon(20) }), place("c"), place("d"), place("e"), place("f")];
     const { picks } = await run();
     expect(picks.map((p) => p.id)).not.toContain("a");
     expect(picks.map((p) => p.id)).toContain("b");
