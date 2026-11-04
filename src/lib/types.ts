@@ -76,6 +76,9 @@ export interface Pick {
   ratingCount?: number | null;
   /** The place's Google Maps page, for the menu, photos and reviews. */
   mapsUrl?: string;
+  /** Places data for the on-phone "does this fit me?" check in a party. */
+  vegetarianOptions?: boolean | null;
+  placeTypes?: string[];
 }
 
 export interface Dietary {
@@ -145,6 +148,8 @@ export interface PartyState {
   extended: boolean;
   /** The latest group nudge ("Heartier"): the host's phone fetches matching cards from deck position `at`. */
   steer: PartySteer | null;
+  /** Places removed because they don't fit someone (needs, or not enough time to get there). No who, no why. */
+  unfit: string[];
 }
 
 export interface PartySteer {

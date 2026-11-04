@@ -36,7 +36,8 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "Hunt parties",
     body: [
-      "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's swipes and the latest group nudge as a mood word. Never location or what anyone typed.",
+      "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's swipes, the latest group nudge as a mood word, and which places don't fit someone. Never location, what anyone eats, or what anyone typed.",
+      "Each phone checks the places against its own needs and travel time, on the phone, and tells the room only which places to drop. Never who or why.",
       "Rooms vanish 10 minutes after they're created (15 if someone taps +5 min, once), no matter what.",
     ],
   },
@@ -44,6 +45,7 @@ const sections: { title: string; body: string[] }[] = [
     title: "What you eat",
     body: [
       "Off by default and kept in memory. If you turn on “Remember this on this device” under What I eat, only those food and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
+      "If you turn on “Remember [place] for next time” after Let's go, that place's name and ID are saved in this browser (up to 5) so it can be offered first next time. “Forget remembered places” in the menu deletes them. They never leave your phone.",
     ],
   },
   {

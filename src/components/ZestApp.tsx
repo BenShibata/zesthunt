@@ -6,6 +6,8 @@ import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, 
 import { applySignals, cantEatHints, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
 import { cravingShortcuts } from "@/lib/cravings";
+import { misfit, tooLate } from "@/lib/partyFit";
+import { forgetAllWins, readWins } from "@/lib/wins";
 import { mealFrame } from "@/lib/time";
 import { useSwipe } from "@/hooks/useSwipe";
 import { useInactivityTimer } from "@/hooks/useInactivityTimer";
@@ -111,6 +113,11 @@ export function ZestApp() {
   const areaQuery = useRef<string | null>(null);
   // Mirrors of `craving` and `widened` for request building inside stable callbacks.
   const cravingRef = useRef<string | null>(null);
+  // "Back to Kai Poke?": places remembered on this phone (opt-in), offered first once per session.
+  const winIds = useRef<Set<string> | null>(null);
+  const returnTried = useRef(false);
+  const [returningId, setReturningId] = useState<string | null>(null);
+  const [winsCount, setWinsCount] = useState(() => (typeof window === "undefined" ? 0 : readWins().length));
   const widenRef = useRef(false);
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
@@ -177,6 +184,19 @@ export function ZestApp() {
           case "pick":
             got++;
             firstOfSession.current = false;
+            // A remembered place in the session's first batch goes to the front, once.
+            if (!opts.append && !returnTried.current) {
+              winIds.current ??= new Set(readWins().map((w) => w.placeId));
+              if (winIds.current.has(e.pick.placeId)) {
+                returnTried.current = true;
+                setReturningId(e.pick.id);
+                setNotice(`Back to ${e.pick.name}? It's open.`);
+                if (got > 1) {
+                  setQueue((q) => [e.pick, ...q.filter((p) => p.id !== e.pick.id)]);
+                  break;
+                }
+              }
+            }
             if (!opts.append && got === 1) {
               setNow(new Date());
               setQueue([e.pick]);
@@ -204,6 +224,7 @@ export function ZestApp() {
             break;
           case "done":
             if (opts.append && got === 0) exhausted.current.add(m);
+            if (!opts.append) returnTried.current = true;
             break;
         }
       };
@@ -507,7 +528,18 @@ export function ZestApp() {
   );
 
   const partyPicks = useMemo(() => party.deck.map(toLocalPick), [party.deck, toLocalPick]);
-  const partyCurrent = party.active ? (partyPicks[pIndex] ?? null) : null;
+  // Places removed because they don't fit someone are skipped, and don't count toward "voted".
+  const unfitSet = useMemo(() => new Set(party.unfit), [party.unfit]);
+  let pAt = pIndex;
+  while (pAt < partyPicks.length && unfitSet.has(partyPicks[pAt].id)) pAt++;
+  const partyCurrent = party.active ? (partyPicks[pAt] ?? null) : null;
+  const votableCount = partyPicks.filter((p) => !unfitSet.has(p.id)).length;
+  const votedCount = partyPicks.slice(0, pAt).filter((p) => !unfitSet.has(p.id)).length;
+  /** Fits me, and there's time to vote, get there and eat (my own travel time). Checked on this phone only. */
+  const worksForMe = useCallback(
+    (p: Pick) => !misfit(p, dietRef.current) && !tooLate(p, p.travelUnknown ? null : p.walkMinutes, new Date()),
+    [dietRef],
+  );
 
   /**
    * Only the host has a location, so only the host's device fetches more cards for the room.
@@ -528,14 +560,16 @@ export function ZestApp() {
       setLastSent,
     )
       .then(() => {
-        setHostExtra((x) => [...x, ...got]);
-        return party.addCards(got.map(toPartyCard));
+        // Only places that work for the host and leave time to get there go to the room.
+        const fit = got.filter(worksForMe);
+        setHostExtra((x) => [...x, ...fit]);
+        return party.addCards(fit.map(toPartyCard));
       })
       .catch(() => {})
       .finally(() => {
         hostRefilling.current = false;
       });
-  }, [baseQuery, mood, signals, party]);
+  }, [baseQuery, mood, signals, party, worksForMe]);
 
   const partySwipe = (dir: "go" | "skip") => {
     if (!partyCurrent) return;
@@ -544,8 +578,8 @@ export function ZestApp() {
       haptic(12);
       setNotice(party.members.length > 1 ? "Voted. Votes stay secret until the reveal." : "Voted. Invite friends to vote too.");
     }
-    setPHistory((h) => [...h, pIndex]);
-    setPIndex((i) => i + 1);
+    setPHistory((h) => [...h, pAt]);
+    setPIndex(pAt + 1);
     setSwipes((s) => s + 1);
     // Passing is normal in a vote, not a sign of being stuck, so the group's "Not quite?"
     // opens only from Request (or ⋯ → Request something different).
@@ -554,14 +588,56 @@ export function ZestApp() {
   };
 
   const partyRewind = () => {
-    if (pHistory.length === 0) return;
-    setPIndex(pHistory[pHistory.length - 1]);
-    setPHistory(pHistory.slice(0, -1));
+    // Back to the last card still in play (removed ones are skipped).
+    const h = [...pHistory];
+    while (h.length > 0 && unfitSet.has(partyPicks[h[h.length - 1]]?.id)) h.pop();
+    if (h.length === 0) return;
+    setPIndex(h[h.length - 1]);
+    setPHistory(h.slice(0, -1));
+  };
+
+  // Each phone checks the list against its own needs and travel time, and tells the room only
+  // which cards don't fit (never who or why). They disappear for everyone.
+  const reportedUnfit = useRef(new Set<string>());
+  useEffect(() => {
+    if (!party.active) return;
+    const bad = partyPicks.filter((p) => !unfitSet.has(p.id) && !reportedUnfit.current.has(p.id) && !worksForMe(p)).map((p) => p.id);
+    if (bad.length === 0) return;
+    for (const id of bad) reportedUnfit.current.add(id);
+    void party.markUnfit(bad).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-check when the cards, removals or my needs change
+  }, [partyPicks, unfitSet, dietary, party.active]);
+
+  // Say so when someone else's phone removed places, without saying whose or why.
+  const lastOthersRemoved = useRef(0);
+  useEffect(() => {
+    const othersRemoved = party.unfit.filter((id) => !reportedUnfit.current.has(id)).length;
+    if (othersRemoved > lastOthersRemoved.current) {
+      const n = othersRemoved - lastOthersRemoved.current;
+      setNotice(`${n} place${n === 1 ? "" : "s"} removed so the list works for everyone.`);
+    }
+    lastOthersRemoved.current = othersRemoved;
+  }, [party.unfit]);
+
+  // Keep enough places to vote on: if removals leave few, the host's phone fetches more.
+  const refilledAt = useRef(-1);
+  useEffect(() => {
+    if (!party.active || !party.isHost || votableCount >= 6 || party.deck.length >= 40 || refilledAt.current === party.deck.length) return;
+    refilledAt.current = party.deck.length;
+    hostRefill();
+  }, [party.active, party.isHost, votableCount, party.deck.length, hostRefill]);
+
+  /** "Can't eat this" on a party card: removed for everyone, anonymously. */
+  const cantEatInParty = (id: string) => {
+    reportedUnfit.current.add(id);
+    void party.markUnfit([id]).catch(() => setNotice("Couldn't reach the group. Try again."));
+    setNotice("Removed for everyone. Nobody sees who or why.");
   };
 
   /** One tap: open the room with the picks in hand, then show the invite (QR, link, share). */
   const startParty = async () => {
-    const cards = queue.slice(index).map(toPartyCard);
+    // Only places with time to vote, get there and eat (and that fit the host) start the party.
+    const cards = queue.slice(index).filter(worksForMe).map(toPartyCard);
     if (cards.length === 0) {
       setNotice("Wait for a pick to load, then start hunting together.");
       return;
@@ -743,6 +819,7 @@ export function ZestApp() {
       <LockedIn
         pick={locked}
         decided={decided ?? undefined}
+        onRememberChange={() => setWinsCount(readWins().length)}
         now={now}
         allergyNote={dietary.allergies.length > 0}
         allergies={dietary.allergies}
@@ -851,6 +928,21 @@ export function ZestApp() {
     ...(inParty ? [] : [{ label: "Change area", icon: <PinIcon size={18} />, onSelect: openArea }]),
     { label: inParty ? "Invite friends" : "Hunt together", icon: <PartyIcon size={18} />, onSelect: onPartyButton },
     { label: "What we sent", icon: <LockIcon size={18} />, onSelect: toggleReceipt },
+    ...(winsCount > 0
+      ? [
+          {
+            label: "Forget remembered places",
+            detail: `${winsCount} saved on this phone`,
+            icon: <RewindIcon size={18} />,
+            onSelect: () => {
+              forgetAllWins();
+              setWinsCount(0);
+              setReturningId(null);
+              setNotice("Forgotten. No places are remembered on this phone.");
+            },
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -916,7 +1008,7 @@ export function ZestApp() {
           members={party.members}
           progress={party.progress}
           meId={party.memberId}
-          deckSize={party.deck.length}
+          deckSize={votableCount}
           extended={party.extended}
           onInvite={() => setInviteOpen(true)}
           onLeave={leaveParty}
@@ -1004,11 +1096,12 @@ export function ZestApp() {
             swipe={swipe}
             quietBadge={Boolean(shownNotice)}
             voted={party.myVotes.includes(partyCurrent.id)}
+            onCantEat={() => cantEatInParty(partyCurrent.id)}
             expanded={expandedId === partyCurrent.id}
             onExpand={() => setExpandedId(partyCurrent.id)}
           />
         ) : (
-          <PartyWaiting members={party.members} progress={party.progress} deckSize={party.deck.length} meId={party.memberId ?? ""} onReveal={reveal} />
+          <PartyWaiting members={party.members} progress={party.progress} deckSize={votableCount} meId={party.memberId ?? ""} onReveal={reveal} />
         )
       ) : (
         areaOpen ? (
@@ -1044,6 +1137,7 @@ export function ZestApp() {
           expanded={expandedId === current.id}
           onExpand={() => setExpandedId(current.id)}
           hint={!hinted && swipes === 0}
+          returning={current.id === returningId}
           onHinted={() => setHinted(true)}
         />
       )}
@@ -1096,7 +1190,7 @@ export function ZestApp() {
 
       <Controls
         travelMode={shown?.travelMode ?? "walk"}
-        vote={inParty ? { done: Math.min(pIndex, party.deck.length), total: party.deck.length } : undefined}
+        vote={inParty ? { done: votedCount, total: votableCount } : undefined}
         disabled={!shown || receiptOpen}
         listening={voice.listening}
         timeLeft={timer.fraction}

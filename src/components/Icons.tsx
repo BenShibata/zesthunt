@@ -255,3 +255,11 @@ export function HeartIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function SendIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M21 3 10 14M21 3l-7 18-4-7-7-4 18-7Z" />
+    </svg>
+  );
+}

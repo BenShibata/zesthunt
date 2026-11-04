@@ -6,7 +6,7 @@ import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, 
 import { PickPhoto } from "./PickPhoto";
 import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, WalkIcon } from "./Icons";
+import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import type { useSwipe } from "@/hooks/useSwipe";
 
 interface Props {
@@ -27,6 +27,10 @@ interface Props {
   onExpand?: () => void;
   /** In a party: you already voted for this card (others' votes stay secret). */
   voted?: boolean;
+  /** In a party: remove this place for everyone (anonymously) because I can't eat there. */
+  onCantEat?: () => void;
+  /** A place you chose before and asked to remember: offered first, with a badge. */
+  returning?: boolean;
   /** First card of the session: lean left and right once to show it can be swiped. */
   hint?: boolean;
   onHinted?: () => void;
@@ -39,7 +43,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, returning }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -85,7 +89,14 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
             </span>
           </div>
         )}
-        {expanded && voted === undefined && (
+        {returning && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-paprika/90 px-3 text-sm font-semibold text-white backdrop-blur-md">
+              <span aria-hidden="true">♥</span> Your pick last time
+            </span>
+          </div>
+        )}
+        {expanded && voted === undefined && !returning && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
               {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
@@ -147,6 +158,16 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </>
             )}
           </p>
+          {onCantEat && (
+            <button
+              type="button"
+              onClick={onCantEat}
+              className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
+            >
+              <UtensilsIcon size={14} />
+              Can&apos;t eat this
+            </button>
+          )}
           {closingSoon && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-paprika/20 px-2.5 py-1 text-sm font-semibold text-paprika-bright">
               <ClockIcon size={15} />

@@ -37,6 +37,8 @@ export type PicksRequest = z.infer<typeof PicksRequestSchema>;
 const WALK_RADIUS_M = 1500;
 const DRIVE_RADIUS_M = 8000;
 const MIN_WALKABLE = 5;
+/** A pick has to stay open at least this long after you'd arrive. */
+const ARRIVE_WITH_MINUTES = 20;
 /** A craving is worth walking for with fewer options: two matching places beat five that don't. */
 const MIN_CRAVING_WALKABLE = 2;
 const MAX_CANDIDATES = 20;
@@ -111,7 +113,13 @@ export async function* runPipeline(
     places.map((p) => ({ id: p.id, location: p.location })),
     mode === "walk" ? "WALK" : "DRIVE",
   );
-  const shortlist = [...places].sort((a, b) => travel.get(a.id)!.minutes - travel.get(b.id)!.minutes).slice(0, MAX_CANDIDATES);
+  // Enough time: drop places that close before you'd get there with a meal's worth of time left.
+  const reachable = places.filter((p) => !p.nextCloseTime || (Date.parse(p.nextCloseTime) - Date.now()) / 60000 >= travel.get(p.id)!.minutes + ARRIVE_WITH_MINUTES);
+  if (reachable.length === 0) {
+    yield { type: "empty", message: "Everything nearby closes before you'd get there.", suggestion: "order_in" };
+    return;
+  }
+  const shortlist = [...reachable].sort((a, b) => travel.get(a.id)!.minutes - travel.get(b.id)!.minutes).slice(0, MAX_CANDIDATES);
 
   const sharedWith: ThirdParty[] = useAI ? ["google", "anthropic"] : ["google"];
   yield {
@@ -322,6 +330,8 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     rating: place.rating,
     ratingCount: place.ratingCount,
     mapsUrl: place.mapsUri ?? undefined,
+    vegetarianOptions: place.servesVegetarianFood,
+    placeTypes: [place.primaryType, ...place.types].filter((t): t is string => Boolean(t)).slice(0, 8),
   };
 }
 

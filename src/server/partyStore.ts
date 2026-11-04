@@ -47,6 +47,9 @@ export interface RoomStore {
   deck(code: string, since: number): Promise<{ cards: string[]; size: number }>;
   swipe(code: string, memberId: string, pickId: string, dir: "go" | "skip", expiresAt: number): Promise<void>;
   swipes(code: string): Promise<Record<string, "go" | "skip">>;
+  /** Cards that don't fit someone in the room (no who, no why). */
+  addUnfit(code: string, pickIds: string[], expiresAt: number): Promise<void>;
+  unfit(code: string): Promise<string[]>;
   /** Sets the match once; later calls keep the first. */
   setMatch(code: string, pickId: string, expiresAt: number): Promise<void>;
   match(code: string): Promise<string | null>;
@@ -57,6 +60,7 @@ export interface RoomStore {
 // ---------------------------------------------------------------------------
 
 interface MemRoom {
+  unfit: Set<string>;
   meta: RoomMeta;
   members: Map<string, StoredMember>;
   deck: string[];
@@ -84,7 +88,7 @@ class MemoryStore implements RoomStore {
   async create(code: string, meta: RoomMeta, host: StoredMember | null) {
     this.sweep();
     if (this.get(code)) return false;
-    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), match: null });
+    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), match: null, unfit: new Set() });
     return true;
   }
   async meta(code: string) {
@@ -115,6 +119,13 @@ class MemoryStore implements RoomStore {
   }
   async swipes(code: string) {
     return Object.fromEntries(this.get(code)?.swipes ?? []);
+  }
+  async addUnfit(code: string, pickIds: string[]) {
+    const room = this.get(code);
+    for (const id of pickIds) room?.unfit.add(id);
+  }
+  async unfit(code: string) {
+    return [...(this.get(code)?.unfit ?? [])];
   }
   async setMatch(code: string, pickId: string) {
     const room = this.get(code);
@@ -156,7 +167,7 @@ class UpstashStore implements RoomStore {
     const ttl = Math.max(1, Math.ceil((meta.expiresAt - Date.now()) / 1000));
     await this.run([
       ["SET", this.k(code, "meta"), JSON.stringify(meta), "XX", "EX", ttl],
-      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "match"),
+      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "match", "unfit"),
     ]);
   }
   async addMember(code: string, m: StoredMember, expiresAt: number) {
@@ -187,6 +198,14 @@ class UpstashStore implements RoomStore {
     const out: Record<string, "go" | "skip"> = {};
     for (let i = 0; i < flat.length; i += 2) out[flat[i]] = flat[i + 1] as "go" | "skip";
     return out;
+  }
+  async addUnfit(code: string, pickIds: string[], expiresAt: number) {
+    if (pickIds.length === 0) return;
+    await this.run([["SADD", this.k(code, "unfit"), ...pickIds], ...this.expire(code, expiresAt, "unfit")]);
+  }
+  async unfit(code: string) {
+    const [raw] = await this.run([["SMEMBERS", this.k(code, "unfit")]]);
+    return (raw as string[] | null) ?? [];
   }
   async setMatch(code: string, pickId: string, expiresAt: number) {
     const ttl = Math.max(1, Math.ceil((expiresAt - Date.now()) / 1000));

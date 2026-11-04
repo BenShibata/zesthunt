@@ -4,11 +4,12 @@ import { useEffect, useRef, useState } from "react";
 import { ALLERGIES } from "@/lib/dietary";
 import type { Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, minutesUntil, priceText } from "@/lib/time";
-import { directionsUrl, orderAhead } from "@/lib/links";
+import { directionsUrl, inviteMessage, orderAhead } from "@/lib/links";
+import { forgetWin, readWins, rememberWin } from "@/lib/wins";
 import { SplitCard } from "./SplitCard";
 import { RouteMap } from "./RouteMap";
 import { SheetPaymentChips } from "./PaymentChips";
-import { CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, PartyIcon, TagIcon, WalkIcon } from "./Icons";
+import { CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, PartyIcon, SendIcon, TagIcon, WalkIcon } from "./Icons";
 
 interface Props {
   pick: Pick;
@@ -29,10 +30,29 @@ interface Props {
   decided?: { seconds: number; swipes: number };
   /** Solo only: turn this pick into a party for a group still deciding. */
   onDecideTogether?: () => void;
+  /** Called when "Remember for next time" changes, so the menu can offer "Forget". */
+  onRememberChange?: () => void;
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided, onRememberChange }: Props) {
+  const [remembered, setRemembered] = useState(() => readWins().some((w) => w.placeId === pick.placeId));
+  const [inviteNote, setInviteNote] = useState<string | null>(null);
+
+  /** "Want to come?": the user's own share sheet, or the clipboard where there isn't one. */
+  const sendInvite = async () => {
+    const msg = inviteMessage(pick);
+    try {
+      if (navigator.share) {
+        await navigator.share(msg);
+        return;
+      }
+      await navigator.clipboard.writeText(`${msg.text} ${msg.url}`);
+      setInviteNote("Copied. Paste it to a friend.");
+    } catch {
+      // The user closed the share sheet: nothing to say.
+    }
+  };
   const [askAllergies, setAskAllergies] = useState(() => allergies.length === 0);
   const heading = useRef<HTMLHeadingElement>(null);
   const closesIn = minutesUntil(pick.closesAt, now);
@@ -76,7 +96,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             {decided && (
               <span className="font-normal text-sheet-muted dark:text-white/60">
                 {" "}
-                · decided in {decided.seconds < 90 ? `${decided.seconds} seconds` : `${Math.round(decided.seconds / 60)} minutes`}
+                · decided in {decided.seconds < 90 ? `${decided.seconds} second${decided.seconds === 1 ? "" : "s"}` : `${Math.round(decided.seconds / 60)} minutes`}
                 {decided.swipes === 0 ? ", first pick" : `, ${decided.swipes} swipe${decided.swipes === 1 ? "" : "s"}`}
               </span>
             )}
@@ -126,6 +146,27 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
         <div className="mt-3">
           <SheetPaymentChips payment={pick.payment} hasOnlineOrdering={Boolean(pick.orderUrl)} />
         </div>
+
+        {!partyMatch && (
+          <div className="mt-3 grid gap-2">
+            {/* Lighter than a party: send this one place to a friend. */}
+            <button type="button" onClick={() => void sendInvite()} className={`${secondaryBtn} w-full`}>
+              <SendIcon size={18} />
+              Want to come? Send to a friend
+            </button>
+            {inviteNote && (
+              <p className="text-center text-sm text-sheet-muted dark:text-white/70" role="status">
+                {inviteNote}
+              </p>
+            )}
+            {onDecideTogether && (
+              <button type="button" onClick={onDecideTogether} className={`${secondaryBtn} w-full`}>
+                <PartyIcon size={18} />
+                Still deciding with others? Vote together
+              </button>
+            )}
+          </div>
+        )}
 
         {pick.upgradeTip && (
           <p className="mt-3 flex items-start gap-2 rounded-2xl bg-teal/10 px-4 py-3 text-sm text-teal-deep dark:bg-teal/20 dark:text-teal-bright">
@@ -177,11 +218,26 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           </section>
         )}
 
-        {onDecideTogether && !partyMatch && (
-          <button type="button" onClick={onDecideTogether} className={`${secondaryBtn} mt-3 w-full`}>
-            <PartyIcon size={18} />
-            Eating with others? Decide together
-          </button>
+
+        {!partyMatch && (
+          <label className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
+            <span className="text-sm">
+              <span className="font-semibold">Remember {pick.name} for next time</span>
+              <span className="block text-sheet-muted dark:text-white/65">Saved only on this phone. If it&apos;s open nearby next time, it comes first.</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={remembered}
+              onChange={(e) => {
+                if (e.target.checked) rememberWin(pick);
+                else forgetWin(pick.placeId);
+                setRemembered(e.target.checked);
+                onRememberChange?.();
+              }}
+              className="size-6 shrink-0 accent-teal"
+            />
+          </label>
         )}
 
         <SplitCard placeName={pick.name} defaultPeople={partySize ?? 2} startOpen={Boolean(partyMatch)} />

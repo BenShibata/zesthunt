@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PartyCard } from "@/lib/types";
 import { resetUpstashForTests } from "./upstash";
 import { resetRoomStoreForTests } from "./partyStore";
-import { createOpenParty, createParty, decideNow, extendParty, joinParty, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
+import { createOpenParty, createParty, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
 
 const card = (id: string) => ({ id, placeId: id, name: id }) as PartyCard;
 
@@ -127,5 +127,23 @@ describe("hunt party", () => {
     const after = await partyState(host.code, a.memberId, a.key, 0);
     expect(after.match).toBe("x");
     expect(after.likes).toEqual({ x: [a.memberId], y: [b.memberId] });
+  });
+
+  it("drops places that don't fit someone: no votes, no match, no win, and they don't block done", async () => {
+    const host = await createParty(undefined, [card("x"), card("y")]);
+    const a = await joinParty(host.code);
+    await recordSwipe(host.code, host.memberId, host.key, "x", "go");
+    await markUnfit(a.code, a.memberId, a.key, ["x"]);
+    await recordSwipe(a.code, a.memberId, a.key, "x", "go");
+    let state = await partyState(host.code, host.memberId, host.key, 0);
+    expect(state.unfit).toEqual(["x"]);
+    expect(state.match).toBeNull();
+    expect(state.myVotes).toEqual([]);
+    expect(state.progress[host.memberId] ?? 0).toBe(0);
+    await expect(decideNow(host.code, host.memberId, host.key)).rejects.toMatchObject({ status: 409 });
+    await recordSwipe(host.code, host.memberId, host.key, "y", "go");
+    expect(await decideNow(host.code, a.memberId, a.key)).toEqual({ match: "y" });
+    state = await partyState(host.code, host.memberId, host.key, 0);
+    expect(JSON.stringify(state)).not.toMatch(/Vegetarian|allerg/i);
   });
 });
