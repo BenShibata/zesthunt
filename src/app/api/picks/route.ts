@@ -10,7 +10,7 @@ const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer"
  * is used for this response only: never logged, cached, or stored.
  */
 export async function POST(request: Request) {
-  const limit = rateLimit(clientIp(request.headers));
+  const limit = await rateLimit(clientIp(request.headers));
   if (!limit.ok) {
     return Response.json(
       { error: "Easy there, give it a moment." },

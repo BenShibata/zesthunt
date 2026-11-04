@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ALLERGIES } from "@/lib/dietary";
 import type { Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, minutesUntil, priceText } from "@/lib/time";
 import { directionsUrl, orderAhead } from "@/lib/links";
 import { SplitCard } from "./SplitCard";
 import { RouteMap } from "./RouteMap";
 import { SheetPaymentChips } from "./PaymentChips";
-import { CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, TagIcon, WalkIcon } from "./Icons";
+import { CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, PartyIcon, TagIcon, WalkIcon } from "./Icons";
 
 interface Props {
   pick: Pick;
@@ -18,10 +19,19 @@ interface Props {
   partySize?: number;
   /** The user has allergies set: remind them we can't verify ingredients. */
   allergyNote?: boolean;
+  /**
+   * Right before eating is when allergies matter, so if none are set we ask here, once,
+   * with one-tap chips. Saved like the rest of "What I eat".
+   */
+  allergies?: string[];
+  onAllergiesChange?: (allergies: string[]) => void;
+  /** Solo only: turn this pick into a party for a group still deciding. */
+  onDecideTogether?: () => void;
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, onClose }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose }: Props) {
+  const [askAllergies, setAskAllergies] = useState(() => allergies.length === 0);
   const heading = useRef<HTMLHeadingElement>(null);
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
@@ -122,6 +132,47 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, onClos
           </p>
         )}
 
+        {askAllergies && onAllergiesChange && !partyMatch && (
+          <section aria-labelledby="allergy-ask" className="mt-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
+            <h2 id="allergy-ask" className="text-base font-semibold">
+              Anything to keep away from?
+            </h2>
+            <p className="text-sm text-sheet-muted dark:text-white/65">Optional. We&apos;ll remind you to check with the restaurant.</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ALLERGIES.map((a) => {
+                const on = allergies.includes(a);
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => onAllergiesChange(on ? allergies.filter((x) => x !== a) : [...allergies, a])}
+                    className={`h-11 rounded-full px-3.5 text-sm font-semibold transition ${
+                      on ? "bg-teal text-white" : "border border-sheet-ink/20 hover:bg-sheet dark:border-white/20 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {a}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAskAllergies(false)}
+              className="mt-2 h-11 rounded-full px-1 text-sm font-semibold text-teal underline-offset-4 hover:underline dark:text-teal-bright"
+            >
+              {allergies.length > 0 ? "Done" : "Nothing, thanks"}
+            </button>
+          </section>
+        )}
+
+        {onDecideTogether && !partyMatch && (
+          <button type="button" onClick={onDecideTogether} className={`${secondaryBtn} mt-3 w-full`}>
+            <PartyIcon size={18} />
+            Eating with others? Decide together
+          </button>
+        )}
+
         <SplitCard placeName={pick.name} defaultPeople={partySize ?? 2} startOpen={Boolean(partyMatch)} />
 
         {/* Pinned so "Start walking" stays in thumb reach even when the split card is open. */}
@@ -156,6 +207,12 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, onClos
           )}
           {order.kind === "none" && (
             <p className="text-center text-sm text-sheet-muted dark:text-white/70">Dine-in only, per Google. Just walk on over.</p>
+          )}
+          {pick.mapsUrl && (
+            <a href={pick.mapsUrl} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
+              Menu, photos and reviews
+              <ExternalIcon size={16} />
+            </a>
           )}
           <p className="pt-2 text-center text-xs text-sheet-muted dark:text-white/60">
             We never see your card. You pay in your own wallet.

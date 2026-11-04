@@ -5,7 +5,7 @@ import type { Dietary } from "@/lib/types";
 
 /*
  * The one thing Zesthunt may persist, and only if the user opts in:
- * "Remember my dietary needs on this device." Off by default. It stores ONLY
+ * "Remember this on this device." Off by default. It stores ONLY
  * diet and allergy selections in this browser's localStorage. The server gets
  * them as a filter on each request and never stores or logs them.
  * "Forget me" deletes the key immediately.
@@ -59,22 +59,13 @@ function write(d: Dietary | null) {
 }
 
 export { ALLERGIES, DIETS } from "@/lib/dietary";
+import { eatsLabel } from "@/lib/dietary";
 
-const SHORT: Record<string, string> = {
-  Vegetarian: "Veg",
-  Vegan: "Vegan",
-  Pescatarian: "Pesc",
-  Halal: "Halal",
-  Kosher: "Kosher",
-  "Gluten-free": "GF",
-  "Dairy-free": "DF",
-};
-
+/** Everything set, in words, for screen readers ("No meat or fish; keeping away from peanuts"). */
 export function dietaryBadge(d: Dietary): string | null {
-  const parts = d.diets.map((x) => SHORT[x] ?? x);
-  if (d.allergies.length > 0) parts.push("Allergies");
-  if (parts.length === 0) return null;
-  return parts.length > 2 ? `${parts.slice(0, 2).join(" · ")} +${parts.length - 2}` : parts.join(" · ");
+  const parts = d.diets.map(eatsLabel);
+  if (d.allergies.length > 0) parts.push(`keeping away from ${d.allergies.map((a) => a.toLowerCase()).join(", ")}`);
+  return parts.length > 0 ? parts.join("; ") : null;
 }
 
 export function useDietary() {

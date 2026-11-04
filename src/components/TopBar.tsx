@@ -1,96 +1,95 @@
-import { MOODS, MOOD_LABELS, type Mood } from "@/lib/types";
-import { CompassMark, LeafIcon, PartyIcon } from "./Icons";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { CompassMark, MoreIcon } from "./Icons";
 
-export function TopBar({
-  dietaryBadge,
-  dietOpen,
-  onDiet,
-  demo,
-  onParty,
-  partyActive,
-  hideParty,
-}: {
-  dietaryBadge: string | null;
-  dietOpen?: boolean;
-  onDiet?: () => void;
-  demo?: boolean;
-  onParty: () => void;
-  partyActive?: boolean;
-  hideParty?: boolean;
-}) {
+export interface MenuItem {
+  label: string;
+  /** Extra words for screen readers, e.g. what's currently set. */
+  detail?: string;
+  /** A small count shown next to the label (choices on). */
+  count?: number;
+  icon: ReactNode;
+  onSelect: () => void;
+}
+
+/**
+ * Just the brand and one ⋯ menu. Everything that used to sit up here (what you eat,
+ * Party, privacy) is one tap away in the menu, or comes to the person when it's relevant.
+ */
+export function TopBar({ demo, items, badge = 0, action }: { demo?: boolean; items: MenuItem[]; badge?: number; action?: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => !wrap.current?.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    window.addEventListener("pointerdown", onDown);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
   return (
-    <header className="flex h-14 items-center justify-between px-4 pt-[env(safe-area-inset-top)]">
-      <div className="flex items-center gap-2">
-        <CompassMark size={26} className="text-paprika-bright" />
-        <span className="font-display text-xl font-extrabold tracking-tight">zesthunt</span>
+    <header className="relative z-40 flex h-14 items-center justify-between gap-2 px-4 pt-[env(safe-area-inset-top)]">
+      <div className="flex min-w-0 items-center gap-2">
+        <CompassMark size={26} className="shrink-0 text-paprika-bright" />
+        {/* The mark alone under 400 px, so the action button keeps its words. */}
+        <span className="hidden font-display text-xl font-extrabold tracking-tight min-[400px]:inline">zesthunt</span>
         {demo && (
-          <span className="ml-1 rounded-full border border-white/25 px-2 py-0.5 text-xs font-semibold text-white/70" title="No API keys set: showing fictional places">
+          <span className="rounded-full border border-white/25 px-2 py-0.5 text-xs font-semibold text-white/70" title="No API keys set: showing fictional places">
             Demo
           </span>
         )}
-        {onDiet && (
-          <button
-            type="button"
-            onClick={onDiet}
-            aria-expanded={dietOpen}
-            aria-label={dietaryBadge ? `Dietary filter on: ${dietaryBadge}. Change` : "Set dietary needs"}
-            className={`ml-1 inline-flex h-11 min-w-11 items-center justify-center gap-1 rounded-full px-2.5 text-xs font-semibold ${
-              dietaryBadge ? "bg-teal/30 text-teal-bright" : "text-white/60 hover:bg-white/10"
-            }`}
-          >
-            <LeafIcon size={14} />
-            {dietaryBadge ?? <span className="sr-only">Diet</span>}
-          </button>
-        )}
       </div>
-      {!hideParty && (
+      <div className="flex shrink-0 items-center gap-2">
+      {action}
+      {items.length > 0 && (
+      <div ref={wrap} className="relative">
         <button
           type="button"
-          onClick={onParty}
-          aria-label={partyActive ? "Invite friends to this party" : "Start a hunt party"}
-          className="inline-flex h-11 items-center gap-2 rounded-full bg-social/25 px-4 text-sm font-semibold text-social-bright transition hover:bg-social/35"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          aria-controls="app-menu"
+          aria-label={`Menu${badge > 0 ? ` (${badge} food choice${badge === 1 ? "" : "s"} on)` : ""}`}
+          className="relative grid size-11 place-items-center rounded-full bg-white/10 text-white transition hover:bg-white/15"
         >
-          <PartyIcon size={18} />
-          {partyActive ? "Invite" : "Party"}
+          <MoreIcon size={22} />
+          {badge > 0 && (
+            <span aria-hidden="true" className="absolute -top-0.5 -right-0.5 grid size-5 place-items-center rounded-full bg-teal-bright text-[11px] font-bold text-ink">
+              {badge}
+            </span>
+          )}
         </button>
+        {open && (
+          <ul id="app-menu" className="animate-rise absolute top-12 right-0 w-64 overflow-hidden rounded-2xl bg-ink-3 py-1.5 shadow-2xl ring-1 ring-white/10">
+            {items.map((item) => (
+              <li key={item.label}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    item.onSelect();
+                  }}
+                  aria-label={item.detail ? `${item.label}: ${item.detail}` : undefined}
+                  className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-base font-medium text-white hover:bg-white/8"
+                >
+                  <span className="shrink-0 text-white/70">{item.icon}</span>
+                  <span className="flex-1">{item.label}</span>
+                  {item.count ? (
+                    <span aria-hidden="true" className="grid size-5 place-items-center rounded-full bg-teal-bright text-[11px] font-bold text-ink">
+                      {item.count}
+                    </span>
+                  ) : null}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       )}
+      </div>
     </header>
-  );
-}
-
-export function MoodTabs({ mood, onChange }: { mood: Mood; onChange: (m: Mood) => void }) {
-  return (
-    <div role="tablist" aria-label="Mood" className="flex gap-1.5 overflow-x-auto px-4 pb-3 [scrollbar-width:none]">
-      {MOODS.map((m) => {
-        const selected = m === mood;
-        return (
-          <button
-            key={m}
-            role="tab"
-            id={`mood-${m}`}
-            aria-controls="picks-panel"
-            type="button"
-            aria-selected={selected}
-            onClick={() => onChange(m)}
-            onKeyDown={(e) => {
-              const i = MOODS.indexOf(m);
-              if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
-                e.preventDefault();
-                e.stopPropagation();
-                const next = MOODS[(i + (e.key === "ArrowRight" ? 1 : MOODS.length - 1)) % MOODS.length];
-                onChange(next);
-                (e.currentTarget.parentElement?.children[MOODS.indexOf(next)] as HTMLElement | undefined)?.focus();
-              }
-            }}
-            tabIndex={selected ? 0 : -1}
-            className={`h-11 shrink-0 rounded-full px-4 text-sm font-semibold transition ${
-              selected ? "bg-white text-ink" : "bg-white/8 text-white/75 hover:bg-white/14"
-            }`}
-          >
-            {MOOD_LABELS[m]}
-          </button>
-        );
-      })}
-    </div>
   );
 }

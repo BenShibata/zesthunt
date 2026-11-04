@@ -25,7 +25,7 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "Who else is involved",
     body: [
-      "Google Places and Routes get the rounded area to find open places and walking times. Photos come through our server, so your browser never talks to Google.",
+      "Google Places and Routes get the rounded area to find open places and walking times. If you set a craving, Google also gets its words to search for places serving it; those results aren't cached. Photos come through our server, so your browser never talks to Google.",
       "Claude (Anthropic) ranks and describes the picks. It gets the place list, your mood and filters, and what you typed or said. It never gets coordinates, addresses or IP.",
     ],
   },
@@ -36,14 +36,14 @@ const sections: { title: string; body: string[] }[] = [
   {
     title: "Hunt parties",
     body: [
-      "A party room holds only its code, nicknames, the shared restaurant cards and everyone's swipes. Never location or what anyone typed.",
-      "Rooms vanish 10 minutes after they're created, no matter what.",
+      "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's swipes and the latest group nudge as a mood word. Never location or what anyone typed.",
+      "Rooms vanish 10 minutes after they're created (15 if someone taps +5 min, once), no matter what.",
     ],
   },
   {
-    title: "Dietary needs",
+    title: "What you eat",
     body: [
-      "Off by default and kept in memory. If you turn on “Remember my dietary needs on this device”, only your diet and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
+      "Off by default and kept in memory. If you turn on “Remember this on this device” under What I eat, only those food and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
     ],
   },
   {

@@ -20,6 +20,9 @@
   --color-social: #2563eb;
   --color-social-bright: #7aa7ff;
 
+  /* Rating star */
+  --color-star: #f5c451;
+
   /* Warm light sheet (locked-in screen) */
   --color-sheet: #fbf6ef;
   --color-sheet-2: #f2e9dd;

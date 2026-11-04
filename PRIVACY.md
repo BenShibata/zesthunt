@@ -12,7 +12,7 @@ Zesthunt has no accounts, no login, no cookies, no analytics, no tracking script
 | Skip signals ("fewer noodles") | Worked out on the device from your skips | Same as above. Only the short phrase is sent with the next request, never the skips themselves. |
 | Bill split amounts | On the device only | Same as above. Only the message you choose to send from your own share sheet leaves the phone. |
 | Dietary needs and allergies | In memory by default | Same as above |
-| …if you turn on **"Remember my dietary needs on this device"** (off by default) | This browser's `localStorage`, key `zesthunt:dietary:v1`, holding only your diet and allergy selections | Until you tap **Forget me** (deletes it immediately), turn the switch off, or clear site data |
+| …if you turn on **"Remember this on this device"** under What I eat (off by default) | This browser's `localStorage`, key `zesthunt:dietary:v1`, holding only your diet and allergy selections | Until you tap **Forget me** (deletes it immediately), turn the switch off, or clear site data |
 
 Zesthunt writes nothing else to `localStorage`, `sessionStorage`, IndexedDB or cookies.
 
@@ -29,19 +29,19 @@ Zesthunt writes nothing else to `localStorage`, `sessionStorage`, IndexedDB or c
 
 None of this is written to disk, a database or logs. Responses carry `Cache-Control: no-store`, and every page sends `Referrer-Policy: no-referrer`. Server logs show only the method and path (e.g. `POST /api/picks 200`). On failure, the log line is the error type or a service status like `places 403`, never request content.
 
-**IP address:** when you haven't shared a location, the server reads the hosting platform's city-level IP geolocation headers once to show a first pick nearby. It isn't stored or logged. For rate limiting, the IP is hashed with a random per-instance salt into a counter that expires after one minute.
+**IP address:** when you haven't shared a location, the server reads the hosting platform's city-level IP geolocation headers once to show a first pick nearby. It isn't stored or logged. For rate limiting, the IP is turned into a one-way keyed hash that also includes the current minute, and used as a request counter that expires after two minutes. On the live site the counter is kept in the same Upstash database as party rooms, so the limit holds across all server instances. Without the database key the hash can't be traced back to an IP, and the same IP gets an unrelated hash the next minute. Locally, the counter stays in server memory with a random per-instance salt.
 
 ## Sent to third parties
 
 | Service | What it gets | Why |
 | --- | --- | --- |
-| Google Places API (New) | A rounded (~1 km) area and search radius | Find open restaurants nearby |
+| Google Places API (New) | A rounded (~1 km) area and search radius. **If you set a craving**, the craving's words too ("ramen"), never combined with anything that identifies you | Find open restaurants nearby, or ones serving what you're craving |
 | Google Routes API | The same rounded point and restaurant locations | Walking times |
 | Google Geocoding API | The neighborhood or ZIP you typed (only if you typed one) | Turn it into a rounded area |
-| Google Places photos | A photo reference, fetched by our server | Your browser never talks to Google, so it never sees your IP |
+| Google Places photos | A photo reference, fetched by our server | Your browser never talks to Google, so it never sees your IP. Your browser may keep a photo for up to an hour; no shared cache does |
 | Anthropic (Claude API) | Meal frame, mood, dietary needs, skip signals, what you typed or said, and the list of nearby places (names, types, travel minutes). **No coordinates, addresses or IP.** | Rank and describe the picks |
 
-Restaurant results are cached in server memory per ~1 km area for 5 minutes (it's restaurant data, not yours) and are gone when the server instance stops.
+Restaurant results are cached in server memory per ~1 km area for 5 minutes (it's restaurant data, not yours) and are gone when the server instance stops. Searches for a craving are never cached, because the craving is yours: those results are used for that one response.
 
 **Voice:** hold-to-speak uses your browser's on-device speech recognition only (`processLocally = true`). Audio never leaves your phone, and only the transcribed text is sent. Browsers without on-device recognition fall back to typing.
 
@@ -53,19 +53,19 @@ Restaurant results are cached in server memory per ~1 km area for 5 minutes (it'
 
 If you add Zesthunt to an assistant such as Claude or ChatGPT, the assistant calls `zesthunt.com/mcp` for you.
 
-- **What it can send:** an area (a neighborhood, cross-streets, ZIP or city, or approximate coordinates, which we round to about 1 km), your local time, a mood, and diet or allergy filters. The tools have no field for a name, address or account, so these can't be sent.
-- **What happens to it:** the same as in the app. It's used for that answer only, never stored or logged. Google gets the rounded area. Claude is **not** called, because your assistant does the ranking.
+- **What it can send:** an area (a neighborhood, cross-streets, ZIP or city, or approximate coordinates, which we round to about 1 km), your local time, a mood, an optional craving ("ramen"), and diet or allergy filters. The tools have no field for a name, address or account, so these can't be sent.
+- **What happens to it:** the same as in the app. It's used for that answer only, never stored or logged. Google gets the rounded area, and the craving's words if there is one. Claude is **not** called, because your assistant does the ranking.
 - **No IP location:** requests come from the assistant's servers, so we never guess your location from them.
-- **Party rooms** started from an assistant work like any other room, except they have no host. They hold nicknames, the places and swipes, and vanish after 10 minutes.
+- **Party rooms** started from an assistant work like any other room, except they have no host. They hold nicknames, the places, swipes and nudge words, and vanish after 10 minutes (15 with the one-time extension).
 - **Your assistant's own history:** Zesthunt keeps nothing, but your conversation with the assistant is subject to that assistant's own settings.
 
 ## Hunt party rooms
 
 Party rooms are the only thing the server keeps, and only briefly.
 
-- **Contents:** the 6-character room code, each member's nickname and a hash of their join key, the shared deck of restaurant cards, each member's swipes on those cards, and the match.
+- **Contents:** the 6-character room code, each member's nickname (a handed-out food name unless they rename) and a hash of their join key, the shared deck of restaurant cards, each member's swipes on those cards, the match, the latest group nudge as one of five mood words ("comfort") with who sent it, and whether the one-time 5 extra minutes were used.
 - **Never in a room:** location, travel times, what anyone typed or said, dietary needs, or IP addresses.
-- **Lifetime:** a hard 10 minutes from creation. Activity doesn't extend it. Every key expires at the same moment (Redis `EXPIREAT` in production; an in-memory map in local development).
+- **Lifetime:** a hard 10 minutes from creation. Activity doesn't extend it; the only way to add time is the one-time "+5 min" any member can tap, for 15 minutes at most. Every key expires at the same moment (Redis `EXPIREAT` in production; an in-memory map in local development).
 - **Share links** look like `zesthunt.com/#p=CODE`. The code sits after the `#`, which browsers never send to servers, so it doesn't appear in request logs. Party API calls carry the code and key in the request body, not the URL.
 
 ## Paying

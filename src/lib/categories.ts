@@ -112,3 +112,28 @@ export function dietSafeSuggestion(suggestion: string, diets: string[]): string 
   if (fishOnly && !noFish) return suggestion; // pescatarian + fish is fine
   return diets.some((d) => /vegan/i.test(d)) ? "Try their vegan options" : "Try their vegetarian options";
 }
+
+const FISH_WORDS = /\b(salmon|tuna|fish|sushi|sashimi|poke)\b/i;
+const SHELLFISH_WORDS = /\b(shrimp|prawn|crab|lobster)\b/i;
+const MEAT_WORDS = /\b(chicken|pork|beef|steak|lamb|bacon|ham|meat|bbq|barbecue|shawarma|burger|pepperoni)\b/i;
+
+/**
+ * "Can't eat this": what the pick on screen hints the person might want to leave out, offered
+ * first in the What-I-eat sheet. Only suggestions; nothing is set until they tap one.
+ */
+export function cantEatHints(pick: Pick): { diets: string[]; allergies: string[] } {
+  const text = `${pick.suggestion} ${pick.category ?? ""}`;
+  const diets = new Set<string>();
+  const allergies = new Set<string>();
+  const meat = MEAT_WORDS.test(text) || ["steak and BBQ", "burgers"].includes(pick.category ?? "");
+  const fish = FISH_WORDS.test(text) || pick.category === "sushi" || pick.category === "poke bowls";
+  const shellfish = SHELLFISH_WORDS.test(text);
+  if (meat) diets.add("Vegetarian").add("Pescatarian");
+  if (fish || shellfish) diets.add("Vegetarian");
+  if (fish) allergies.add("Fish");
+  if (shellfish) allergies.add("Shellfish");
+  if (/\b(pizza|pasta|sandwich|burger|bagel|pastr|baked|noodle|ramen|udon|dumpling)/i.test(text)) diets.add("Gluten-free");
+  if (/\b(pizza|cheese|ice cream|gelato|latte|milk)/i.test(text)) diets.add("Dairy-free");
+  if (/\b(peanut|satay|pad thai)/i.test(text)) allergies.add("Peanuts");
+  return { diets: [...diets], allergies: [...allergies] };
+}

@@ -4,8 +4,14 @@ import { z } from "zod";
 import { ALLERGIES, DIETS } from "@/lib/dietary";
 import { directionsUrl } from "@/lib/links";
 import { priceText } from "@/lib/time";
+
+function ratingOut(p: Pick): string | null {
+  if (p.rating == null) return null;
+  return p.ratingCount ? `${p.rating.toFixed(1)} (${p.ratingCount.toLocaleString("en-US")} ratings)` : p.rating.toFixed(1);
+}
 import { MOODS, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
-import { isDemo } from "./env";
+import { env, isDemo } from "./env";
+import { dailyLimit } from "./memory";
 import { createOpenParty } from "./party";
 import { runPipeline, type PicksRequest } from "./pipeline";
 
@@ -13,7 +19,7 @@ import { runPipeline, type PicksRequest } from "./pipeline";
  * Zesthunt as an MCP connector for AI assistants (Claude, ChatGPT and others).
  *
  * Privacy is built into the schema: the tools only accept an area (words or coordinates,
- * rounded to ~1 km here), the local time, a mood and dietary filters. There is no field
+ * rounded to ~1 km here), the local time, a mood, an optional craving and dietary filters. There is no field
  * for a name, an address or an account, so an assistant can't send them. Nothing is
  * stored or logged, and the assistant does the ranking, so no other AI sees the request.
  */
@@ -61,6 +67,7 @@ const PickOut = z.object({
   travel_minutes: z.number(),
   closes_in_minutes: z.number().nullable(),
   price: z.string().nullable(),
+  rating: z.string().nullable().describe("Google rating and how many ratings, e.g. '4.6 (1,200 ratings)'."),
   address: z.string(),
   labels: z.array(z.string()),
   pays_with: z.array(z.string()),
@@ -68,7 +75,7 @@ const PickOut = z.object({
   order_ahead_url: z.string().nullable(),
 });
 
-function toRequest(input: AreaInput): { req: PicksRequest } | { error: string } {
+function toRequest(input: AreaInput & { craving?: string }): { req: PicksRequest } | { error: string } {
   const hasCoords = input.latitude !== undefined && input.longitude !== undefined;
   if (!hasCoords && !input.area) return { error: "Zesthunt needs an area. Ask the user for a neighborhood, cross-streets or ZIP (not a home address)." };
   const dietary = input.diets?.length || input.allergies?.length ? { diets: input.diets ?? [], allergies: input.allergies ?? [] } : null;
@@ -79,6 +86,7 @@ function toRequest(input: AreaInput): { req: PicksRequest } | { error: string } 
       location: hasCoords ? { lat: input.latitude!, lng: input.longitude! } : null,
       areaQuery: hasCoords ? null : (input.area ?? null),
       dietary,
+      craving: input.craving?.trim() || null,
       skipSignals: [],
       exclude: [],
       // Gently balanced first picks, as in the app.
@@ -94,6 +102,10 @@ function toRequest(input: AreaInput): { req: PicksRequest } | { error: string } 
 async function search(req: PicksRequest, want: number, signal: AbortSignal) {
   const picks: Pick[] = [];
   let problem: string | null = null;
+  // The connector is open to anyone, so live lookups (which cost per call) have a daily ceiling. Demo data is free.
+  if (!isDemo() && !(await dailyLimit("mcp-search", env.mcpDailyLimit)).ok) {
+    return { picks, problem: "Zesthunt has reached today's limit for assistant requests. Try again tomorrow, or open zesthunt.com." };
+  }
   for await (const e of runPipeline(req, new Headers(), signal, { rankWithAI: false }) as AsyncGenerator<PicksEvent>) {
     if (e.type === "pick") picks.push(e.pick);
     else if (e.type === "need_location") problem = "Couldn't find that area. Ask the user for a nearby neighborhood, cross-streets or ZIP.";
@@ -124,6 +136,7 @@ function toOut(p: Pick): z.infer<typeof PickOut> {
     travel_minutes: p.walkMinutes,
     closes_in_minutes: p.closesAt ? Math.max(0, Math.round((Date.parse(p.closesAt) - Date.now()) / 60000)) : null,
     price: p.priceLevel ? priceText(p.priceLevel).visual : null,
+    rating: ratingOut(p),
     address: p.address,
     labels: p.labels,
     pays_with: paysWith(p),
@@ -159,6 +172,11 @@ export function buildMcpServer(origin: string, signal: AbortSignal) {
         "Zesthunt stores nothing.",
       inputSchema: {
         ...Area,
+        craving: z
+          .string()
+          .max(140)
+          .optional()
+          .describe("A food the user wants, e.g. 'ramen' or 'something with noodles'. Zesthunt searches for places that serve it."),
         max_walk_minutes: z.number().int().min(3).max(60).optional().describe("Leave out places farther than this on foot."),
         count: z.number().int().min(1).max(8).default(3).describe("How many picks to return: one pick plus backups."),
       },

@@ -134,7 +134,7 @@ export function PrivacyReceipt({
                   <li>
                     <span className="font-semibold text-white">Google Maps</span>:{" "}
                     {source === "typed" ? "the words you typed, then the rounded area" : source === "ip" ? "the city-level area" : "the rounded area"}
-                    , to find what&apos;s open and how far it is.
+                    {sent.craving ? ", plus your craving to search for it" : ""}, to find what&apos;s open and how far it is.
                   </li>
                 )}
                 {meta.sharedWith.includes("anthropic") && (

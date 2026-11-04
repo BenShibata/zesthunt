@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { PartyCard, PartyMember, PartyState, Pick } from "@/lib/types";
+import type { Mood, PartyCard, PartyMember, PartyState, PartySteer, Pick } from "@/lib/types";
 import { haptic } from "@/lib/haptics";
 
 const POLL_MS = 2000;
@@ -58,6 +58,13 @@ export function useParty() {
   const [ended, setEnded] = useState(false);
   // Kept after the room expires, until the user closes the locked-in screen.
   const [matchedCard, setMatchedCard] = useState<PartyCard | null>(null);
+  const [likes, setLikes] = useState<Record<string, string[]>>({});
+  const [needed, setNeeded] = useState(2);
+  const [extended, setExtended] = useState(false);
+  const [steer, setSteer] = useState<PartySteer | null>(null);
+  // "+5 minutes" moves the deadline, so it's tracked apart from the session.
+  const [expiresAt, setExpiresAt] = useState(0);
+  const expiresRef = useRef(0);
   const deckLen = useRef(0);
   const deckRef = useRef<PartyCard[]>([]);
   const matchRef = useRef<string | null>(null);
@@ -69,6 +76,9 @@ export function useParty() {
     setDeck([]);
     setProgress({});
     setMatch(null);
+    setLikes({});
+    setExtended(false);
+    setSteer(null);
     deckLen.current = 0;
     deckRef.current = [];
     matchRef.current = null;
@@ -81,24 +91,63 @@ export function useParty() {
     setMembers([{ id: me, nickname }]);
     setHostId(host);
     setEnded(false);
+    expiresRef.current = s.expiresAt;
+    setExpiresAt(s.expiresAt);
     setSession(s);
   }, []);
 
+  // No nickname needed: the room hands out a food name ("Taco"), renamable any time.
   const create = useCallback(
-    async (nickname: string, cards: PartyCard[]) => {
-      const r = await call<Session & { memberId: string }>({ action: "create", nickname, cards });
-      begin(r, r.memberId, r.memberId, nickname, cards);
+    async (cards: PartyCard[]) => {
+      const r = await call<Session & { nickname: string }>({ action: "create", cards });
+      begin(r, r.memberId, r.memberId, r.nickname, cards);
       return r.code;
     },
     [begin],
   );
 
   const join = useCallback(
-    async (code: string, nickname: string) => {
-      const r = await call<Session>({ action: "join", code, nickname });
-      begin(r, null, r.memberId, nickname);
+    async (code: string) => {
+      const r = await call<Session & { nickname: string }>({ action: "join", code });
+      begin(r, null, r.memberId, r.nickname);
     },
     [begin],
+  );
+
+  const auth = useCallback(() => (session ? { code: session.code, memberId: session.memberId, key: session.key } : null), [session]);
+
+  const rename = useCallback(
+    async (nickname: string) => {
+      const a = auth();
+      if (!a) return;
+      await call({ action: "rename", ...a, nickname });
+      setMembers((ms) => ms.map((m) => (m.id === a.memberId ? { ...m, nickname } : m)));
+    },
+    [auth],
+  );
+
+  /** "Decide for us": the most-liked card becomes the match (shows up on the next poll for everyone). */
+  const decide = useCallback(async () => {
+    const a = auth();
+    if (a) await call({ action: "decide", ...a });
+  }, [auth]);
+
+  const extend = useCallback(async () => {
+    const a = auth();
+    if (!a) return;
+    const r = await call<{ expiresAt: number }>({ action: "extend", ...a });
+    expiresRef.current = r.expiresAt;
+    setExpiresAt(r.expiresAt);
+    setExtended(true);
+  }, [auth]);
+
+  /** A group nudge: only the mood word goes to the room. */
+  const steerTo = useCallback(
+    async (mood: Mood) => {
+      const a = auth();
+      if (a) await call({ action: "steer", ...a, mood });
+    },
+    [auth],
   );
 
   const swipe = useCallback(
@@ -122,7 +171,7 @@ export function useParty() {
     if (!session) return;
     let stopped = false;
     const tick = async () => {
-      if (Date.now() >= session.expiresAt) {
+      if (Date.now() >= expiresRef.current) {
         setEnded(true);
         reset();
         return;
@@ -133,6 +182,14 @@ export function useParty() {
         setMembers(s.members);
         setHostId(s.hostId);
         setProgress(s.progress);
+        setLikes(s.likes);
+        setNeeded(s.needed);
+        setExtended(s.extended);
+        setSteer((prev) => (prev?.seq === s.steer?.seq ? prev : s.steer));
+        if (s.expiresAt !== expiresRef.current) {
+          expiresRef.current = s.expiresAt;
+          setExpiresAt(s.expiresAt);
+        }
         if (s.deck.length > 0) {
           deckLen.current += s.deck.length;
           deckRef.current = [...deckRef.current, ...s.deck];
@@ -164,7 +221,16 @@ export function useParty() {
     active: session !== null,
     code: session?.code ?? null,
     memberId: session?.memberId ?? null,
-    expiresAt: session?.expiresAt ?? 0,
+    expiresAt: session ? expiresAt : 0,
+    nickname: members.find((m) => m.id === session?.memberId)?.nickname ?? null,
+    likes,
+    needed,
+    extended,
+    steer,
+    rename,
+    decide,
+    extend,
+    steerTo,
     isHost: Boolean(session && hostId === session.memberId),
     members,
     deck,

@@ -30,3 +30,15 @@ export function priceText(level: PriceLevel | null): { visual: string; spoken: s
   const spoken = ["", "Inexpensive", "Moderately priced", "Pricey", "Very pricey"][level];
   return { visual: "$".repeat(level), spoken };
 }
+
+/** "4.6 (1.2k)" for the card, plus a spoken version. Null when Places has no rating. */
+export function ratingText(rating: number | null | undefined, count: number | null | undefined): { visual: string; spoken: string } | null {
+  if (rating == null || rating <= 0) return null;
+  const n = count ?? 0;
+  const short = n >= 1000 ? `${(n / 1000).toFixed(n >= 10_000 ? 0 : 1).replace(/\.0$/, "")}k` : String(n);
+  const value = rating.toFixed(1);
+  return {
+    visual: n > 0 ? `${value} (${short})` : value,
+    spoken: `Rated ${value} out of 5${n > 0 ? ` from ${n.toLocaleString("en-US")} ratings` : ""} on Google`,
+  };
+}

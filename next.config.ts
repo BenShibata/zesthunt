@@ -48,8 +48,9 @@ const nextConfig: NextConfig = {
           },
         ],
       },
+      // Not /api/photo: it sets its own short private browser cache.
       {
-        source: "/api/:path*",
+        source: "/api/(picks|party)",
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {

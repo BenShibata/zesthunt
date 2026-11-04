@@ -37,22 +37,6 @@ export function RewindIcon(props: IconProps) {
   );
 }
 
-export function SkipIcon(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="M18 6 6 18M6 6l12 12" />
-    </svg>
-  );
-}
-
-export function GoIcon(props: IconProps) {
-  return (
-    <svg {...base(props)}>
-      <path d="M5 12.5 10 17.5 19 7" />
-    </svg>
-  );
-}
-
 export function MicIcon(props: IconProps) {
   return (
     <svg {...base(props)}>
@@ -188,6 +172,78 @@ export function LockIcon(props: IconProps) {
     <svg {...base(props)}>
       <rect x="5" y="11" width="14" height="9" rx="2" />
       <path d="M8 11V8a4 4 0 0 1 8 0v3" />
+    </svg>
+  );
+}
+
+export function PinIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 21s-6.5-5.6-6.5-11a6.5 6.5 0 0 1 13 0c0 5.4-6.5 11-6.5 11Z" />
+      <circle cx="12" cy="10" r="2.3" />
+    </svg>
+  );
+}
+
+export function XIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
+export function SearchIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m20 20-4.2-4.2" />
+    </svg>
+  );
+}
+
+export function ArrowRightIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M5 12h14M13 6l6 6-6 6" />
+    </svg>
+  );
+}
+
+/** Fork and knife: food preferences (diet and allergies). */
+export function UtensilsIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7 3v8M4.5 3v5a2.5 2.5 0 0 0 5 0V3M7 11v10" />
+      <path d="M17 21V3c-2 1-3.5 3.5-3.5 7 0 1.5.7 2.5 2 3H17" />
+    </svg>
+  );
+}
+
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="m6 9 6 6 6-6" />
+    </svg>
+  );
+}
+
+export function MoreIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function SlidersIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 7h10M18 7h2M4 17h4M12 17h8" />
+      <circle cx="16" cy="7" r="2" />
+      <circle cx="10" cy="17" r="2" />
     </svg>
   );
 }

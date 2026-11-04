@@ -3,22 +3,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
 import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
-import { applySignals, skipSignals } from "@/lib/categories";
+import { applySignals, cantEatHints, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
+import { cravingShortcuts } from "@/lib/cravings";
+import { mealFrame } from "@/lib/time";
 import { useSwipe } from "@/hooks/useSwipe";
 import { useInactivityTimer } from "@/hooks/useInactivityTimer";
 import { requestMotionPermission, useShake } from "@/hooks/useShake";
 import { useVoice, type VoiceFallback } from "@/hooks/useVoice";
-import { MoodTabs, TopBar } from "./TopBar";
+import { TopBar, type MenuItem } from "./TopBar";
+import { NUDGE_LABEL, NotQuite } from "./NotQuite";
 import { PickCard, PickSkeleton } from "./PickCard";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
-import { EmptyState, ErrorState, LocationPrompt } from "./FeedStates";
+import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
+import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
-import { JoinScreen, PartyBar, PartySetup } from "./Party";
+import { InviteSheet, JoinScreen, PartyBar } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { LockIcon } from "./Icons";
+import { LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon } from "./Icons";
 import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
@@ -34,6 +38,10 @@ function clearHash() {
 }
 
 const IDLE_MS = 10 * 60 * 1000;
+/** Lingering this long on a pick opens its details: interest earns more detail. */
+const DWELL_MS = 4000;
+/** Skips in a row before "Not quite?" offers to steer. */
+const SKIPS_BEFORE_NUDGE = 2;
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
 
@@ -66,6 +74,20 @@ export function ZestApp() {
   const [swipes, setSwipes] = useState(0);
   const [locked, setLocked] = useState<Pick | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  /** The active craving: it drives the search (and every refill) until cleared. Memory only. */
+  const [craving, setCraving] = useState<string | null>(null);
+  /** The user asked to search a short drive away. Reset when the area changes. */
+  const [widened, setWidened] = useState(false);
+  const [areaOpen, setAreaOpen] = useState(false);
+  // Start simple: no mood picker, no details. "Not quite?" appears after a couple of skips,
+  // and a pick's details open when the person asks or lingers on it.
+  const [tuneOpen, setTuneOpen] = useState(false);
+  const [moodChosen, setMoodChosen] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  /** "Can't eat this": what the skipped pick hints at, offered first in the sheet. */
+  const [dietSuggest, setDietSuggest] = useState<{ diets: string[]; allergies: string[] } | null>(null);
+  const skipsSinceNudge = useRef(0);
+  const allergiesChanged = useRef(false);
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState("");
   const [signals, setSignals] = useState<string[]>([]);
@@ -79,6 +101,9 @@ export function ZestApp() {
   const location = useRef<{ lat: number; lng: number } | null>(null);
   const preciseLocation = useRef<{ lat: number; lng: number } | null>(null);
   const areaQuery = useRef<string | null>(null);
+  // Mirrors of `craving` and `widened` for request building inside stable callbacks.
+  const cravingRef = useRef<string | null>(null);
+  const widenRef = useRef(false);
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
@@ -91,7 +116,7 @@ export function ZestApp() {
   // Hunt party (rooms live 10 minutes on the server; everything here is memory only).
   const party = useParty();
   const joinCode = useSyncExternalStore(subscribeHash, codeFromHash, () => null);
-  const [partySetup, setPartySetup] = useState(false);
+  const [inviteOpen, setInviteOpen] = useState(false);
   const [partyBusy, setPartyBusy] = useState(false);
   const [partyError, setPartyError] = useState<string | null>(null);
   const [pIndex, setPIndex] = useState(0);
@@ -112,6 +137,8 @@ export function ZestApp() {
       firstOfSession: firstOfSession.current,
       skipSignals: sig,
       dietary: hasDietary(dietRef.current) ? dietRef.current : null,
+      craving: cravingRef.current,
+      ...(widenRef.current ? { widen: true } : {}),
     }),
     [dietRef],
   );
@@ -135,6 +162,9 @@ export function ZestApp() {
             setFeedMode(e.mode);
             setLastMeta(e);
             if (e.sparse && !opts.append) setNotice("Not much open within walking distance, so these are a short drive.");
+            if (e.cravingMatched === false && !opts.append && cravingRef.current) {
+              setNotice(`Nothing for “${cravingRef.current}” open nearby, so here’s what is.`);
+            }
             break;
           case "pick":
             got++;
@@ -195,6 +225,16 @@ export function ZestApp() {
     [fetchQueue],
   );
 
+  const applyCraving = useCallback((c: string | null) => {
+    cravingRef.current = c;
+    setCraving(c);
+  }, []);
+
+  const applyWiden = (on: boolean) => {
+    widenRef.current = on;
+    setWidened(on);
+  };
+
   // Open straight onto a pick (server uses a city-level IP estimate if there's no location yet).
   useEffect(() => {
     // Storage-backed state may not have settled yet on the first effect, so read it directly.
@@ -215,6 +255,7 @@ export function ZestApp() {
     return () => clearTimeout(t);
   }, [notice]);
 
+
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
 
   const soloSkip = useCallback(() => {
@@ -231,6 +272,8 @@ export function ZestApp() {
     setHistory((h) => [...h, index]);
     setIndex((i) => i + 1);
     setSwipes((s) => s + 1);
+    skipsSinceNudge.current += 1;
+    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
     const left = queue.length - (index + 1);
@@ -269,6 +312,12 @@ export function ZestApp() {
   /** Restyles the queue instantly from picks already in hand, then streams more for the new mood behind them. */
   const changeMood = (m: Mood) => {
     if (m === mood) return;
+    if (cravingRef.current) {
+      // Craving picks were chosen for the craving, not the mood, so re-search with both.
+      setMood(m);
+      load(m);
+      return;
+    }
     setMood(m);
     exhausted.current.delete(m);
     const pool = queue.slice(index);
@@ -296,7 +345,8 @@ export function ZestApp() {
     const ctrl = new AbortController();
     let taken = false;
     streamPicks(
-      { ...baseQuery(wildMood, signals), exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
+      // A wildcard is about stepping outside the current search, so it leaves the craving out.
+      { ...baseQuery(wildMood, signals), craving: null, exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
       (e) => {
         if (e.type === "meta") setLastMeta(e);
         if (taken || e.type !== "pick") return;
@@ -332,13 +382,24 @@ export function ZestApp() {
     (text: string) => {
       setComposing(false);
       setDraft("");
-      const craving = text.trim();
-      if (!craving) return;
-      setNotice(`Hunting: “${craving}”`);
-      load(mood, { craving });
+      const wish = text.trim().slice(0, 140);
+      if (!wish) return;
+      applyCraving(wish);
+      setNotice(`Hunting: “${wish}”`);
+      load(mood);
     },
-    [load, mood],
+    [load, mood, applyCraving],
   );
+
+  const clearCraving = () => {
+    applyCraving(null);
+    load(mood);
+  };
+
+  const searchWider = () => {
+    applyWiden(true);
+    load(mood);
+  };
 
   const onVoiceFallback = useCallback((why: VoiceFallback) => {
     setComposing(true);
@@ -351,11 +412,18 @@ export function ZestApp() {
   const voice = useVoice({ onFinal: submitCraving, onFallback: onVoiceFallback });
 
   const submitArea = (query: string) => {
+    // A typed area replaces any device location, which the server would otherwise prefer.
     areaQuery.current = query.trim() || null;
+    location.current = null;
+    preciseLocation.current = null;
+    setPrecise(null);
+    applyWiden(false);
+    setAreaOpen(false);
     load(mood);
   };
 
   const useMyLocation = async () => {
+    setAreaOpen(false);
     setFeed({ status: "loading" });
     const pos = await requestPreciseLocation();
     if (!pos) {
@@ -365,6 +433,8 @@ export function ZestApp() {
     }
     preciseLocation.current = pos;
     location.current = roundCoords(pos.lat, pos.lng);
+    areaQuery.current = null;
+    applyWiden(false);
     setPrecise(pos);
     setNotice("Rounded to ~1 km before it left your phone.");
     load(mood);
@@ -372,7 +442,8 @@ export function ZestApp() {
 
   const toggleReceipt = () => {
     if (dietOpen) closeDiet();
-    setPartySetup(false);
+    setInviteOpen(false);
+    setAreaOpen(false);
     setReceiptOpen((o) => !o);
   };
 
@@ -382,14 +453,17 @@ export function ZestApp() {
     voice.cancel();
     skipped.current = [];
     setSignals([]);
+    applyCraving(null);
+    widenRef.current = false;
+    setWidened(false);
     load(mood);
     setNotice("Picks cleared after 10 quiet minutes.");
-  }, [load, mood, voice]);
+  }, [load, mood, voice, applyCraving]);
 
   const openDiet = () => {
     if (dietOpen) return closeDiet();
     dietAtOpen.current = JSON.stringify(dietary);
-    setPartySetup(false);
+    setInviteOpen(false);
     setReceiptOpen(false);
     setDietOpen(true);
   };
@@ -397,8 +471,9 @@ export function ZestApp() {
   /** Applies dietary changes once, when the panel closes, instead of on every tap. */
   const closeDiet = () => {
     setDietOpen(false);
+    setDietSuggest(null);
     if (JSON.stringify(dietRef.current) !== dietAtOpen.current && !party.active) {
-      setNotice(hasDietary(dietRef.current) ? "Picks updated for your dietary needs." : "Dietary filter off.");
+      setNotice(hasDietary(dietRef.current) ? "Picks updated to fit what you eat." : "Showing everything again.");
       load(mood);
     }
   };
@@ -423,13 +498,17 @@ export function ZestApp() {
   const partyPicks = useMemo(() => party.deck.map(toLocalPick), [party.deck, toLocalPick]);
   const partyCurrent = party.active ? (partyPicks[pIndex] ?? null) : null;
 
-  /** Only the host has a location, so only the host's device fetches more cards for the room. */
-  const hostRefill = useCallback(() => {
-    if (hostRefilling.current) return;
+  /**
+   * Only the host has a location, so only the host's device fetches more cards for the room.
+   * A group nudge ("Heartier") passes its mood and always runs, even mid-refill.
+   */
+  const hostRefill = useCallback((nudge?: Mood) => {
+    if (hostRefilling.current && !nudge) return;
     hostRefilling.current = true;
     const got: Pick[] = [];
     streamPicks(
-      { ...baseQuery(mood, signals), exclude: party.deck.map((c) => c.id) },
+      // A nudge follows the group's word, not the host's own craving.
+      { ...baseQuery(nudge ?? mood, signals), ...(nudge ? { craving: null } : {}), exclude: party.deck.map((c) => c.id) },
       (e) => {
         if (e.type === "meta") setLastMeta(e);
         if (e.type === "pick") got.push(e.pick);
@@ -457,6 +536,10 @@ export function ZestApp() {
     setPHistory((h) => [...h, pIndex]);
     setPIndex((i) => i + 1);
     setSwipes((s) => s + 1);
+    if (dir === "skip") {
+      skipsSinceNudge.current += 1;
+      if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
+    }
     if (party.isHost && party.deck.length - (pIndex + 1) <= REFILL_AT) hostRefill();
   };
 
@@ -466,34 +549,35 @@ export function ZestApp() {
     setPHistory(pHistory.slice(0, -1));
   };
 
-  const startParty = async (nickname: string) => {
+  /** One tap: open the room with the picks in hand, then show the invite (QR, link, share). */
+  const startParty = async () => {
     const cards = queue.slice(index).map(toPartyCard);
     if (cards.length === 0) {
-      setPartyError("Wait for a pick to load first.");
+      setNotice("Wait for a pick to load, then start hunting together.");
       return;
     }
     setPartyBusy(true);
     setPartyError(null);
     try {
-      const code = await party.create(nickname, cards);
+      await party.create(cards);
       setPIndex(0);
       setPHistory([]);
-      setPartySetup(false);
       setNow(new Date());
-      setNotice(`Party ${code} is open. Tap Invite to bring friends.`);
+      setInviteOpen(true);
     } catch (e) {
-      setPartyError(e instanceof Error ? e.message : "Couldn't start a party.");
+      setNotice(e instanceof Error ? e.message : "Couldn't start a party.");
     } finally {
       setPartyBusy(false);
     }
   };
 
-  const joinParty = async (nickname: string) => {
+  /** Opening an invite link joins straight away: no form, a food name is handed out. */
+  const joinParty = useCallback(async () => {
     if (!joinCode) return;
     setPartyBusy(true);
     setPartyError(null);
     try {
-      await party.join(joinCode, nickname);
+      await party.join(joinCode);
       setPIndex(0);
       setPHistory([]);
       setNow(new Date());
@@ -502,7 +586,28 @@ export function ZestApp() {
     } finally {
       setPartyBusy(false);
     }
-  };
+  }, [joinCode, party]);
+
+  const joinTried = useRef<string | null>(null);
+  useEffect(() => {
+    if (!joinCode || party.active || joinTried.current === joinCode) return;
+    joinTried.current = joinCode;
+    void joinParty();
+  }, [joinCode, party.active, joinParty]);
+
+  // A nudge from anyone: everyone jumps to the cards that follow it, and the host fetches them.
+  const steerSeq = party.steer?.seq ?? 0;
+  const lastSteer = useRef(0);
+  useEffect(() => {
+    const s = party.steer;
+    if (!s || s.seq === lastSteer.current) return;
+    lastSteer.current = s.seq;
+    setPIndex((i) => Math.max(i, s.at));
+    const who = s.by === party.memberId ? "You" : (party.members.find((m) => m.id === s.by)?.nickname ?? "Someone");
+    setNotice(`${who} asked for ${NUDGE_LABEL[s.mood].toLowerCase()} picks.`);
+    if (party.isHost) hostRefill(s.mood);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per nudge
+  }, [steerSeq]);
 
   const leaveParty = () => {
     party.leave();
@@ -527,14 +632,11 @@ export function ZestApp() {
   };
 
   const onPartyButton = () => {
-    if (party.active) {
-      void shareParty();
-      return;
-    }
-    setPartyError(null);
-    setDietOpen(false);
+    // Through closeDiet so choices made in the open sheet still apply.
+    if (dietOpen) closeDiet();
     setReceiptOpen(false);
-    setPartySetup((o) => !o);
+    if (party.active) setInviteOpen((o) => !o);
+    else if (!partyBusy) void startParty();
   };
 
   useEffect(() => {
@@ -548,6 +650,7 @@ export function ZestApp() {
   const go = inParty ? () => partySwipe("go") : soloGo;
   const rewind = inParty ? partyRewind : soloRewind;
   const shown = inParty ? partyCurrent : current;
+  const canGoBack = inParty ? pHistory.length > 0 : history.length > 0;
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 10-minute clock, so the idle timer pauses in a party too.
@@ -572,6 +675,15 @@ export function ZestApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [locked, composing, receiptOpen]);
 
+  // Lingering on a pick is interest: open its details without being asked.
+  const shownId = shown?.id ?? null;
+  const busy = dietOpen || composing || areaOpen || receiptOpen || inviteOpen;
+  useEffect(() => {
+    if (!shownId || busy || expandedId === shownId) return;
+    const t = setTimeout(() => setExpandedId(shownId), DWELL_MS);
+    return () => clearTimeout(t);
+  }, [shownId, busy, expandedId]);
+
   if (party.matchedCard && now) {
     return (
       <LockedIn
@@ -585,46 +697,172 @@ export function ZestApp() {
     );
   }
   if (locked && now) {
-    return <LockedIn pick={locked} now={now} allergyNote={dietary.allergies.length > 0} onClose={() => setLocked(null)} />;
+    return (
+      <LockedIn
+        pick={locked}
+        now={now}
+        allergyNote={dietary.allergies.length > 0}
+        allergies={dietary.allergies}
+        onAllergiesChange={(allergies) => {
+          allergiesChanged.current = true;
+          updateDiet((d) => ({ ...d, allergies }));
+        }}
+        onDecideTogether={() => {
+          setLocked(null);
+          void startParty();
+        }}
+        onClose={() => {
+          setLocked(null);
+          // Allergies added on the way out apply to the picks they come back to.
+          if (allergiesChanged.current) {
+            allergiesChanged.current = false;
+            setNotice("Picks updated to fit what you eat.");
+            load(mood);
+          }
+        }}
+      />
+    );
   }
 
   if (joinCode && !inParty) {
     return (
       <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
-        <TopBar dietaryBadge={null} demo={feedMode === "demo"} onParty={() => {}} hideParty />
-        <JoinScreen code={joinCode} onJoin={joinParty} onSolo={clearHash} busy={partyBusy} error={partyError} />
+        <TopBar demo={feedMode === "demo"} items={[]} />
+        <JoinScreen code={joinCode} busy={partyBusy} error={partyError} onRetry={() => void joinParty()} onSolo={clearHash} />
       </main>
     );
   }
 
   const outOfPicks = !inParty && feed.status === "ready" && !current && !refilling;
+
+  // Where the search is centered, for the line under the moods. Demo places have no real area.
+  const searchArea =
+    lastMeta && lastMeta.areaSource !== "demo"
+      ? {
+          label: lastMeta.areaSource === "device" ? "you" : (lastMeta.areaLabel ?? "you"),
+          approx: lastMeta.areaSource === "ip",
+          drive: lastMeta.mode === "drive",
+        }
+      : null;
+
+  const emptyActions: EmptyActions = {
+    onClearCraving: craving ? clearCraving : undefined,
+    onWiden: outOfPicks && feedMode === "walk" && !widened ? searchWider : undefined,
+    moods: craving
+      ? []
+      : MOODS.filter((m) => m !== mood)
+          .slice(0, 3)
+          .map((m) => ({ label: NUDGE_LABEL[m], onClick: () => nudgeMood(m) })),
+  };
   const shownNotice = party.ended ? "That party has ended. Back to solo picks." : notice;
+  const steering = tuneOpen;
+  // In a party a nudge goes to the whole group (as a mood word only); everything else is solo.
+  const partyNudge = (m: Mood) => {
+    settleNudge();
+    void party.steerTo(m).catch(() => setNotice("Couldn't reach the group. Try again."));
+  };
+
+  // Live group taste: who said go to the card on screen, and the most-liked card so far.
+  const likesFor = (id: string) => party.likes[id]?.length ?? 0;
+  const topId = Object.keys(party.likes).sort((a, b) => likesFor(b) - likesFor(a))[0];
+  const topCard = topId ? party.deck.find((c) => c.id === topId) : undefined;
+  const topPick = topCard && likesFor(topCard.id) > 0 ? { name: topCard.name, likes: likesFor(topCard.id) } : null;
+
+  // "Not quite?" answers. Each closes the row; skipping twice more brings it back.
+  const settleNudge = (wait = 0) => {
+    setTuneOpen(false);
+    skipsSinceNudge.current = -wait;
+  };
+  const nudgeMood = (m: Mood) => {
+    settleNudge();
+    setMoodChosen(true);
+    setNotice(`${NUDGE_LABEL[m]} it is.`);
+    if (m === mood) load(m);
+    else changeMood(m);
+  };
+  const cantEat = () => {
+    if (!current) return;
+    setDietSuggest(cantEatHints(current));
+    settleNudge();
+    soloSkip();
+    openDiet();
+  };
+  const openArea = () => {
+    settleNudge();
+    setReceiptOpen(false);
+    setAreaOpen(true);
+  };
+
+  const dietCount = dietary.diets.length + dietary.allergies.length;
+  const menu: MenuItem[] = [
+    {
+      label: "What I eat",
+      detail: dietaryBadge(dietary) ?? "nothing set",
+      count: dietCount,
+      icon: <UtensilsIcon size={18} />,
+      onSelect: () => {
+        setDietSuggest(null);
+        openDiet();
+      },
+    },
+    { label: "Steer the picks", icon: <SlidersIcon size={18} />, onSelect: () => setTuneOpen(true) },
+    ...(inParty ? [] : [{ label: "Change area", icon: <PinIcon size={18} />, onSelect: openArea }]),
+    { label: inParty ? "Invite friends" : "Hunt together", icon: <PartyIcon size={18} />, onSelect: onPartyButton },
+    { label: "What we sent", icon: <LockIcon size={18} />, onSelect: toggleReceipt },
+  ];
 
   return (
     <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
       <TopBar
-        dietaryBadge={dietaryBadge(dietary)}
-        dietOpen={dietOpen}
-        onDiet={openDiet}
         demo={feedMode === "demo"}
-        onParty={onPartyButton}
-        hideParty={inParty}
+        items={menu}
+        badge={dietCount}
+        action={
+          inParty ? null : (
+            // The group hunt is the headline feature, so it gets a visible button, not a menu entry.
+            <button
+              type="button"
+              onClick={onPartyButton}
+              disabled={partyBusy}
+              className="inline-flex h-11 items-center gap-1.5 rounded-full bg-social/25 px-3.5 text-sm font-semibold whitespace-nowrap text-social-bright transition hover:bg-social/35 disabled:opacity-60"
+            >
+              <PartyIcon size={18} className="hidden shrink-0 min-[360px]:block" />
+              {partyBusy ? "Opening…" : "Hunt together"}
+            </button>
+          )
+        }
       />
       {dietOpen && (
+        // A sheet over the content (not pushing it) so the card never squeezes into the buttons.
+        <div className="relative z-30 h-0">
+          <button type="button" aria-label="Close what you eat" tabIndex={-1} onClick={closeDiet} className="fixed inset-0 -z-10 cursor-default bg-black/55" />
         <DietPanel
+          suggested={dietSuggest ?? undefined}
           dietary={dietary}
           remembered={dietRemembered}
           onChange={updateDiet}
           onRemember={setRemember}
           onForget={() => {
             forgetDiet();
-            setNotice("Forgotten. Nothing about your diet is stored on this device.");
+            setNotice("Forgotten. Nothing about what you eat is stored on this device.");
           }}
           onClose={closeDiet}
         />
+        </div>
       )}
-      {partySetup && !inParty && (
-        <PartySetup onStart={startParty} onCancel={() => setPartySetup(false)} busy={partyBusy} error={partyError} />
+      {inviteOpen && inParty && party.code && (
+        <div className="relative z-30 h-0">
+          <button type="button" aria-label="Close invite" tabIndex={-1} onClick={() => setInviteOpen(false)} className="fixed inset-0 -z-10 cursor-default bg-black/55" />
+          <InviteSheet
+            code={party.code}
+            link={partyLink(party.code)}
+            nickname={party.nickname}
+            memberCount={party.members.length}
+            onShare={shareParty}
+            onRename={(name) => party.rename(name).catch(() => setNotice("Couldn't rename. Try again."))}
+            onClose={() => setInviteOpen(false)}
+          />
+        </div>
       )}
       {inParty && party.code && party.memberId ? (
         <PartyBar
@@ -633,24 +871,96 @@ export function ZestApp() {
           members={party.members}
           progress={party.progress}
           meId={party.memberId}
-          onShare={shareParty}
+          topPick={party.match ? null : topPick}
+          extended={party.extended}
+          onInvite={() => setInviteOpen(true)}
           onLeave={leaveParty}
+          onDecide={() => void party.decide().catch((e: unknown) => setNotice(e instanceof Error ? e.message : "Couldn't decide."))}
+          onExtend={() => void party.extend().then(() => setNotice("5 more minutes for everyone.")).catch(() => setNotice("Couldn't add time."))}
         />
       ) : (
-        <MoodTabs mood={mood} onChange={changeMood} />
+        <>
+          <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} />
+        </>
       )}
 
       <div
         id="picks-panel"
-        role={inParty ? undefined : "tabpanel"}
-        aria-labelledby={inParty ? undefined : `mood-${mood}`}
-        className="flex min-h-0 flex-1 flex-col"
+        className="relative flex min-h-0 flex-1 flex-col"
       >
+      {/*
+        Floats over the top of the photo so nothing below moves: "Back" on the left whenever
+        there's a pick to return to, and notices on the right (in place of the swipe badge).
+      */}
+      {/*
+        One layer over the top of the photo, so nothing below ever moves: "Not quite?" (when
+        steering is offered), then "Back" on the left whenever there's a pick to return to,
+        and notices on the right (in place of the swipe badge), under the row if it's open.
+      */}
+      {!receiptOpen && !areaOpen && (
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3">
+          {steering && (
+            <div className="pointer-events-auto">
+              <NotQuite
+                mood={mood}
+                moodChosen={moodChosen && !inParty}
+                group={inParty}
+                onMood={inParty ? partyNudge : nudgeMood}
+                onSurprise={
+                  inParty
+                    ? undefined
+                    : () => {
+                        settleNudge();
+                        onWildcardTap();
+                      }
+                }
+                onCantEat={!inParty && current ? cantEat : undefined}
+                onElsewhere={inParty ? undefined : openArea}
+                onClose={() => settleNudge(1)}
+                onBack={canGoBack ? rewind : undefined}
+              />
+            </div>
+          )}
+          <div className="flex items-start gap-2">
+            {canGoBack && !steering && (
+              <button
+                type="button"
+                onClick={rewind}
+                aria-label="Back to the previous pick"
+                className="pointer-events-auto inline-flex h-11 shrink-0 items-center gap-1.5 rounded-full bg-black/55 pr-3.5 pl-3 text-sm font-semibold text-white backdrop-blur-md transition hover:bg-black/70 active:scale-95"
+              >
+                <RewindIcon size={16} />
+                Back
+              </button>
+            )}
+            <div aria-live="polite" className="ml-auto flex min-w-0 justify-end">
+              {voice.listening ? (
+                <p className="animate-rise rounded-2xl bg-paprika/90 px-3 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-md">
+                  {voice.interim ? `“${voice.interim}”` : "Listening… let go when you're done"}
+                </p>
+              ) : (
+                shownNotice && (
+                  <p className="animate-rise rounded-2xl bg-black/70 px-3 py-2 text-sm font-medium text-white shadow-lg backdrop-blur-md">{shownNotice}</p>
+                )
+              )}
+            </div>
+          </div>
+        </div>
+      )}
       {receiptOpen ? (
         <PrivacyReceipt sent={lastSent} meta={lastMeta} precise={precise} inParty={inParty} onClose={() => setReceiptOpen(false)} />
       ) : inParty ? (
         partyCurrent && now ? (
-          <PickCard pick={partyCurrent} now={now} swipes={swipes} swipe={swipe} />
+          <PickCard
+            pick={partyCurrent}
+            now={now}
+            swipes={swipes}
+            swipe={swipe}
+            quietBadge={Boolean(shownNotice)}
+            groupLikes={{ count: likesFor(partyCurrent.id), needed: party.needed, total: party.members.length }}
+            expanded={expandedId === partyCurrent.id}
+            onExpand={() => setExpandedId(partyCurrent.id)}
+          />
         ) : (
           <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
             <p className="font-display text-2xl font-bold">You&apos;ve swiped them all.</p>
@@ -660,35 +970,59 @@ export function ZestApp() {
           </section>
         )
       ) : (
+        areaOpen ? (
+          <LocationPrompt onSubmit={submitArea} onUseLocation={useMyLocation} onCancel={() => setAreaOpen(false)} />
+        ) : (
         <>
       {(feed.status === "loading" || (feed.status === "ready" && !current && refilling)) && <PickSkeleton />}
       {feed.status === "need_location" && <LocationPrompt onSubmit={submitArea} onUseLocation={useMyLocation} />}
       {feed.status === "error" && <ErrorState message={feed.message} onRetry={() => load(mood)} />}
-      {feed.status === "empty" && <EmptyState message={feed.message} suggestion={feed.suggestion} onRetry={() => load(mood)} />}
+      {feed.status === "empty" && (
+        <EmptyState message={feed.message} suggestion={feed.suggestion} onRetry={() => load(mood)} actions={emptyActions} />
+      )}
       {outOfPicks && (
         <EmptyState
-          message={`That's every ${MOOD_LABELS[mood].toLowerCase()} pick open nearby.`}
-          suggestion="other_mood"
+          message={
+            craving
+              ? `That's every “${craving}” place open ${widened || feedMode === "drive" ? "within a short drive" : "nearby"}.`
+              : `That's every ${MOOD_LABELS[mood].toLowerCase()} pick open ${widened || feedMode === "drive" ? "within a short drive" : "nearby"}.`
+          }
+          suggestion={feedMode === "walk" ? "drive" : "order_in"}
           onRetry={() => load(mood)}
+          actions={emptyActions}
         />
       )}
-      {current && now && <PickCard pick={current} now={now} swipes={swipes} swipe={swipe} />}
+      {current && now && (
+        <PickCard
+          pick={current}
+          now={now}
+          swipes={swipes}
+          swipe={swipe}
+          quietBadge={Boolean(shownNotice || voice.listening)}
+          onTangent={submitCraving}
+          expanded={expandedId === current.id}
+          onExpand={() => setExpandedId(current.id)}
+        />
+      )}
         </>
+        )
       )}
       </div>
 
-      <div aria-live="polite" className="min-h-0 px-4">
-        {voice.listening ? (
-          <p className="animate-rise mx-auto mb-1 w-fit max-w-full rounded-full bg-paprika/25 px-3 py-1.5 text-center text-sm text-white">
-            {voice.interim ? `“${voice.interim}”` : "Listening… let go when you're done"}
-          </p>
-        ) : (
-          shownNotice && (
-            <p className="animate-rise mx-auto mb-1 w-fit rounded-full bg-white/10 px-3 py-1.5 text-center text-sm text-white/85">{shownNotice}</p>
-          )
-        )}
-      </div>
-
+      {composing && now && (
+        <div className="animate-rise flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" role="group" aria-label="Quick cravings">
+          {cravingShortcuts(mealFrame(now), dietary.diets).map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => submitCraving(c)}
+              className="h-11 shrink-0 rounded-full bg-white/10 px-4 text-sm font-semibold text-white hover:bg-white/15"
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
       {composing && (
         <form
           className="animate-rise flex gap-2 px-4 pb-2"
@@ -718,15 +1052,13 @@ export function ZestApp() {
       )}
 
       <Controls
-        canRewind={inParty ? pHistory.length > 0 : history.length > 0}
+        travelMode={shown?.travelMode ?? "walk"}
         disabled={!shown || receiptOpen}
         listening={voice.listening}
         timeLeft={timer.fraction}
         minutesLeft={Math.ceil(timer.remainingMs / 60000)}
-        onRewind={rewind}
         onSkip={skip}
         onGo={go}
-        onWildcard={onWildcardTap}
         onType={() => (inParty ? setNotice("Cravings are solo-only for now.") : setComposing((c) => !c))}
         onHoldStart={() => {
           if (inParty) return setNotice("Cravings are solo-only for now.");
@@ -735,22 +1067,16 @@ export function ZestApp() {
         }}
         onHoldEnd={voice.stop}
       />
-      <div className="flex items-center justify-center gap-1 px-3 pb-[env(safe-area-inset-bottom)] text-[11px] text-white/60">
-        <p className="min-w-0 truncate">
-          {inParty
-            ? "Nothing saved. Room ends at 10 min."
-            : dietRemembered
-              ? "Nothing saved by us. Diet stays here."
-              : "Nothing saved. Close the tab, it\u2019s gone."}
-        </p>
+      <div className="flex justify-center px-3 pb-[env(safe-area-inset-bottom)]">
         <button
           type="button"
           onClick={toggleReceipt}
           aria-expanded={receiptOpen}
-          className="inline-flex min-h-11 shrink-0 items-center gap-1 rounded-full px-2 font-semibold text-teal-bright underline-offset-2 hover:underline"
+          className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2 text-xs text-white/60 hover:text-white/85"
         >
-          <LockIcon size={12} />
-          What we sent
+          <LockIcon size={12} className="text-teal-bright" />
+          {inParty ? "Nothing saved. Room ends at 10 min." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
+          <span className="font-semibold text-teal-bright">What we sent</span>
         </button>
       </div>
     </main>

@@ -6,8 +6,8 @@ import { dietSafeSuggestion, dishCategory } from "@/lib/categories";
 import { buildMockQueue } from "@/lib/mockPicks";
 import { env, isDemo } from "./env";
 import { safeErrorLabel } from "./memory";
-import { cityFromHeaders, coarseFromHeaders, roundToArea, type LatLng } from "./geo";
-import { geocodeArea, nearbyOpenPlaces, type Place } from "./places";
+import { cityFromHeaders, coarseFromHeaders, haversineMeters, roundToArea, type LatLng } from "./geo";
+import { geocodeArea, nearbyOpenPlaces, textSearchOpenPlaces, type Place } from "./places";
 import { travelTimes, type Travel } from "./routes";
 import { balanceScore, profileFor, toPlate, type Profile } from "./heuristics";
 import { rankWithClaude } from "./rank";
@@ -29,12 +29,16 @@ export const PicksRequestSchema = z.object({
   craving: z.string().max(140).nullable().optional(),
   exclude: z.array(z.string().max(200)).max(100).optional(),
   firstOfSession: z.boolean().optional(),
+  /** Search a short drive away instead of a walk (the user asked for it). */
+  widen: z.boolean().optional(),
 });
 export type PicksRequest = z.infer<typeof PicksRequestSchema>;
 
 const WALK_RADIUS_M = 1500;
 const DRIVE_RADIUS_M = 8000;
 const MIN_WALKABLE = 5;
+/** A craving is worth walking for with fewer options: two matching places beat five that don't. */
+const MIN_CRAVING_WALKABLE = 2;
 const MAX_CANDIDATES = 20;
 const WANT_COUNT = 10;
 /** If Claude hasn't produced pick #1 by now, show a rule-based first pick so the screen is never empty for long. */
@@ -90,15 +94,8 @@ export async function* runPipeline(
   const allergies = req.dietary?.allergies ?? [];
   const fits = (p: Place) => !exclude.has(p.id) && !(diets.some((d) => VEG_DIETS.test(d)) && p.servesVegetarianFood === false);
 
-  let mode: "walk" | "drive" = "walk";
-  let places = (await nearbyOpenPlaces(origin, WALK_RADIUS_M)).filter(fits);
-  if (places.length < MIN_WALKABLE) {
-    const wider = (await nearbyOpenPlaces(origin, DRIVE_RADIUS_M)).filter(fits);
-    if (wider.length > places.length) {
-      places = wider;
-      mode = "drive";
-    }
-  }
+  const craving = req.craving?.trim() || null;
+  const { places, mode, cravingMatched } = await gatherPlaces(origin, req.mood, craving, fits, Boolean(req.widen));
   if (places.length === 0) {
     yield {
       type: "empty",
@@ -117,7 +114,16 @@ export async function* runPipeline(
   const shortlist = [...places].sort((a, b) => travel.get(a.id)!.minutes - travel.get(b.id)!.minutes).slice(0, MAX_CANDIDATES);
 
   const sharedWith: ThirdParty[] = useAI ? ["google", "anthropic"] : ["google"];
-  yield { type: "meta", mode, sparse: mode === "drive", areaLabel, areaSource, sharedWith };
+  yield {
+    type: "meta",
+    mode,
+    // "Sparse" means we had to widen on our own; a drive the user asked for needs no explaining.
+    sparse: mode === "drive" && !req.widen,
+    areaLabel,
+    areaSource,
+    sharedWith,
+    ...(craving ? { cravingMatched } : {}),
+  };
 
   // 4. Rank and describe.
   const byShortId = new Map<string, Place>();
@@ -134,12 +140,17 @@ export async function* runPipeline(
       travel: `${t.minutes} min ${mode}`,
       closes_in_minutes: p.nextCloseTime ? Math.round((Date.parse(p.nextCloseTime) - Date.now()) / 60000) : null,
       vegetarian_options: p.servesVegetarianFood,
+      rating: p.rating,
+      ratings_count: p.ratingCount,
     };
   });
 
   const emitted = new Set<string>();
   const firstOfSession = Boolean(req.firstOfSession);
-  const heuristicOrder = rankHeuristically(shortlist, travel, req.mood, firstOfSession);
+  // A matched craving keeps Google's relevance order; otherwise rank by mood, balance and distance.
+  const heuristicOrder = cravingMatched
+    ? places.filter((p) => shortlist.includes(p))
+    : rankHeuristically(shortlist, travel, req.mood, firstOfSession);
   const make = (p: Place, ranked?: RankedPick): Pick => {
     const pick = buildPick(p, travel.get(p.id)!, mode, ranked);
     return { ...pick, suggestion: dietSafeSuggestion(pick.suggestion, diets) };
@@ -155,7 +166,7 @@ export async function* runPipeline(
           diets,
           allergies,
           skipSignals: req.skipSignals ?? [],
-          craving: req.craving ?? null,
+          craving,
           wantCount: WANT_COUNT,
           candidates,
         },
@@ -195,12 +206,70 @@ export async function* runPipeline(
   yield { type: "done" };
 }
 
+/** Fixed words per mood for a second search when the nearest places run out. Safe to cache: no user text. */
+const MOOD_QUERY: Record<Mood, string> = {
+  fresh: "salad poke healthy bowl",
+  comfort: "noodles soup comfort food",
+  fast: "quick bites takeout",
+  cheap: "cheap eats",
+  treat: "dessert bakery",
+};
+
+function dedupe(lists: Place[][]): Place[] {
+  const seen = new Set<string>();
+  return lists.flat().filter((p) => !seen.has(p.id) && Boolean(seen.add(p.id)));
+}
+
+/**
+ * Finds open places to rank, cheapest search first:
+ * 1. With a craving: Google Text Search for it. Walkable matches if there are a couple,
+ *    else matches within a short drive. If nothing matches, fall through to what's open.
+ * 2. The 20 nearest open places. When fewer than a queue's worth are left (after the
+ *    phone's exclude list), add the 20 most popular nearby and a search for the mood.
+ * 3. Still thin, or the user asked for it: widen to a short drive.
+ */
+async function gatherPlaces(
+  origin: LatLng,
+  mood: Mood,
+  craving: string | null,
+  fits: (p: Place) => boolean,
+  widen: boolean,
+): Promise<{ places: Place[]; mode: "walk" | "drive"; cravingMatched: boolean }> {
+  const within = (p: Place, m: number) => haversineMeters(origin, p.location) <= m;
+
+  if (craving) {
+    const matches = (await textSearchOpenPlaces(origin, craving, widen ? DRIVE_RADIUS_M : WALK_RADIUS_M, { cache: false })).filter(fits);
+    const walkable = matches.filter((p) => within(p, WALK_RADIUS_M));
+    if (!widen && walkable.length >= MIN_CRAVING_WALKABLE) return { places: walkable, mode: "walk", cravingMatched: true };
+    const drivable = matches.filter((p) => within(p, DRIVE_RADIUS_M));
+    if (drivable.length > 0) return { places: drivable, mode: "drive", cravingMatched: true };
+  }
+
+  let places: Place[] = [];
+  if (!widen) {
+    places = (await nearbyOpenPlaces(origin, WALK_RADIUS_M, "DISTANCE")).filter(fits);
+    if (places.length < WANT_COUNT) {
+      const more = await Promise.all([
+        nearbyOpenPlaces(origin, WALK_RADIUS_M, "POPULARITY"),
+        textSearchOpenPlaces(origin, MOOD_QUERY[mood], WALK_RADIUS_M, { cache: true }),
+      ]);
+      places = dedupe([places, ...more.map((list) => list.filter((p) => fits(p) && within(p, WALK_RADIUS_M)))]);
+    }
+    if (places.length >= MIN_WALKABLE) return { places, mode: "walk", cravingMatched: false };
+  }
+  const wider = (await nearbyOpenPlaces(origin, DRIVE_RADIUS_M)).filter(fits);
+  if (widen || wider.length > places.length) return { places: wider, mode: "drive", cravingMatched: false };
+  return { places, mode: "walk", cravingMatched: false };
+}
+
 function rankHeuristically(places: Place[], travel: Map<string, Travel>, mood: Mood, firstOfSession: boolean): Place[] {
   const score = (p: Place) => {
     const prof = profileFor(p);
     const balance = balanceScore(prof.plate);
     const moodFit = prof.moods.includes(mood) ? 1 : 0;
-    return moodFit * 2 + balance * (firstOfSession ? 2 : 1) - travel.get(p.id)!.minutes / 30;
+    // A well-rated place nudges up; too few ratings to tell counts as neutral.
+    const rated = p.rating != null && (p.ratingCount ?? 0) >= 20 ? (p.rating - 4) * 0.6 : 0;
+    return moodFit * 2 + balance * (firstOfSession ? 2 : 1) + rated - travel.get(p.id)!.minutes / 30;
   };
   return [...places].sort((a, b) => score(b) - score(a));
 }
@@ -250,17 +319,30 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     photo: place.photoName
       ? { kind: "url", url: `/api/photo?name=${encodeURIComponent(place.photoName)}` }
       : { kind: "mock", palette: ["#c8401f", "#3f8f6b", "#efe3c8"], motif: "plate" },
+    rating: place.rating,
+    ratingCount: place.ratingCount,
+    mapsUrl: place.mapsUri ?? undefined,
   };
 }
 
 /** Same stream shape on mock data, so the client path is identical without keys. */
 async function* demoFeed(req: PicksRequest, exclude: Set<string>): AsyncGenerator<PicksEvent> {
-  yield { type: "meta", mode: "demo", sparse: false, areaLabel: null, areaSource: "demo", sharedWith: [] };
   const diets = req.dietary?.diets ?? [];
   const veg = diets.some((d) => VEG_DIETS.test(d));
-  const picks = buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession) })
+  const craving = req.craving?.trim() || null;
+  let picks = buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession), allMoods: Boolean(craving) })
     .filter((p) => !exclude.has(p.id) && !(veg && ["steak and BBQ", "burgers"].includes(p.category ?? "")))
     .map((p) => ({ ...p, suggestion: dietSafeSuggestion(p.suggestion, diets) }));
+  // A word match stands in for Text Search on the fictional places.
+  let cravingMatched = false;
+  if (craving) {
+    const words = craving.toLowerCase().split(/\W+/).filter((w) => w.length >= 3);
+    const hit = (p: Pick) => words.some((w) => `${p.name} ${p.suggestion} ${p.reason} ${p.category ?? ""}`.toLowerCase().includes(w.replace(/s$/, "")));
+    const matches = picks.filter(hit);
+    cravingMatched = matches.length > 0;
+    picks = cravingMatched ? matches : picks.filter((p) => p.moods.includes(req.mood));
+  }
+  yield { type: "meta", mode: "demo", sparse: false, areaLabel: null, areaSource: "demo", sharedWith: [], ...(craving ? { cravingMatched } : {}) };
   if (picks.length === 0) {
     yield { type: "empty", message: "That's every demo pick for this mood.", suggestion: "other_mood" };
     return;

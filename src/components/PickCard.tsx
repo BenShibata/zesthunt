@@ -1,11 +1,11 @@
 "use client";
 
-import type { Pick } from "@/lib/types";
-import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText } from "@/lib/time";
+import type { HealthLabel, Pick } from "@/lib/types";
+import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
 import { OverlayPaymentChip } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { CarIcon, ClockIcon, LeafIcon, PartyIcon, WalkIcon } from "./Icons";
+import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, WalkIcon } from "./Icons";
 import type { useSwipe } from "@/hooks/useSwipe";
 
 interface Props {
@@ -13,12 +13,33 @@ interface Props {
   now: Date;
   swipes: number;
   swipe: ReturnType<typeof useSwipe>;
+  /** A notice is showing over the photo: hide the swipe-count badge so they don't collide. */
+  quietBadge?: boolean;
+  /** Tapping a chip searches for more of that ("noodles", "veggie"). Omitted where cravings don't apply (parties). */
+  onTangent?: (query: string) => void;
+  /**
+   * Collapsed, the card shows only what it takes to say yes or no: the dish, the place and
+   * how far. Details (rating, price, payment, chips, plate) open on request, or by themselves
+   * when someone lingers on a pick, so detail arrives as they get close to choosing.
+   */
+  expanded?: boolean;
+  onExpand?: () => void;
+  /** In a party: how many said go to this card, how many it needs, and the group size. */
+  groupLikes?: { count: number; needed: number; total: number };
 }
 
-export function PickCard({ pick, now, swipes, swipe }: Props) {
+/** What each health label searches for when tapped. */
+const LABEL_QUERY: Record<HealthLabel, string> = {
+  Protein: "high protein",
+  Veg: "veggie",
+  "Whole grain": "whole grain bowl",
+};
+
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, groupLikes }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
+  const rating = ratingText(pick.rating, pick.ratingCount);
   const { dx, progress, handlers } = swipe;
 
   return (
@@ -51,11 +72,23 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
           SKIP
         </span>
 
-        <div className="pointer-events-none absolute right-3 top-3">
-          <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
-            {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
-          </span>
-        </div>
+        {/* In a party, the group's live "♥ 2 of 3" takes the badge's place, always visible. */}
+        {groupLikes && groupLikes.total > 1 && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-social/85 px-3 text-sm font-semibold text-white backdrop-blur-md">
+              <span aria-hidden="true">♥</span>
+              {groupLikes.count} of {groupLikes.total}
+              {groupLikes.count > 0 && groupLikes.count === groupLikes.needed - 1 && <span className="font-normal"> · 1 more to match</span>}
+            </span>
+          </div>
+        )}
+        {expanded && !groupLikes && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
+              {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
+            </span>
+          </div>
+        )}
 
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
           {pick.travelUnknown ? (
@@ -73,29 +106,42 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
               </span>
             </p>
           )}
-          <OverlayPaymentChip payment={pick.payment} />
+          {expanded && <OverlayPaymentChip payment={pick.payment} />}
         </div>
       </div>
 
       {/* Details */}
       <div key={pick.id} className="animate-rise flex items-start gap-4 px-4 pt-4 pb-2">
         <div className="min-w-0 flex-1">
-          <p className="text-xs font-semibold tracking-wide text-white/60 uppercase">{mealFrame(now)}</p>
-          <h1 id="pick-title" className="mt-1 font-display text-[1.75rem] leading-[1.1] font-bold tracking-tight text-white">
+          {expanded && <p className="mb-1 text-xs font-semibold tracking-wide text-white/60 uppercase">{mealFrame(now)}</p>}
+          <h1 id="pick-title" className="font-display text-[1.75rem] leading-[1.1] font-bold tracking-tight text-white">
             {pick.suggestion}
           </h1>
           <p id="pick-reason" className="mt-1 text-base text-white/80">
             {pick.reason}
           </p>
-          <p className="mt-2 truncate text-sm text-white/65">
+          <p className="mt-2 line-clamp-2 text-sm text-white/65">
             <span className="font-medium text-white/90">{pick.name}</span>
-            <span aria-hidden="true"> · </span>
-            <span aria-hidden="true">{price.visual}</span>
-            <span className="sr-only">, {price.spoken}</span>
+            {expanded && rating && (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span aria-hidden="true" className="text-white/85">
+                  <span className="text-star">★</span> {rating.visual}
+                </span>
+                <span className="sr-only">, {rating.spoken}</span>
+              </>
+            )}
+            {expanded && (
+              <>
+                <span aria-hidden="true"> · </span>
+                <span aria-hidden="true">{price.visual}</span>
+                <span className="sr-only">, {price.spoken}</span>
+              </>
+            )}
             {pick.closesAt && !closingSoon && (
               <>
                 <span aria-hidden="true"> · </span>
-                Open till {formatClock(pick.closesAt)}
+                <span className="whitespace-nowrap">Open till {formatClock(pick.closesAt)}</span>
               </>
             )}
           </p>
@@ -105,23 +151,69 @@ export function PickCard({ pick, now, swipes, swipe }: Props) {
               Closes in {closesIn} min
             </p>
           )}
-          {pick.labels.length > 0 && (
-            <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Good stuff in this pick">
-              {pick.labels.map((l) => (
-                <li
-                  key={l}
-                  className="inline-flex items-center gap-1 rounded-full bg-teal/25 px-2 py-0.5 text-xs font-semibold text-teal-bright"
-                >
-                  <LeafIcon size={12} />
-                  {l}
-                </li>
-              ))}
-            </ul>
+          {expanded ? (
+            <div className="animate-rise">
+              <TangentChips pick={pick} onTangent={onTangent} />
+            </div>
+          ) : (
+            onExpand && (
+              <button
+                type="button"
+                onClick={onExpand}
+                aria-expanded={false}
+                className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
+              >
+                Details: rating, price, more like this
+                <ChevronDownIcon size={15} />
+              </button>
+            )
           )}
         </div>
-        <PlateRing plate={pick.plate} />
+        {expanded && <PlateRing plate={pick.plate} />}
       </div>
     </article>
+  );
+}
+
+/**
+ * The dish type and health labels as chips. Each one is a way out of this pick toward a
+ * better one: tapping "More noodles" or "Veg" searches for exactly that nearby.
+ */
+function TangentChips({ pick, onTangent }: { pick: Pick; onTangent?: (query: string) => void }) {
+  const chips = [
+    ...(pick.category ? [{ key: "dish", text: `More ${pick.category}`, query: pick.category, health: false }] : []),
+    ...pick.labels.map((l) => ({ key: l, text: l, query: LABEL_QUERY[l], health: true })),
+  ];
+  if (chips.length === 0) return null;
+  // Visually 32px tall; the ::after pad makes each tap target 44px.
+  const chip = (health: boolean) =>
+    `relative inline-flex h-8 items-center gap-1 rounded-full px-2.5 text-xs font-semibold after:absolute after:-inset-1.5 after:content-[''] ${
+      health ? "bg-teal/25 text-teal-bright" : "bg-white/12 text-white"
+    }`;
+  return (
+    <ul className="mt-2.5 flex flex-wrap gap-2" aria-label={onTangent ? "Find more like this" : "About this pick"}>
+      {chips.map((c) => (
+        <li key={c.key}>
+          {onTangent ? (
+            <button
+              type="button"
+              onClick={() => onTangent(c.query)}
+              aria-label={c.health ? `Find more ${c.text.toLowerCase()} options nearby` : `Find ${c.query} nearby`}
+              className={`${chip(c.health)} transition hover:brightness-125 active:scale-95`}
+            >
+              {c.health && <LeafIcon size={12} />}
+              {c.text}
+              <SearchIcon size={12} className="opacity-70" />
+            </button>
+          ) : (
+            <span className={chip(c.health)}>
+              {c.health && <LeafIcon size={12} />}
+              {c.text}
+            </span>
+          )}
+        </li>
+      ))}
+    </ul>
   );
 }
 

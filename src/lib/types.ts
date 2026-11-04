@@ -71,6 +71,11 @@ export interface Pick {
   /** At most one gentle tip, shown on the locked-in screen. */
   upgradeTip?: string;
   photo: PickPhoto;
+  /** Google rating (1–5) and how many ratings, when Places has them. */
+  rating?: number | null;
+  ratingCount?: number | null;
+  /** The place's Google Maps page, for the menu, photos and reviews. */
+  mapsUrl?: string;
 }
 
 export interface Dietary {
@@ -97,6 +102,8 @@ export type PicksEvent =
       areaSource: AreaSource;
       /** Services this request's data was passed on to. */
       sharedWith: ThirdParty[];
+      /** With a craving: whether places matching it were found (false = showing what's open instead). */
+      cravingMatched?: boolean;
     }
   | { type: "pick"; pick: Pick }
   | { type: "need_location" }
@@ -123,6 +130,22 @@ export interface PartyState {
   deckSize: number;
   /** How many cards each member has swiped, for "waiting on…" hints. */
   progress: Record<string, number>;
-  /** The pick everyone swiped right on, once there is one. */
+  /** The pick the group settled on (enough "go"s, or "Decide for us"), once there is one. */
   match: string | null;
+  /** Who said go to each card, by member id, for live "♥ 2 of 3". */
+  likes: Record<string, string[]>;
+  /** "Go"s a card needs to be a match: everyone in groups of up to 3, all but one in bigger groups. */
+  needed: number;
+  /** The one-time "+5 minutes" has been used. */
+  extended: boolean;
+  /** The latest group nudge ("Heartier"): the host's phone fetches matching cards from deck position `at`. */
+  steer: PartySteer | null;
+}
+
+export interface PartySteer {
+  mood: Mood;
+  seq: number;
+  /** Deck size when the nudge was made; cards from here on follow it. */
+  at: number;
+  by: string;
 }
