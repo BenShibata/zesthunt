@@ -1,9 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import type { HealthLabel, Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
-import { OverlayPaymentChip } from "./PaymentChips";
+import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
 import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, WalkIcon } from "./Icons";
 import type { useSwipe } from "@/hooks/useSwipe";
@@ -26,6 +27,9 @@ interface Props {
   onExpand?: () => void;
   /** In a party: you already voted for this card (others' votes stay secret). */
   voted?: boolean;
+  /** First card of the session: lean left and right once to show it can be swiped. */
+  hint?: boolean;
+  onHinted?: () => void;
 }
 
 /** What each health label searches for when tapped. */
@@ -35,7 +39,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -47,7 +51,8 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
       {/* Photo: swipe surface */}
       <div
         {...handlers}
-        className="relative min-h-0 flex-1 touch-none select-none overflow-hidden"
+        className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx ? "animate-nudge" : ""}`}
+        onAnimationEnd={(e) => e.animationName === "nudge" && onHinted?.()}
         style={{
           transform: dx ? `translateX(${dx}px) rotate(${dx / 40}deg)` : undefined,
           transition: dx ? "none" : "transform 220ms ease-out",
@@ -104,7 +109,6 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </span>
             </p>
           )}
-          {expanded && <OverlayPaymentChip payment={pick.payment} />}
         </div>
       </div>
 
@@ -151,6 +155,8 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
           )}
           {expanded ? (
             <div className="animate-rise">
+              {/* How to pay is a "getting there" detail: not shown while a group is voting. */}
+              {voted === undefined && <PaymentLine payment={pick.payment} />}
               <TangentChips pick={pick} onTangent={onTangent} />
             </div>
           ) : (
@@ -215,11 +221,22 @@ function TangentChips({ pick, onTangent }: { pick: Pick; onTangent?: (query: str
   );
 }
 
-/** Skeleton shaped like the card so nothing jumps when the first pick lands. */
+const LOADING_LINES = ["Sniffing out what's open nearby…", "Checking who's still serving…", "Counting the steps to each door…", "Picking something worth the walk…"];
+
+/** Skeleton shaped like the card so nothing jumps when the first pick lands, with a little company while it loads. */
 export function PickSkeleton() {
+  const [line, setLine] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setLine((i) => (i + 1) % LOADING_LINES.length), 1600);
+    return () => clearInterval(t);
+  }, []);
   return (
     <div className="flex min-h-0 flex-1 flex-col" aria-busy="true" aria-label="Finding a pick near you">
-      <div className="skeleton min-h-0 flex-1" />
+      <div className="skeleton relative grid min-h-0 flex-1 place-items-center">
+        <p key={line} aria-hidden="true" className="animate-rise px-6 text-center text-base font-medium text-white/70">
+          {LOADING_LINES[line]}
+        </p>
+      </div>
       <div className="flex items-start gap-4 px-4 pt-4 pb-2">
         <div className="flex-1 space-y-2">
           <div className="skeleton h-3 w-16 rounded" />

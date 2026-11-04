@@ -5,6 +5,7 @@ import type { PartyMember } from "@/lib/types";
 import { HeartIcon, PartyIcon } from "./Icons";
 import type { PartyResult } from "@/lib/partyResults";
 import { QrCode } from "./QrCode";
+import { PaymentLine } from "./PaymentChips";
 
 /** Ticks the clock, so a moved deadline ("+5 min") shows at once. */
 function useSecondsLeft(expiresAt: number) {
@@ -332,6 +333,29 @@ export function PartyWaiting({
  */
 export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; onGo: () => void; onLeave: () => void }) {
   const { winner, others, voters } = result;
+  // A short drum roll before the reveal (skipped for reduced motion).
+  const [counting, setCounting] = useState(() => typeof window !== "undefined" && !window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  useEffect(() => {
+    if (!counting) return;
+    const t = setTimeout(() => setCounting(false), 1500);
+    return () => clearTimeout(t);
+  }, [counting]);
+  if (counting) {
+    return (
+      <main className="mx-auto flex h-dvh max-w-md flex-col items-center justify-center gap-5 bg-ink px-6 text-white" aria-busy="true">
+        <div className="flex gap-3 text-social-bright" aria-hidden="true">
+          {[0, 1, 2].map((i) => (
+            <span key={i} className="animate-beat" style={{ animationDelay: `${i * 150}ms` }}>
+              <HeartIcon size={30} />
+            </span>
+          ))}
+        </div>
+        <p className="font-display text-2xl font-bold" role="status">
+          Counting the votes…
+        </p>
+      </main>
+    );
+  }
   return (
     <main className="mx-auto flex h-dvh max-w-md flex-col justify-center gap-5 bg-ink px-6 text-white">
       <p className="animate-rise text-sm font-semibold tracking-wide text-social-bright uppercase">The group picked…</p>
@@ -340,6 +364,8 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
           {winner.card.name}
         </h1>
         <p className="text-white/80">{winner.card.suggestion}</p>
+        {/* Now that the group has chosen, how to pay is worth knowing. */}
+        <PaymentLine payment={winner.card.payment} />
         <p className="flex items-center gap-1.5 text-lg font-semibold">
           <HeartIcon size={20} className="text-paprika-bright" />
           {winner.likers.length} of {voters} voted for it

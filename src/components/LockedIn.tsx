@@ -25,12 +25,14 @@ interface Props {
    */
   allergies?: string[];
   onAllergiesChange?: (allergies: string[]) => void;
+  /** Solo only: how long the hunt took, for a small "Decided in 42 seconds" moment. */
+  decided?: { seconds: number; swipes: number };
   /** Solo only: turn this pick into a party for a group still deciding. */
   onDecideTogether?: () => void;
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided }: Props) {
   const [askAllergies, setAskAllergies] = useState(() => allergies.length === 0);
   const heading = useRef<HTMLHeadingElement>(null);
   const closesIn = minutesUntil(pick.closesAt, now);
@@ -69,7 +71,16 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             It&apos;s a match!
           </p>
         ) : (
-          <p className="text-sm font-semibold text-teal dark:text-teal-bright">Locked in</p>
+          <p className="text-sm font-semibold text-teal dark:text-teal-bright">
+            Locked in
+            {decided && (
+              <span className="font-normal text-sheet-muted dark:text-white/60">
+                {" "}
+                · decided in {decided.seconds < 90 ? `${decided.seconds} seconds` : `${Math.round(decided.seconds / 60)} minutes`}
+                {decided.swipes === 0 ? ", first pick" : `, ${decided.swipes} swipe${decided.swipes === 1 ? "" : "s"}`}
+              </span>
+            )}
+          </p>
         )}
         <h1 id="locked-title" ref={heading} tabIndex={-1} className="mt-0.5 font-display text-3xl leading-tight font-bold tracking-tight outline-none">
           {pick.name}

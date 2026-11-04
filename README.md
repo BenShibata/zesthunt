@@ -73,6 +73,8 @@ Every API route has a per-IP limit per minute: picks 40, party actions 60, party
 
 ## Start simple, ask as you get closer
 
+Little touches along the way: the first card of a session leans left and right once so swiping is discovered rather than explained; the loading screen keeps you company ("Sniffing out what's open nearby…"); the locked-in screen notes how quickly you decided ("decided in 42 seconds, 3 swipes", worked out on the phone); and a party reveal opens with a short "Counting the votes…" drum roll. Motion is skipped with `prefers-reduced-motion`.
+
 The first screen is one pick and three buttons: **Another**, **search** and **Let's go**. Nothing to set up. Options arrive when behaviour says they'd help:
 
 1. **Open:** the photo, the walk time, the dish, the place and when it closes. Everything else (what you eat, parties, privacy receipt, area, steering) is in the **⋯** menu. The ⋯ shows a small count when food choices are on.
@@ -119,7 +121,7 @@ The headline feature, so it has its own button: **Hunt together** in the top bar
 
 There's no checkout, no stored cards and no payment processor. Three things only:
 
-1. **How to pay:** chips come from Google Places `paymentOptions`: "Tap to pay" (NFC), "Cards", "Cash only", plus "Online ordering" when there's an ordering page. If Places doesn't say, no chip is shown.
+1. **How to pay:** from Google Places `paymentOptions`, shown where it helps rather than on the photo: a quiet "Pays by tap or card" line in a pick's Details ("Cash only" stands out, since it can change your mind), and chips on the locked-in screen ("Tap to pay", "Cards", "Cash only", plus "Online ordering"). In a party it's hidden while voting and appears on the results screen. If Places doesn't say, nothing is shown.
 2. **Split the bill:** on the locked-in screen (open by default after a party match, with the head count prefilled). Type the total and the number of people, and the phone works out each share in whole cents that add up exactly. **Send the split** opens the native share sheet with a ready message for Venmo, Cash App, Apple Cash or a text (or copies it where sharing isn't supported). Nothing is sent to the server. Amounts are shown in USD for now.
 3. **Order ahead:** links to the restaurant's own site when Places says it does takeout or delivery, otherwise to a DoorDash or Uber Eats search for that place. If Places says neither, it just says "Dine-in only". Payment happens on those sites.
 

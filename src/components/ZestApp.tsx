@@ -89,6 +89,11 @@ export function ZestApp() {
   const [dietSuggest, setDietSuggest] = useState<{ diets: string[]; allergies: string[] } | null>(null);
   const skipsSinceNudge = useRef(0);
   const allergiesChanged = useRef(false);
+  // A small win on the locked-in screen: how quickly this hunt ended. Device-only.
+  const huntStartedAt = useRef<number | null>(null);
+  const [decided, setDecided] = useState<{ seconds: number; swipes: number } | null>(null);
+  /** The swipe hint plays once per session. */
+  const [hinted, setHinted] = useState(false);
   /** The reveal screen comes first; "Let's go" from it opens the locked-in screen. */
   const [resultSeen, setResultSeen] = useState(false);
   const [composing, setComposing] = useState(false);
@@ -290,6 +295,8 @@ export function ZestApp() {
   const soloGo = useCallback(() => {
     if (!current) return;
     haptic(18);
+    const started = huntStartedAt.current;
+    setDecided(started ? { seconds: Math.max(1, Math.round((Date.now() - started) / 1000)), swipes } : null);
     setLocked(current);
     // Precise location is asked for only now, and used on the device to refine the walk time.
     if (!preciseLocation.current && current.travelMode === "walk") {
@@ -301,7 +308,7 @@ export function ZestApp() {
         setLocked((l) => (l && l.id === current.id ? { ...l, walkMinutes: walkMinutesOnDevice(pos, l.location), timeEstimated: true } : l));
       });
     }
-  }, [current]);
+  }, [current, swipes]);
 
   const soloRewind = useCallback(() => {
     if (history.length === 0) return;
@@ -452,6 +459,7 @@ export function ZestApp() {
 
   const onIdle = useCallback(() => {
     setSwipes(0);
+    huntStartedAt.current = null;
     setComposing(false);
     voice.cancel();
     skipped.current = [];
@@ -698,6 +706,11 @@ export function ZestApp() {
     return () => clearTimeout(t);
   }, [shownId, busy, expandedId]);
 
+  // The hunt's clock starts when the first pick appears (and again after an idle reset).
+  useEffect(() => {
+    if (shownId && huntStartedAt.current === null) huntStartedAt.current = Date.now();
+  }, [shownId]);
+
   if (party.matchedCard && party.result && !resultSeen) {
     return (
       <PartyResults
@@ -729,6 +742,7 @@ export function ZestApp() {
     return (
       <LockedIn
         pick={locked}
+        decided={decided ?? undefined}
         now={now}
         allergyNote={dietary.allergies.length > 0}
         allergies={dietary.allergies}
@@ -1029,6 +1043,8 @@ export function ZestApp() {
           onTangent={submitCraving}
           expanded={expandedId === current.id}
           onExpand={() => setExpandedId(current.id)}
+          hint={!hinted && swipes === 0}
+          onHinted={() => setHinted(true)}
         />
       )}
         </>
