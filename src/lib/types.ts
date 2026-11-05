@@ -63,6 +63,8 @@ export interface Pick {
   websiteUrl?: string;
   /** The restaurant's own ordering page, when Places has one. */
   orderUrl?: string;
+  /** Google's short description of the place, when it has one. */
+  about?: string;
   /** From Places: does takeout / delivery. null = unknown (we don't guess). */
   takeout?: boolean | null;
   delivery?: boolean | null;

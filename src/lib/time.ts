@@ -25,6 +25,16 @@ export function minutesUntil(iso: string | null, now: Date): number | null {
 
 export const CLOSING_SOON_MINUTES = 30;
 
+/** "0.4 mi" where miles are the norm (US, UK, Liberia, Myanmar), "650 m" / "1.2 km" elsewhere. */
+export function distanceText(meters: number, locale?: string): string {
+  const region = (locale ?? (typeof navigator === "undefined" ? "en-US" : navigator.language)).split("-")[1]?.toUpperCase();
+  if (["US", "GB", "LR", "MM"].includes(region ?? "")) {
+    const mi = meters / 1609.34;
+    return `${mi < 10 ? mi.toFixed(1) : Math.round(mi)} mi`;
+  }
+  return meters < 1000 ? `${Math.round(meters / 10) * 10} m` : `${(meters / 1000).toFixed(1)} km`;
+}
+
 export function priceText(level: PriceLevel | null): { visual: string; spoken: string } {
   if (!level) return { visual: "Price not listed", spoken: "Price not listed" };
   const spoken = ["", "Inexpensive", "Moderately priced", "Pricey", "Very pricey"][level];

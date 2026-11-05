@@ -57,6 +57,7 @@ export const PartyCardSchema = z.object({
     })
     .nullable(),
   websiteUrl: z.string().max(500).optional(),
+  about: z.string().max(400).optional(),
   orderUrl: z.string().max(500).optional(),
   takeout: z.boolean().nullable().optional(),
   delivery: z.boolean().nullable().optional(),

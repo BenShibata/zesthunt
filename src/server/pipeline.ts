@@ -348,6 +348,7 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
       : { kind: "mock", palette: ["#c8401f", "#3f8f6b", "#efe3c8"], motif: "plate" },
     rating: place.rating,
     ratingCount: place.ratingCount,
+    about: place.summary ?? undefined,
     mapsUrl: place.mapsUri ?? undefined,
     vegetarianOptions: place.servesVegetarianFood,
     placeTypes: [place.primaryType, ...place.types].filter((t): t is string => Boolean(t)).slice(0, 8),
