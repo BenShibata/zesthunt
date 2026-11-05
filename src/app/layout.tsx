@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   referrer: "no-referrer",
   // Proves to impact.com (the referral network) that this site is ours. Public by design.
   // The same line is served as plain text at /impact-site-verification.txt.
-  other: { "impact-site-verification": "79cb59df-f3e3-4b8b-a465-ae372068cdb4" },
+  other: { "impact-site-verification": ["b51f39a1-b9fa-4005-a67f-46a42860d8a5", "79cb59df-f3e3-4b8b-a465-ae372068cdb4"] },
 };
 
 export const viewport: Viewport = {
