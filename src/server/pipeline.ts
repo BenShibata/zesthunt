@@ -235,6 +235,19 @@ const MOOD_QUERY: Record<Mood, string> = {
   treat: "dessert bakery",
 };
 
+/**
+ * The extra searches that top up a ring are a bonus: if Google refuses one (a quota, a blip),
+ * carry on with what the others found instead of failing the whole search.
+ */
+async function extra(search: Promise<Place[]>): Promise<Place[]> {
+  try {
+    return await search;
+  } catch (e) {
+    console.error("extra search skipped:", safeErrorLabel(e));
+    return [];
+  }
+}
+
 function dedupe(lists: Place[][]): Place[] {
   const seen = new Set<string>();
   return lists.flat().filter((p) => !seen.has(p.id) && Boolean(seen.add(p.id)));
@@ -279,10 +292,10 @@ async function gatherPlaces(
     const [first, second]: ("DISTANCE" | "POPULARITY")[] = mode === "walk" ? ["DISTANCE", "POPULARITY"] : ["POPULARITY", "DISTANCE"];
     places = keep([await nearbyOpenPlaces(origin, meters, first)]);
     if (places.length < WANT_COUNT) {
-      places = keep(await Promise.all([nearbyOpenPlaces(origin, meters, second), textSearchOpenPlaces(origin, MOOD_QUERY[mood], meters, { cache: true })]));
+      places = keep(await Promise.all([extra(nearbyOpenPlaces(origin, meters, second)), extra(textSearchOpenPlaces(origin, MOOD_QUERY[mood], meters, { cache: true }))]));
     }
     if (places.length < WANT_COUNT) {
-      places = keep(await Promise.all(MOODS.filter((m) => m !== mood).map((m) => textSearchOpenPlaces(origin, MOOD_QUERY[m], meters, { cache: true }))));
+      places = keep(await Promise.all(MOODS.filter((m) => m !== mood).map((m) => extra(textSearchOpenPlaces(origin, MOOD_QUERY[m], meters, { cache: true })))));
     }
     if (places.length >= (r === 0 ? MIN_WALKABLE : MIN_FARTHER) || r === maxReach) return { places, reach: r, cravingMatched: false };
   }

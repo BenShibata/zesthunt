@@ -275,5 +275,13 @@ describe("runPipeline: never gives up", () => {
     expect(events[0]).toMatchObject({ cravingMatched: false, reach: 0, mode: "walk" });
     expect(picks.length).toBeGreaterThan(0);
   });
-});
 
+  it("carries on when an extra search is refused, instead of failing the whole search", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.mocked(placesApi.textSearchOpenPlaces).mockRejectedValue(new Error("places 429"));
+    places.popular = [place("p1"), place("p2"), place("p3"), place("p4")];
+    const { picks, events } = await run();
+    expect(events.at(-1)).toEqual({ type: "done" });
+    expect(picks.map((p) => p.id)).toEqual(expect.arrayContaining(["a", "p1"]));
+  });
+});
