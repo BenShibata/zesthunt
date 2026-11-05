@@ -15,6 +15,7 @@ import { useVoice, type VoiceFallback } from "@/hooks/useVoice";
 import { TopBar, type MenuItem } from "./TopBar";
 import { NUDGE_LABEL, NotQuite } from "./NotQuite";
 import { PickCard, PickSkeleton } from "./PickCard";
+import { GoMenu } from "./GoMenu";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
@@ -91,6 +92,8 @@ export function ZestApp() {
   const [swipes, setSwipes] = useState(0);
   const [locked, setLocked] = useState<Pick | null>(null);
   const [lockedOrder, setLockedOrder] = useState(false);
+  /** "Let's go" opens the choices first: head there, order, call, or all the details. */
+  const [goMenu, setGoMenu] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   /** The active craving: it drives the search (and every refill) until cleared. Memory only. */
   const [craving, setCraving] = useState<string | null>(null);
@@ -908,15 +911,17 @@ export function ZestApp() {
   const pullGo = adding ? () => void addToVote() : inParty ? partyVote : soloGo;
   const shown = inParty ? partyCurrent : current;
   const canGoBack = adding ? adding.at > 0 : inParty ? pHistory.length > 0 : history.length > 0;
+  // Back is always offered; on the first pick it says so instead of doing nothing.
+  const goBack = () => (canGoBack ? back() : setNotice("Nothing back here. Swipe left for more."));
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 10-minute clock, so the idle timer pauses in a party too.
   const timer = useInactivityTimer(IDLE_MS, onIdle, Boolean(locked) || inParty || Boolean(party.matchedCard));
 
   // Keyboard: → next, ← or Backspace back, ↓ go (or vote, or add), solo or in a group.
-  const keyActions = useRef({ next, back, pullGo });
+  const keyActions = useRef({ next, back: goBack, pullGo });
   useEffect(() => {
-    keyActions.current = { next, back, pullGo };
+    keyActions.current = { next, back: goBack, pullGo };
   });
   useEffect(() => {
     if (locked || composing || receiptOpen) return;
@@ -1119,7 +1124,7 @@ export function ZestApp() {
   ];
 
   return (
-    <main className="mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
+    <main className="relative mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
       <TopBar
         demo={feedMode === "demo"}
         items={menu}
@@ -1292,7 +1297,8 @@ export function ZestApp() {
                 expanded={expandedId === addingCurrent.id}
                 onExpand={() => setExpandedId(addingCurrent.id)}
                 onNext={next}
-                onBack={canGoBack ? back : undefined}
+                onBack={goBack}
+                hasBack={canGoBack}
                 onPull={pullGo}
                 pullAction="add"
               />
@@ -1319,10 +1325,10 @@ export function ZestApp() {
             quietBadge={Boolean(shownNotice)}
             voted={party.myVotes.includes(partyCurrent.id)}
             onNext={next}
-            onBack={canGoBack ? back : undefined}
+            onBack={goBack}
+                hasBack={canGoBack}
             onPull={pullGo}
             pullAction="vote"
-            onUnvote={partyUnvote}
             onCantEat={() => cantEatInParty(partyCurrent.id)}
             fitNote={now ? fitNote(partyCurrent, dietary, partyCurrent.travelUnknown ? null : partyCurrent.walkMinutes, now) : null}
             expanded={expandedId === partyCurrent.id}
@@ -1367,7 +1373,8 @@ export function ZestApp() {
           now={now}
           quietBadge={Boolean(shownNotice || voice.listening)}
           onNext={next}
-          onBack={canGoBack ? back : undefined}
+          onBack={goBack}
+                hasBack={canGoBack}
           onPull={pullGo}
           pullAction="go"
           onTangent={submitCraving}
@@ -1384,8 +1391,31 @@ export function ZestApp() {
       )}
       </div>
 
+      {goMenu && current && !inParty && (
+        <GoMenu
+          pick={current}
+          onClose={() => setGoMenu(false)}
+          onChoose={(target) => {
+            setGoMenu(false);
+            soloGo(target);
+          }}
+        />
+      )}
+      {/* Searching: everything but the search fades back, so it's just the box, the ideas and the button. */}
+      {composing && (
+        <button
+          type="button"
+          aria-label="Close search"
+          tabIndex={-1}
+          onClick={() => setComposing(false)}
+          className="animate-fade absolute inset-0 z-[45] cursor-default bg-ink/85 backdrop-blur-[2px]"
+        />
+      )}
+      {composing && (
+        <p className="animate-rise relative z-50 px-5 pb-2 font-display text-2xl font-bold">{inParty ? "Find a place to add" : "What sounds good?"}</p>
+      )}
       {composing && now && (
-        <div className="animate-rise flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" role="group" aria-label="Quick cravings">
+        <div className="animate-rise relative z-50 flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" role="group" aria-label="Quick cravings">
           {cravingShortcuts(mealFrame(now), dietary.diets).map((c) => (
             <button
               key={c}
@@ -1400,7 +1430,7 @@ export function ZestApp() {
       )}
       {composing && (
         <form
-          className="animate-rise flex gap-2 px-4 pb-2"
+          className="animate-rise relative z-50 flex gap-2 px-4 pb-2"
           onSubmit={(e) => {
             e.preventDefault();
             submitCraving(draft);
@@ -1427,6 +1457,7 @@ export function ZestApp() {
       )}
 
       <Controls
+        searching={composing}
         disabled={!(adding ? addingCurrent : shown) || receiptOpen}
         next={(adding ? addingCurrent : shown) ? { label: inParty ? "Next" : "Another", onClick: next } : undefined}
         primary={
@@ -1444,7 +1475,7 @@ export function ZestApp() {
                 ? {
                     label: "Let's go",
                     aria: `Let's go: ${current.travelMode === "drive" ? "drive" : "walk"} to ${current.name}`,
-                    onClick: () => soloGo(),
+                    onClick: () => setGoMenu(true),
                     tone: "go",
                     icon: current.travelMode === "drive" ? <CarIcon size={20} /> : <WalkIcon size={20} />,
                   }
