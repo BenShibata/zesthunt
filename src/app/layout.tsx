@@ -16,6 +16,9 @@ export const metadata: Metadata = {
   title: "Zesthunt: what to eat, in seconds",
   description: "Opens straight onto a meal pick near you. No login, nothing saved.",
   referrer: "no-referrer",
+  // Proves to impact.com (the referral network) that this site is ours. Public by design.
+  // The same line is served as plain text at /impact-site-verification.txt.
+  other: { "impact-site-verification": "79cb59df-f3e3-4b8b-a465-ae372068cdb4" },
 };
 
 export const viewport: Viewport = {
