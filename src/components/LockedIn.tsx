@@ -9,7 +9,7 @@ import { forgetWin, readWins, rememberWin } from "@/lib/wins";
 import { SplitCard } from "./SplitCard";
 import { RouteMap } from "./RouteMap";
 import { SheetPaymentChips } from "./PaymentChips";
-import { CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, PartyIcon, SendIcon, TagIcon, WalkIcon } from "./Icons";
+import { BagIcon, CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, PartyIcon, PhoneIcon, SendIcon, TagIcon, WalkIcon } from "./Icons";
 
 interface Props {
   pick: Pick;
@@ -38,6 +38,7 @@ interface Props {
 export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided, onRememberChange }: Props) {
   const [remembered, setRemembered] = useState(() => readWins().some((w) => w.placeId === pick.placeId));
   const [inviteNote, setInviteNote] = useState<string | null>(null);
+  const [orderOpen, setOrderOpen] = useState(false);
 
   /** "Want to come?": the user's own share sheet, or the clipboard where there isn't one. */
   const sendInvite = async () => {
@@ -92,12 +93,11 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           </p>
         ) : (
           <p className="text-sm font-semibold text-teal dark:text-teal-bright">
-            Locked in
+            Your journey starts here
             {decided && (
               <span className="font-normal text-sheet-muted dark:text-white/60">
                 {" "}
                 · decided in {decided.seconds < 90 ? `${decided.seconds} second${decided.seconds === 1 ? "" : "s"}` : `${Math.round(decided.seconds / 60)} minutes`}
-                {decided.swipes === 0 ? ", first pick" : `, ${decided.swipes} swipe${decided.swipes === 1 ? "" : "s"}`}
               </span>
             )}
           </p>
@@ -242,7 +242,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
 
         <SplitCard placeName={pick.name} defaultPeople={partySize ?? 2} startOpen={Boolean(partyMatch)} />
 
-        {/* Pinned so "Start walking" stays in thumb reach even when the split card is open. */}
+        {/* The journey, three ways: head there, order to go, or call to reserve. Pinned in thumb reach. */}
         <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 bg-sheet px-5 pt-4 dark:bg-[#1b1916]">
           <a
             href={directionsUrl(pick)}
@@ -251,19 +251,33 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-paprika text-lg font-semibold text-white shadow-md transition hover:bg-paprika-deep active:scale-[0.99]"
           >
             {walking ? <WalkIcon size={22} /> : <CarIcon size={22} />}
-            {walking ? "Start walking" : "Get directions"}
+            Head there
+            {!pick.travelUnknown && <span className="font-normal text-white/80">· {pick.walkMinutes} min {walking ? "walk" : "drive"}</span>}
           </a>
-          {order.kind === "own" && (
-            <a href={order.url} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
-              Order ahead on their site
-              <ExternalIcon size={16} />
-            </a>
+          {(order.kind !== "none" || pick.phoneDial) && (
+            <div className={`grid gap-2 ${order.kind !== "none" && pick.phoneDial ? "grid-cols-2" : "grid-cols-1"}`}>
+              {order.kind === "own" && (
+                <a href={order.url} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
+                  <BagIcon size={18} />
+                  Order to go
+                </a>
+              )}
+              {order.kind === "delivery" && (
+                <button type="button" aria-expanded={orderOpen} onClick={() => setOrderOpen((o) => !o)} className={secondaryBtn}>
+                  <BagIcon size={18} />
+                  Order to go
+                </button>
+              )}
+              {pick.phoneDial && (
+                <a href={`tel:${pick.phoneDial}`} className={secondaryBtn} aria-label={`${pick.reservable ? "Call to reserve" : "Call"} ${pick.name}${pick.phone ? `, ${pick.phone}` : ""}`}>
+                  <PhoneIcon size={18} />
+                  {pick.reservable ? "Call to reserve" : "Call them"}
+                </a>
+              )}
+            </div>
           )}
-          {order.kind === "delivery" && (
-            <div className="flex items-center gap-2" role="group" aria-labelledby="order-ahead-label">
-              <span id="order-ahead-label" className="shrink-0 text-sm font-semibold text-sheet-muted dark:text-white/70">
-                Order ahead on
-              </span>
+          {order.kind === "delivery" && orderOpen && (
+            <div className="flex items-center gap-2" role="group" aria-label="Order to go with">
               {order.options.map((o) => (
                 <a key={o.app} href={o.url} target="_blank" rel="noopener noreferrer" className={`${secondaryBtn} flex-1 px-2 text-sm`}>
                   {o.app}
@@ -273,7 +287,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             </div>
           )}
           {order.kind === "none" && (
-            <p className="text-center text-sm text-sheet-muted dark:text-white/70">Dine-in only, per Google. Just walk on over.</p>
+            <p className="text-center text-sm text-sheet-muted dark:text-white/70">Dine-in only, per Google. Just head on over.</p>
           )}
           {pick.mapsUrl && (
             <a href={pick.mapsUrl} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>

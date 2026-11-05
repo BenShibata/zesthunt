@@ -8,16 +8,20 @@ import type { PickPhoto as Photo } from "@/lib/types";
  */
 const PHOTO_DELAY_MS = 900;
 
-function RemotePhoto({ url, alt }: { url: string; alt: string }) {
-  const [ready, setReady] = useState(false);
+function RemotePhoto({ url, alt, instant }: { url: string; alt: string; instant?: boolean }) {
+  const [ready, setReady] = useState(Boolean(instant));
   useEffect(() => {
+    if (instant) return;
     const t = setTimeout(() => setReady(true), PHOTO_DELAY_MS);
     return () => clearTimeout(t);
-  }, [url]);
+  }, [url, instant]);
   if (!ready) {
     return <div role="img" aria-label={alt} className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_40%,#2a2620_0%,#141210_70%)]" />;
   }
-  return <img src={url} alt={alt} referrerPolicy="no-referrer" className="animate-develop absolute inset-0 size-full object-cover" />;
+  // Not draggable: the browser's own image drag would cancel a swipe or pull mid-gesture.
+  return (
+    <img src={url} alt={alt} referrerPolicy="no-referrer" draggable={false} className="animate-develop pointer-events-none absolute inset-0 size-full object-cover select-none" />
+  );
 }
 
 /**
@@ -25,8 +29,8 @@ function RemotePhoto({ url, alt }: { url: string; alt: string }) {
  * the key and the user's IP never reach Google from the browser. Demo places (and
  * places without photos) get a painterly placeholder from a palette.
  */
-export function PickPhoto({ photo, alt }: { photo: Photo; alt: string }) {
-  if (photo.kind === "url") return <RemotePhoto url={photo.url} alt={alt} />;
+export function PickPhoto({ photo, alt, instant }: { photo: Photo; alt: string; /** Asked for (a flip): no delay. */ instant?: boolean }) {
+  if (photo.kind === "url") return <RemotePhoto key={photo.url} url={photo.url} alt={alt} instant={instant} />;
 
   const [a, b, c] = photo.palette;
   const layers: Record<typeof photo.motif, string> = {

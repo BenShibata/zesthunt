@@ -168,42 +168,32 @@ export function InviteSheet({
 
 const initials = (n: string) => n.trim().slice(0, 1).toUpperCase() || "?";
 
-/** Who's finished voting (never what they voted for: that stays secret until the reveal). */
-function Avatars({ members, progress, deckSize, meId }: { members: PartyMember[]; progress: Record<string, number>; deckSize: number; meId: string }) {
+/** Who's in the party. Never what anyone voted for: that stays secret until the reveal. */
+function Avatars({ members, meId }: { members: PartyMember[]; meId: string }) {
   return (
-    <ul className="flex -space-x-2" aria-label={`In the party: ${members.map((m) => `${m.nickname}${(progress[m.id] ?? 0) >= deckSize && deckSize > 0 ? " (done)" : ""}`).join(", ")}`}>
-      {members.map((m) => {
-        const done = deckSize > 0 && (progress[m.id] ?? 0) >= deckSize;
-        return (
-          <li
-            key={m.id}
-            title={`${m.nickname}${m.id === meId ? " (you)" : ""} · ${Math.min(progress[m.id] ?? 0, deckSize)}/${deckSize} voted`}
-            className={`relative grid size-8 place-items-center rounded-full border-2 border-ink text-xs font-bold ${m.id === meId ? "bg-social text-white" : "bg-social-bright text-ink"}`}
-          >
-            {initials(m.nickname)}
-            {done && (
-              <span aria-hidden="true" className="absolute -right-1 -bottom-1 grid size-4 place-items-center rounded-full bg-teal-bright text-[9px] text-ink ring-2 ring-ink">
-                ✓
-              </span>
-            )}
-          </li>
-        );
-      })}
+    <ul className="flex -space-x-2" aria-label={`In the party: ${members.map((m) => `${m.nickname}${m.id === meId ? " (you)" : ""}`).join(", ")}`}>
+      {members.map((m) => (
+        <li
+          key={m.id}
+          title={`${m.nickname}${m.id === meId ? " (you)" : ""}`}
+          className={`relative grid size-8 place-items-center rounded-full border-2 border-ink text-xs font-bold ${m.id === meId ? "bg-social text-white" : "bg-social-bright text-ink"}`}
+        >
+          {initials(m.nickname)}
+        </li>
+      ))}
     </ul>
   );
 }
 
 /**
- * Who's here, the clock, and how the vote ends. Votes are a secret ballot, so the bar only
- * says who has finished. When time is short it offers "Reveal results" (until you're done,
- * when the waiting screen has it) and a one-time "+5 min".
+ * Who's here, the clock, and how the vote ends: at the first match, or with the most-voted
+ * place when time's up. No vote counts: anyone can search and add places, so there's no
+ * fixed list to finish. When time is short it offers "Reveal now" and a one-time "+5 min".
  */
 export function PartyBar({
   code,
   expiresAt,
   members,
-  progress,
-  deckSize,
   meId,
   extended,
   onInvite,
@@ -217,8 +207,6 @@ export function PartyBar({
   code: string;
   expiresAt: number;
   members: PartyMember[];
-  progress: Record<string, number>;
-  deckSize: number;
   meId: string;
   extended: boolean;
   onInvite: () => void;
@@ -228,16 +216,11 @@ export function PartyBar({
 }) {
   const seconds = useSecondsLeft(expiresAt);
   const lowTime = seconds <= 120;
-  const finished = members.filter((m) => deckSize > 0 && (progress[m.id] ?? 0) >= deckSize).length;
-  const allDone = members.length > 1 && finished === members.length;
-  const meDone = deckSize > 0 && (progress[meId] ?? 0) >= deckSize;
-  // Once you've voted on everything, the reveal lives on the waiting screen instead.
-  const canReveal = lowTime && !meDone;
   return (
     <div className="mx-4 mb-2 space-y-1">
       <div className="flex items-center gap-2 rounded-full bg-social/15 py-1 pr-1 pl-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <Avatars members={members} progress={progress} deckSize={deckSize} meId={meId} />
+          <Avatars members={members} meId={meId} />
           <span className={`truncate text-sm ${lowTime ? "font-semibold text-paprika-bright" : "text-white/80"}`}>
             {/* On small phones the clock matters more than the code (which Invite shows). */}
             <span className="hidden min-[380px]:inline">
@@ -254,15 +237,13 @@ export function PartyBar({
           Leave
         </button>
       </div>
-      <div className="flex min-h-11 items-center gap-2 pl-2 text-sm" aria-live="polite">
+      <div className="flex min-h-11 items-center gap-2 pl-2 text-sm">
         <span className="min-w-0 flex-1 truncate text-white/70">
-          {allDone ? (
-            <span className="font-semibold text-white">Everyone&apos;s voted!</span>
-          ) : members.length < 2 ? (
+          {members.length < 2 ? (
             "Invite friends to vote."
           ) : (
             <>
-              <span aria-hidden="true">🔒 </span>Votes are secret · {finished} of {members.length} done
+              <span aria-hidden="true">🔒 </span>Secret votes · first match wins
             </>
           )}
         </span>
@@ -276,9 +257,9 @@ export function PartyBar({
             +5 min
           </button>
         )}
-        {canReveal && (
+        {lowTime && (
           <button type="button" onClick={onReveal} className="h-11 shrink-0 rounded-full bg-white px-4 font-semibold text-ink">
-            Reveal results
+            Reveal now
           </button>
         )}
       </div>
@@ -286,43 +267,24 @@ export function PartyBar({
   );
 }
 
-/** Shown once you've voted on every card: who's still going, and the reveal. */
-export function PartyWaiting({
-  members,
-  progress,
-  deckSize,
-  meId,
-  onReveal,
-}: {
-  members: PartyMember[];
-  progress: Record<string, number>;
-  deckSize: number;
-  meId: string;
-  onReveal: () => void;
-}) {
-  const waiting = members.filter((m) => (progress[m.id] ?? 0) < deckSize);
+/**
+ * The end of the list so far. Not a finish line: anyone can search and add a place, and the
+ * vote ends at the first match, or with the most-voted place when time's up.
+ */
+export function PartyEndOfList({ onSearch, onStartOver, onReveal }: { onSearch: () => void; onStartOver: () => void; onReveal: () => void }) {
   return (
-    <section className="flex flex-1 flex-col items-center justify-center gap-4 px-8 text-center" aria-live="polite">
-      <p className="font-display text-2xl font-bold">You&apos;ve voted on all {deckSize}.</p>
-      {waiting.length > 0 ? (
-        <>
-          <ul className="space-y-1 text-white/75">
-            {waiting.map((m) => (
-              <li key={m.id}>
-                {m.nickname}
-                {m.id === meId ? " (you)" : ""} is on {Math.min(progress[m.id] ?? 0, deckSize)} of {deckSize}…
-              </li>
-            ))}
-          </ul>
-          <button type="button" onClick={onReveal} className="h-12 rounded-full bg-white/12 px-6 font-semibold text-white">
-            Reveal now (ends the vote)
-          </button>
-        </>
-      ) : (
-        <button type="button" onClick={onReveal} className="h-14 rounded-full bg-white px-8 text-lg font-bold text-ink">
-          Reveal results
-        </button>
-      )}
+    <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
+      <p className="font-display text-2xl font-bold">You&apos;ve seen every place so far.</p>
+      <p className="text-white/70">The vote ends at the first match, or with the most-voted place when time&apos;s up.</p>
+      <button type="button" onClick={onSearch} className="mt-2 h-12 w-full rounded-full bg-social px-6 font-semibold text-white">
+        Search to add a place
+      </button>
+      <button type="button" onClick={onStartOver} className="h-12 w-full rounded-full bg-white/12 px-6 font-semibold text-white">
+        Go back through them
+      </button>
+      <button type="button" onClick={onReveal} className="h-11 font-semibold text-white/70 hover:text-white">
+        Reveal now (ends the vote)
+      </button>
     </section>
   );
 }
