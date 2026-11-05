@@ -1,15 +1,19 @@
 "use client";
 
-import { useRef } from "react";
-import { MicIcon, SearchIcon } from "./Icons";
+import { useRef, type ReactNode } from "react";
+import { ArrowRightIcon, MicIcon, SearchIcon } from "./Icons";
 
 /**
- * The bottom bar is just search: tap to type a craving, hold to speak, inside the idle
- * countdown ring. Moving between picks is swiping (or the card's arrows), and going is
- * pulling the photo down (or its handle), so there's nothing else to press here. In a
- * group, the same search finds a place to add to the vote.
+ * The bottom bar, beside the gestures rather than instead of them: a "move on" button on the
+ * left, search in the middle (tap to type, hold to speak, inside the idle countdown ring),
+ * and the main action on the right: Let's go solo, Vote in a group, Add while adding.
  */
 interface Props {
+  /** Left: move on ("Another" solo, "Next" in a group). */
+  next?: { label: string; onClick: () => void };
+  /** Right: the main action for the pick on screen. */
+  primary?: { label: string; aria: string; onClick: () => void; tone: "go" | "vote" | "voted" | "add"; icon?: ReactNode };
+  disabled?: boolean;
   listening: boolean;
   /** In a group the idle timer is paused: the ring stays full. */
   group?: boolean;
@@ -28,10 +32,23 @@ export function Controls(p: Props) {
   const held = useRef(false);
 
   const ring = 2 * Math.PI * 41;
+  // Labeled pills: words say what happens. Icons are a bonus; on the narrowest phones the words alone fit.
+  const pill =
+    "flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-2 text-base font-semibold whitespace-nowrap text-white shadow-lg transition active:scale-95 disabled:opacity-40";
+  const pillIcon = "hidden shrink-0 min-[360px]:block";
+  const tones = { go: "bg-paprika hover:bg-paprika-deep", vote: "bg-social hover:brightness-110", voted: "bg-social/30 ring-2 ring-social", add: "bg-social hover:brightness-110" };
   const urgent = p.timeLeft < 0.1;
 
   return (
-    <div className="flex items-center justify-center px-4 pt-2 pb-1">
+    <div className="flex items-center gap-2 px-4 pt-2 pb-1 min-[360px]:gap-3">
+      {p.next ? (
+        <button type="button" className={`${pill} bg-white/12 hover:bg-white/18`} onClick={p.next.onClick} disabled={p.disabled}>
+          {p.next.label}
+          <ArrowRightIcon size={18} className={pillIcon} />
+        </button>
+      ) : (
+        <span className="flex-1" />
+      )}
       {/* Center: tap to type, hold to speak, wrapped in the countdown ring */}
       <div className="relative grid size-[88px] place-items-center">
         <svg className="absolute inset-0 -rotate-90" viewBox="0 0 88 88" aria-hidden="true">
@@ -89,6 +106,14 @@ export function Controls(p: Props) {
         </button>
       </div>
 
+      {p.primary ? (
+        <button type="button" className={`${pill} ${tones[p.primary.tone]}`} onClick={p.primary.onClick} disabled={p.disabled} aria-label={p.primary.aria}>
+          {p.primary.icon && <span className={pillIcon}>{p.primary.icon}</span>}
+          {p.primary.label}
+        </button>
+      ) : (
+        <span className="flex-1" />
+      )}
     </div>
   );
 }

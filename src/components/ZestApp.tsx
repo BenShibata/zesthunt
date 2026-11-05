@@ -26,7 +26,8 @@ import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty
 import { InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyResults } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon } from "./Icons";
+import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import type { AimKey } from "@/lib/aim";
 import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
@@ -89,6 +90,7 @@ export function ZestApp() {
   const [history, setHistory] = useState<number[]>([]);
   const [swipes, setSwipes] = useState(0);
   const [locked, setLocked] = useState<Pick | null>(null);
+  const [lockedOrder, setLockedOrder] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   /** The active craving: it drives the search (and every refill) until cleared. Memory only. */
   const [craving, setCraving] = useState<string | null>(null);
@@ -397,8 +399,10 @@ export function ZestApp() {
     return () => clearTimeout(t);
   }, [steerHint]);
 
-  const soloGo = useCallback(() => {
+  /** Lock in and start the journey; aimed at "order", it opens with the ordering choices showing. */
+  const soloGo = useCallback((target?: AimKey) => {
     if (!current) return;
+    setLockedOrder(target === "order");
     haptic(18);
     const started = huntStartedAt.current;
     setDecided(started ? { seconds: Math.max(1, Math.round((Date.now() - started) / 1000)), swipes } : null);
@@ -975,6 +979,7 @@ export function ZestApp() {
     return (
       <LockedIn
         pick={locked}
+        startWithOrder={lockedOrder}
         decided={decided ?? undefined}
         onRememberChange={() => setWinsCount(readWins().length)}
         now={now}
@@ -1422,6 +1427,29 @@ export function ZestApp() {
       )}
 
       <Controls
+        disabled={!(adding ? addingCurrent : shown) || receiptOpen}
+        next={(adding ? addingCurrent : shown) ? { label: inParty ? "Next" : "Another", onClick: next } : undefined}
+        primary={
+          adding
+            ? addingCurrent
+              ? { label: "Add", aria: `Add ${addingCurrent.name} to the group's vote`, onClick: () => void addToVote(), tone: "add", icon: <HeartIcon size={20} /> }
+              : undefined
+            : inParty
+              ? partyCurrent
+                ? party.myVotes.includes(partyCurrent.id)
+                  ? { label: "Voted", aria: `You voted for ${partyCurrent.name}. Take your vote back`, onClick: partyUnvote, tone: "voted", icon: <HeartIcon size={20} /> }
+                  : { label: "Vote", aria: `Vote for ${partyCurrent.name}`, onClick: partyVote, tone: "vote", icon: <HeartIcon size={20} /> }
+                : undefined
+              : current
+                ? {
+                    label: "Let's go",
+                    aria: `Let's go: ${current.travelMode === "drive" ? "drive" : "walk"} to ${current.name}`,
+                    onClick: () => soloGo(),
+                    tone: "go",
+                    icon: current.travelMode === "drive" ? <CarIcon size={20} /> : <WalkIcon size={20} />,
+                  }
+                : undefined
+        }
         group={inParty}
         listening={voice.listening}
         timeLeft={inParty ? 1 : timer.fraction}

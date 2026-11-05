@@ -18,7 +18,8 @@ type Axis = "x" | "pull" | "none" | null;
  * The pick card's gestures, one direction per gesture:
  * - swipe left: the next pick; swipe right: back to the previous one;
  * - on the photo only, pull down and let go to launch (go, or vote in a group): the photo
- *   stretches like a drawn bow, buzzes once when it's far enough, and flies off on release;
+ *   stretches like a drawn bow, buzzes once when it's far enough, and flies off on release.
+ *   Moving sideways while pulling aims (the card picks what's aimed at from `aim`);
  * - on the photo only, a tap flips to the next photo.
  * The details panel takes sideways swipes too, while its up-and-down scrolling stays native.
  * Presses that start on a button or link are left alone, so those keep working.
@@ -27,17 +28,25 @@ export function useCardGestures({
   onNext,
   onBack,
   onPull,
+  onRelease,
   onTap,
   disabled,
 }: {
   onNext: () => void;
   onBack: () => void;
-  onPull?: () => void;
+  /** After the launch animation, with the sideways aim at release. */
+  onPull?: (aim: number) => void;
+  /**
+   * The moment of release, with the aim: for anything the browser only allows straight from a
+   * gesture (opening directions in a new tab, starting a call).
+   */
+  onRelease?: (aim: number) => void;
   onTap?: () => void;
   disabled?: boolean;
 }) {
   const [dx, setDx] = useState(0);
   const [pullRaw, setPullRaw] = useState(0);
+  const [aim, setAim] = useState(0);
   const [launching, setLaunching] = useState(false);
   const g = useRef<{ x: number; y: number; t: number; axis: Axis; photo: boolean; dx: number; dy: number; armed: boolean } | null>(null);
 
@@ -64,6 +73,7 @@ export function useCardGestures({
     if (s.axis === "pull") {
       const d = Math.max(0, s.dy);
       setPullRaw(d);
+      setAim(s.dx);
       const armed = d >= PULL_AT;
       if (armed !== s.armed) {
         s.armed = armed;
@@ -78,18 +88,21 @@ export function useCardGestures({
     g.current = null;
     setDx(0);
     setPullRaw(0);
+    setAim(0);
     if (cancelled) return;
     if (s.axis === "x") {
       if (s.dx < -SWIPE_AT) onNext();
       else if (s.dx > SWIPE_AT) onBack();
     } else if (s.axis === "pull" && s.armed && onPull) {
       const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const aimed = s.dx;
       haptic(18);
+      onRelease?.(aimed);
       setLaunching(true);
       setTimeout(
         () => {
           setLaunching(false);
-          onPull();
+          onPull(aimed);
         },
         still ? 0 : LAUNCH_MS,
       );
@@ -107,6 +120,8 @@ export function useCardGestures({
     /** 0 → 1 as the pull approaches the launch point. */
     tension: Math.min(1, pullRaw / PULL_AT),
     armed: pullRaw >= PULL_AT,
+    /** Sideways offset while pulling: negative aims left, positive aims right. */
+    aim,
     launching,
     photoHandlers: {
       onPointerDown: (e: PointerEvent<HTMLElement>) => begin(e, true),

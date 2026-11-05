@@ -198,3 +198,20 @@ body {
     animation: none;
   }
 }
+
+/* The pull notch's arrow bobs down now and then: "this pulls". */
+@keyframes bob {
+  0%, 70%, 100% { transform: translateY(0); }
+  80% { transform: translateY(3px); }
+  90% { transform: translateY(0); }
+}
+
+.animate-bob {
+  animation: bob 2.8s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bob {
+    animation: none;
+  }
+}
