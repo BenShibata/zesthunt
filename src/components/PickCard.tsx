@@ -1,14 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { HealthLabel, Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, distanceText, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
 import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { BagIcon, CarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ExternalIcon, LeafIcon, PartyIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import { BagIcon, CarIcon, ChevronDownIcon, ChevronLeftIcon, ClockIcon, ExternalIcon, LeafIcon, MoreIcon, PartyIcon, PhoneIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import { useCardGestures } from "@/hooks/useCardGestures";
-import { directionsUrl } from "@/lib/links";
+import { directionsUrl, orderAhead } from "@/lib/links";
+import { aimAt, aimTargets, type AimKey } from "@/lib/aim";
 
 interface Props {
   pick: Pick;
@@ -18,10 +19,11 @@ interface Props {
   /** Swipe right, or the left-hand arrow. Omitted when there's nothing to go back to. */
   onBack?: () => void;
   /**
-   * Pull the photo down and let go (or tap the handle): "go" starts the journey solo, "vote"
-   * votes in a group, "add" adds a searched place to the group's vote.
+   * Pull the photo down and let go (or tap the notch): "go" starts the journey solo, aimed at
+   * directions, ordering, calling or (straight down) every choice; "vote" votes in a group;
+   * "add" adds a searched place to the group's vote.
    */
-  onPull?: () => void;
+  onPull?: (target: AimKey) => void;
   pullAction?: PullAction;
   /** In a group, on a card you voted for: the handle offers to take the vote back. */
   onUnvote?: () => void;
@@ -60,10 +62,11 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
 };
 
 type PullAction = "go" | "vote" | "add";
-const PULL_TEXT: Record<PullAction, { idle: string; armed: string; aria: (name: string) => string }> = {
-  go: { idle: "Pull down to go", armed: "Let go to go!", aria: (n) => `Go to ${n}: start the journey` },
-  vote: { idle: "Pull down to vote", armed: "Let go to vote!", aria: (n) => `Vote for ${n}` },
-  add: { idle: "Pull down to add it", armed: "Let go to add!", aria: (n) => `Add ${n} to the group's vote` },
+/** Spoken only: on screen, pulling is hinted by the notch, not explained in words. */
+const PULL_ARIA: Record<PullAction, (name: string) => string> = {
+  go: (n) => `Go to ${n}: directions, ordering and calling`,
+  vote: (n) => `Vote for ${n}`,
+  add: (n) => `Add ${n} to the group's vote`,
 };
 
 export function PickCard({
@@ -96,34 +99,78 @@ export function PickCard({
   const gallery = pick.photos && pick.photos.length > 1 ? pick.photos : [pick.photo];
   const at = shot.id === pick.id ? shot.i % gallery.length : 0;
   const photo = gallery[at];
+  // Solo, a pull aims at what letting go does (see lib/aim).
+  const aiming = pullAction === "go";
+  const order = orderAhead(pick);
+  const has = { order: order.kind !== "none", call: Boolean(pick.phoneDial) };
+  const walking = pick.travelMode === "walk";
+  const TARGETS: Record<AimKey, { label: string; icon: ReactNode }> = {
+    order: { label: "Order to go", icon: <BagIcon size={24} /> },
+    directions: { label: "Directions", icon: walking ? <WalkIcon size={24} /> : <CarIcon size={24} /> },
+    journey: { label: "All options", icon: <MoreIcon size={24} /> },
+    call: { label: pick.reservable ? "Call to reserve" : "Call", icon: <PhoneIcon size={24} /> },
+  };
+  // What the browser only allows straight from the gesture happens on release.
+  const release = (aim: number) => {
+    if (!aiming) return;
+    const t = aimAt(aim, has);
+    if (t === "directions") window.open(directionsUrl(pick), "_blank", "noopener");
+    else if (t === "call" && pick.phoneDial) window.location.assign(`tel:${pick.phoneDial}`);
+    else if (t === "order" && order.kind === "own") window.open(order.url, "_blank", "noopener");
+  };
   const gestures = useCardGestures({
     onNext,
     onBack: onBack ?? (() => {}),
-    onPull: voted ? undefined : onPull,
+    onPull: voted || !onPull ? undefined : (aim) => onPull(aiming ? aimAt(aim, has) : "journey"),
+    onRelease: release,
     onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
     disabled,
   });
-  const { dx, progress, pull, tension, armed, launching } = gestures;
-  const text = PULL_TEXT[pullAction];
-  const transform = launching
-    ? "translateY(-115%) scale(0.9)"
-    : dx
-      ? `translateX(${dx}px) rotate(${dx / 40}deg)`
-      : pull
-        ? `translateY(${pull}px) scale(${1 - tension * 0.04})`
-        : undefined;
+  const { dx, progress, pull, tension, armed, launching, aim } = gestures;
+  const aimed = aimAt(aim, has);
+  // Sideways swipes move the whole card (photo and details); pulling moves only the photo, like a bowstring.
+  const photoTransform = launching
+    ? `translate(${aim * 0.6}px, -115%) scale(0.9)`
+    : pull
+      ? `translate(${aim * 0.25}px, ${pull}px) rotate(${aim / 60}deg) scale(${1 - tension * 0.04})`
+      : undefined;
 
   return (
-    <article aria-labelledby="pick-title" aria-describedby="pick-reason" className="flex min-h-0 flex-1 flex-col">
+    <article
+      aria-labelledby="pick-title"
+      aria-describedby="pick-reason"
+      className="relative flex min-h-0 flex-1 flex-col"
+      style={{ transform: dx ? `translateX(${dx}px) rotate(${dx / 50}deg)` : undefined, transition: dx ? "none" : "transform 220ms ease-out" }}
+    >
+      {/* While pulling (solo): the targets to aim at. Straight down is every choice. */}
+      {aiming && pull > 0 && (
+        <div aria-hidden="true" className="animate-rise pointer-events-none absolute inset-x-0 top-8 z-30 flex justify-center gap-2 px-3">
+          {aimTargets(has).map((key) => {
+            const on = key === aimed;
+            return (
+              <div key={key} className={`flex w-[22%] max-w-24 flex-col items-center gap-1.5 transition-all duration-150 ${on ? "scale-110" : "scale-90 opacity-70"}`}>
+                <span
+                  className={`grid size-14 place-items-center rounded-full shadow-lg backdrop-blur-md transition-colors ${
+                    on ? (armed ? "bg-paprika text-white ring-4 ring-paprika-bright/40" : "bg-white text-ink") : "bg-black/55 text-white"
+                  }`}
+                >
+                  {TARGETS[key].icon}
+                </span>
+                <span className="text-center text-xs leading-tight font-semibold text-white drop-shadow">{TARGETS[key].label}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
       {/* Photo: swipe sideways for next / back, pull down and let go to launch, tap to flip. */}
       <div
         {...gestures.photoHandlers}
         className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx && !pull ? "animate-nudge" : ""}`}
         onAnimationEnd={(e) => e.animationName === "nudge" && onHinted?.()}
         style={{
-          transform,
+          transform: photoTransform,
           opacity: launching ? 0 : 1,
-          transition: launching ? "transform 260ms cubic-bezier(.55,-0.35,.75,.2), opacity 260ms ease-in" : dx || pull ? "none" : "transform 260ms cubic-bezier(.2,1.6,.4,1)",
+          transition: launching ? "transform 260ms cubic-bezier(.55,-0.35,.75,.2), opacity 260ms ease-in" : pull ? "none" : "transform 260ms cubic-bezier(.2,1.6,.4,1)",
         }}
       >
         <PickPhoto
@@ -140,16 +187,7 @@ export function PickCard({
             ))}
           </div>
         )}
-        {/* While pulling: the string draws back, then says to let go. */}
-        {pull > 0 && (
-          <p
-            aria-hidden="true"
-            className={`pointer-events-none absolute inset-x-0 top-1/3 text-center font-display text-3xl font-extrabold drop-shadow-lg transition-transform ${armed ? "scale-110 text-paprika-bright" : "text-white/85"}`}
-          >
-            {armed ? text.armed : text.idle}
-          </p>
-        )}
-        {/* Quiet arrows for moving on without swiping. */}
+        {/* A quiet way back without swiping (Another, beside search, moves on). */}
         {onBack && (
           <button
             type="button"
@@ -160,14 +198,6 @@ export function PickCard({
             <ChevronLeftIcon size={22} />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onNext}
-          aria-label="Next pick"
-          className="absolute top-1/2 right-2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white/80 backdrop-blur-sm transition hover:bg-black/50 hover:text-white"
-        >
-          <ChevronRightIcon size={22} />
-        </button>
         {/* Swipe feedback */}
         <span
           aria-hidden="true"
@@ -196,7 +226,7 @@ export function PickCard({
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">Second look</span>
           </div>
         )}
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 px-4 pt-4 pb-11">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 px-4 pt-4 pb-14">
           {pick.travelUnknown ? (
             <p className="flex items-center gap-2 font-display text-[1.75rem] leading-none font-extrabold tracking-tight whitespace-nowrap text-white drop-shadow-lg">
               <PartyIcon size={26} className="shrink-0" />
@@ -224,11 +254,11 @@ export function PickCard({
         </div>
       </div>
 
-      {/* The bowstring: where photo meets details. Pull the photo down from here, or just tap it. */}
+      {/* The bowstring: a wordless notch where photo meets details, hinting "pull down". Tapping it works too. */}
       {(onPull || voted) && (
         <div className="relative z-20 h-0">
-          <div className="absolute inset-x-0 -top-9 flex justify-center" style={{ transform: pull ? `translateY(${pull * 0.15}px)` : undefined }}>
-            {voted ? (
+          {voted ? (
+            <div className="absolute inset-x-0 -top-9 flex justify-center">
               <button
                 type="button"
                 onClick={onUnvote}
@@ -238,21 +268,23 @@ export function PickCard({
                 <span aria-hidden="true">♥</span> You voted
                 <span className="font-medium text-white/75">· Take back</span>
               </button>
-            ) : (
+            </div>
+          ) : (
+            <div className="absolute inset-x-0 -top-[52px] flex justify-center" style={{ transform: pull ? `translateY(${pull * 0.15}px)` : undefined }}>
               <button
                 type="button"
-                onClick={onPull}
+                onClick={() => onPull?.("journey")}
                 disabled={disabled}
-                aria-label={text.aria(pick.name)}
-                className={`inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold text-white shadow-lg ring-4 ring-ink-2 transition active:scale-95 disabled:opacity-50 ${
-                  armed ? "bg-paprika-bright" : "bg-paprika"
-                } ${hint ? "animate-tug" : ""}`}
+                aria-label={PULL_ARIA[pullAction](pick.name)}
+                className={`grid h-9 w-20 place-items-center rounded-t-2xl bg-ink-2 transition disabled:opacity-50 ${armed ? "text-paprika-bright" : "text-white/70 hover:text-white"} ${hint ? "animate-tug" : ""}`}
               >
-                <ChevronDownIcon size={16} />
-                {text.idle}
+                <span aria-hidden="true" className="flex flex-col items-center">
+                  <span className="h-1 w-8 rounded-full bg-current opacity-70" />
+                  <ChevronDownIcon size={18} className="animate-bob -mb-1" />
+                </span>
               </button>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -260,7 +292,7 @@ export function PickCard({
       <div
         key={pick.id}
         {...gestures.panelHandlers}
-        className={`animate-rise relative flex touch-pan-y items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-8 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
+        className={`animate-rise relative flex touch-pan-y items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-5 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
         {...(expanded ? { tabIndex: 0, "aria-label": `Details about ${pick.name}` } : {})}
       >
         <div className="min-w-0 flex-1">

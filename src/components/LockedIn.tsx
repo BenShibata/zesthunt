@@ -30,15 +30,17 @@ interface Props {
   decided?: { seconds: number; swipes: number };
   /** Solo only: turn this pick into a party for a group still deciding. */
   onDecideTogether?: () => void;
+  /** Aimed at "Order to go" when pulling: open with the ordering choices showing. */
+  startWithOrder?: boolean;
   /** Called when "Remember for next time" changes, so the menu can offer "Forget". */
   onRememberChange?: () => void;
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided, onRememberChange }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided, onRememberChange, startWithOrder }: Props) {
   const [remembered, setRemembered] = useState(() => readWins().some((w) => w.placeId === pick.placeId));
   const [inviteNote, setInviteNote] = useState<string | null>(null);
-  const [orderOpen, setOrderOpen] = useState(false);
+  const [orderOpen, setOrderOpen] = useState(Boolean(startWithOrder));
 
   /** "Want to come?": the user's own share sheet, or the clipboard where there isn't one. */
   const sendInvite = async () => {
