@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { ALLERGIES } from "@/lib/dietary";
 import type { Pick } from "@/lib/types";
 import { CLOSING_SOON_MINUTES, formatClock, minutesUntil, priceText } from "@/lib/time";
-import { directionsUrl, inviteMessage, orderAhead } from "@/lib/links";
+import { bookTableUrl, directionsUrl, inviteMessage, orderAhead, referralsOn } from "@/lib/links";
 import { forgetWin, readWins, rememberWin } from "@/lib/wins";
 import { SplitCard } from "./SplitCard";
 import { RouteMap } from "./RouteMap";
@@ -62,6 +62,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
   const order = orderAhead(pick);
+  const book = bookTableUrl(pick);
   const walking = pick.travelMode === "walk";
 
   useEffect(() => {
@@ -291,6 +292,25 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           {order.kind === "none" && (
             <p className="text-center text-sm text-sheet-muted dark:text-white/70">Dine-in only, per Google. Just head on over.</p>
           )}
+          {book && (
+            <a href={book} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
+              <ClockIcon size={18} />
+              Book a table on OpenTable
+              <ExternalIcon size={14} />
+            </a>
+          )}
+          {pick.sponsored && (
+            <p className="rounded-2xl bg-star/15 px-4 py-2.5 text-sm dark:bg-star/10" role="note">
+              <span className="mr-1.5 rounded bg-star/30 px-1.5 py-0.5 text-[11px] font-bold tracking-wide uppercase">Sponsored</span>
+              {pick.sponsored.url ? (
+                <a href={pick.sponsored.url} target="_blank" rel="noopener noreferrer sponsored" className="font-semibold underline-offset-2 hover:underline">
+                  {pick.sponsored.deal}
+                </a>
+              ) : (
+                <span className="font-semibold">{pick.sponsored.deal}</span>
+              )}
+            </p>
+          )}
           {pick.mapsUrl && (
             <a href={pick.mapsUrl} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
               Menu, photos and reviews
@@ -299,6 +319,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           )}
           <p className="pt-2 text-center text-xs text-sheet-muted dark:text-white/60">
             We never see your card. You pay in your own wallet.
+            {referralsOn && " Zesthunt may earn a small fee from some links; your price doesn't change."}
           </p>
         </div>
       </section>

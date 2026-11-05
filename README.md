@@ -52,6 +52,15 @@ For real places, copy `.env.example` to `.env.local` and fill in:
 
 Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (or your location) on first open. On Vercel it starts from the city-level `x-vercel-ip-*` headers.
 
+## Making money
+
+Two kinds, both off until you set them, and neither tracks anyone:
+
+- **Referral links.** "Order to go" (DoorDash, Uber Eats) and **Book a table** (an OpenTable search, shown only when Google says the place takes reservations) can carry your referral tag. Join each partner's affiliate program, then set `NEXT_PUBLIC_REFERRAL_DOORDASH`, `NEXT_PUBLIC_REFERRAL_UBEREATS` and `NEXT_PUBLIC_REFERRAL_OPENTABLE` in Vercel and redeploy. Each is either a tracking link with `{url}` where the destination goes, or plain parameters to append (`ref=zesthunt`); see `tagLink` in `src/lib/links.ts`. While any is set, the Let's go menu and the journey screen say "Zesthunt may earn a small fee from some links. Your price doesn't change." (needed for affiliate disclosure rules). The restaurant's own ordering site is never tagged.
+- **Sponsored deals (our own ads).** Restaurants pay you directly to show a deal on their own card: a labeled **Sponsored** line ("10% off with code ZEST", optionally linked) on the card, in the Let's go menu and on the journey screen. It appears only when that place comes up on its own: it's attached after ranking (`src/server/sponsors.ts`), so a sponsor is never moved up, added, or shown to the ranker. Set `SPONSORS` in Vercel to a JSON list of `{ "placeId", "deal", "url"?, "until"? }` (the Google place ID; `until` is the last day, `YYYY-MM-DD`) and redeploy. Bad entries are skipped. No ad network, no scripts, no cookies: the deal is plain text sent with the pick.
+
+`/api/health` shows how many sponsors are set up and which referral partners are tagged (yes or no). The privacy page explains both.
+
 ## How a pick is made
 
 `POST /api/picks` streams newline-delimited JSON (`meta`, `pick`…, `done`):
@@ -82,8 +91,9 @@ Little touches along the way: the first card of a session leans left and right o
 
 The first screen is one pick and three buttons: **Another**, **search** and **Let's go**. Nothing to set up. The buttons sit beside the gestures, not instead of them:
 
-- **Swipe left** for the next pick, **swipe right** to go back to the previous one. The whole card (photo and details together) moves and tilts. It works from the photo or the details (whose up-and-down scrolling stays separate). A quiet **‹** on the photo and the keyboard's ← → also move without swiping.
-- **Pull the photo down and let go**, like drawing a bow. There are no words for it: a small notch with a bobbing arrow where the photo meets the details hints that it pulls (the first pick's notch tugs twice). While pulling, targets appear across the top and **moving sideways aims** (`src/lib/aim.ts`): straight down is **All options** (the journey screen), a little left is **Directions** (opens your maps app), further left is **Order to go** (the restaurant's site, or the journey screen with DoorDash / Uber Eats showing), and right is **Call** ("Call to reserve" when Google says it takes reservations). The aimed target grows, turns orange with a buzz once the pull is far enough, and fires on release; every choice also opens the journey screen. Targets that don't apply (no phone number, dine-in only) aren't shown. Tapping the notch, **Let's go** or ↓ opens the journey screen. The browser's own pull-to-refresh is turned off so it doesn't get in the way.
+- **Swipe left** for the next pick, **swipe right** to go back to the previous one. The whole card (photo and details together) moves and tilts. It works from the photo or the details (whose up-and-down scrolling stays separate). A quiet **‹** on the photo and the keyboard's ← → also move without swiping. On the first pick, going back says "Nothing back here. Swipe left for more." 
+- **Pull the photo down and let go**, like drawing a bow. There are no words for it: the first pick leans left and right, then dips down once, and that's the hint. While pulling, the card dims, the targets light up across the top, an **arrow grows from your pull toward the aimed target** (white, then orange once letting go will fire it), a caption says "Pull further · aim left or right" or "Let go: Directions", and the phone ticks each time the aim moves to another target. **Moving sideways aims** (`src/lib/aim.ts`): straight down is **All options** (the journey screen), a little left is **Directions** (opens your maps app), further left is **Order to go** (the restaurant's site, or the journey screen with DoorDash / Uber Eats showing), and right is **Call** ("Call to reserve" when Google says it takes reservations). The aimed target grows, turns orange with a buzz once the pull is far enough, and fires on release; every choice also opens the journey screen. Targets that don't apply (no phone number, dine-in only) aren't shown. **Let's go** (or ↓) opens the same choices as a menu: Head there, Order to go, Call to reserve, and All the details (the journey screen).
+- **Searching** fades everything else back: just "What sounds good?", the quick cravings, the box and the search button. Tap outside or press Escape to close. The browser's own pull-to-refresh is turned off so it doesn't get in the way.
 - **Tap the photo** to flip through the place's photos (dots show how many). Google doesn't say which photos show food, so the order is a free best guess (`foodFirst` in `src/server/places.ts`): photos posted by visitors first (diners mostly photograph their plates), then the business's own, and Google's cover photo (usually the storefront) last. The storefront itself appears in the details.
 - **The journey** (after going) offers three ways: **Head there** (directions, with the walk or drive time), **Order to go** (the restaurant's own site, or DoorDash / Uber Eats, when Google says it does takeout or delivery), and **Call to reserve** (when Google lists a phone number; "Call them" if it doesn't say it takes reservations). Phone number and reservations come from the same Places request as everything else, at no extra cost.
 
@@ -178,7 +188,7 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | --- | --- | --- |
 | Next pick | swipe left (on the photo or the details), or **Another** (**Next** in a group) | → |
 | Back to the previous pick | swipe right, or **‹** on the photo | ← or Backspace |
-| Go (start the journey) / vote in a group / add a searched place | pull the photo down and let go, or **Let's go** / **Vote** / **Add**, or tap the notch | ↓ |
+| Go (start the journey) / vote in a group / add a searched place | pull the photo down and let go, or **Let's go** (a menu of choices) / **Vote** / **Add** | ↓ |
 | Aim at directions, ordering or calling | while pulling down, move left (directions, further for ordering) or right (call) before letting go | (the journey screen has them all) |
 | Next photo of the place | tap the photo | (each photo is described for screen readers) |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |

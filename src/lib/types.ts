@@ -83,6 +83,8 @@ export interface Pick {
   phone?: string;
   phoneDial?: string;
   reservable?: boolean | null;
+  /** A deal the restaurant pays to show on its own card, labeled "Sponsored". Never affects ranking. */
+  sponsored?: { deal: string; url?: string };
   /** In a party: someone added this place from a search (never says who). */
   added?: boolean;
   /** Google rating (1–5) and how many ratings, when Places has them. */

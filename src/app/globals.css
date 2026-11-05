@@ -215,3 +215,35 @@ body {
     animation: none;
   }
 }
+
+/* The first pick, once: leans left and right (swipe), then dips down (pull). No words needed. */
+@keyframes hint {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  12% { transform: translateX(-18px) rotate(-1.5deg); }
+  27% { transform: translateX(14px) rotate(1.2deg); }
+  40% { transform: translate(0, 0) rotate(0); }
+  58% { transform: translateY(26px); }
+  70% { transform: translateY(4px); }
+  80% { transform: translateY(14px); }
+  90% { transform: translateY(0); }
+}
+
+.animate-hint {
+  animation: hint 2.2s ease-in-out 1.4s both;
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.animate-fade {
+  animation: fade 180ms ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-hint,
+  .animate-fade {
+    animation: none;
+  }
+}

@@ -14,6 +14,8 @@ interface Props {
   /** Right: the main action for the pick on screen. */
   primary?: { label: string; aria: string; onClick: () => void; tone: "go" | "vote" | "voted" | "add"; icon?: ReactNode };
   disabled?: boolean;
+  /** Searching: the side buttons fade away, leaving just search. */
+  searching?: boolean;
   listening: boolean;
   /** In a group the idle timer is paused: the ring stays full. */
   group?: boolean;
@@ -40,9 +42,15 @@ export function Controls(p: Props) {
   const urgent = p.timeLeft < 0.1;
 
   return (
-    <div className="flex items-center gap-2 px-4 pt-2 pb-1 min-[360px]:gap-3">
+    <div className={`relative flex items-center gap-2 px-4 pt-2 pb-1 min-[360px]:gap-3 ${p.searching ? "z-50" : "z-30"}`}>
       {p.next ? (
-        <button type="button" className={`${pill} bg-white/12 hover:bg-white/18`} onClick={p.next.onClick} disabled={p.disabled}>
+        <button
+          type="button"
+          className={`${pill} bg-white/12 hover:bg-white/18 ${p.searching ? "pointer-events-none opacity-0" : ""}`}
+          onClick={p.next.onClick}
+          disabled={p.disabled}
+          tabIndex={p.searching ? -1 : undefined}
+        >
           {p.next.label}
           <ArrowRightIcon size={18} className={pillIcon} />
         </button>
@@ -107,7 +115,14 @@ export function Controls(p: Props) {
       </div>
 
       {p.primary ? (
-        <button type="button" className={`${pill} ${tones[p.primary.tone]}`} onClick={p.primary.onClick} disabled={p.disabled} aria-label={p.primary.aria}>
+        <button
+          type="button"
+          className={`${pill} ${tones[p.primary.tone]} ${p.searching ? "pointer-events-none opacity-0" : ""}`}
+          onClick={p.primary.onClick}
+          disabled={p.disabled}
+          aria-label={p.primary.aria}
+          tabIndex={p.searching ? -1 : undefined}
+        >
           {p.primary.icon && <span className={pillIcon}>{p.primary.icon}</span>}
           {p.primary.label}
         </button>

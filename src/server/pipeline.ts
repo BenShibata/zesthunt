@@ -12,6 +12,7 @@ import { geocodeArea, nearbyOpenPlaces, textSearchOpenPlaces, type Place, type P
 import { travelTimes, type Travel } from "./routes";
 import { balanceScore, profileFor, toPlate, type Profile } from "./heuristics";
 import { rankWithClaude } from "./rank";
+import { sponsorDeal } from "./sponsors";
 import type { CandidateForPrompt, RankedPick } from "./prompts";
 
 export const PicksRequestSchema = z.object({
@@ -361,6 +362,8 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     phone: place.phone ?? undefined,
     phoneDial: place.phoneDial ?? undefined,
     reservable: place.reservable,
+    // Attached after ranking, only to a place that came up on its own.
+    sponsored: sponsorDeal(place.id),
     photo: place.photoName
       ? { kind: "url", url: `/api/photo?name=${encodeURIComponent(place.photoName)}`, attribution: place.photoAuthor ?? undefined }
       : { kind: "mock", palette: ["#c8401f", "#3f8f6b", "#efe3c8"], motif: "plate" },
@@ -389,7 +392,7 @@ async function* demoFeed(req: PicksRequest, exclude: Set<string>): AsyncGenerato
   const queue = (allMoods: boolean) =>
     buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession), allMoods })
       .filter((p) => !exclude.has(p.id) && !(veg && ["steak and BBQ", "burgers"].includes(p.category ?? "")))
-      .map((p) => ({ ...p, suggestion: dietSafeSuggestion(p.suggestion, diets) }));
+      .map((p) => ({ ...p, suggestion: dietSafeSuggestion(p.suggestion, diets), sponsored: sponsorDeal(p.placeId) }));
   let picks = queue(Boolean(craving));
   let reach = start;
   // A word match stands in for Text Search on the fictional places.
