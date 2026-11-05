@@ -157,3 +157,21 @@ body {
     animation: none;
   }
 }
+
+/* A steer was taken: a soft wash of colour over the next pick, then gone. */
+@keyframes wash {
+  0% { opacity: 0; }
+  25% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.animate-wash {
+  animation: wash 1.1s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-wash {
+    animation: none;
+    opacity: 0;
+  }
+}

@@ -21,6 +21,7 @@ import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
 import { reachAt } from "@/lib/reach";
 import { secondLookRound, seenIds } from "@/lib/secondLook";
+import { steerGuess, type SteerGuess } from "@/lib/steer";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
 import { InviteSheet, JoinScreen, PartyBar, PartyResults, PartyWaiting } from "./Party";
@@ -44,8 +45,19 @@ function clearHash() {
 const IDLE_MS = 10 * 60 * 1000;
 /** Lingering this long on a pick opens its details: interest earns more detail. */
 const DWELL_MS = 4000;
-/** Skips in a row before "Not quite?" offers to steer. */
-const SKIPS_BEFORE_NUDGE = 2;
+/** Skips in a row before "Not quite?" offers its one best guess. */
+const SKIPS_BEFORE_NUDGE = 3;
+/** An ignored guess fades after this long, and waits this many more skips before coming back. */
+const HINT_MS = 6000;
+const HINT_REST_SKIPS = 4;
+/** The colour a steer washes over the next pick. */
+const WASH: Record<Mood, string> = {
+  fresh: "var(--color-teal-bright)",
+  comfort: "var(--color-paprika-bright)",
+  fast: "var(--color-star)",
+  cheap: "var(--color-teal-bright)",
+  treat: "var(--color-social-bright)",
+};
 const PARTY_COACH = "Vote for the places you'd go, or Pass. Votes stay secret until the reveal.";
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
@@ -87,6 +99,9 @@ export function ZestApp() {
   // Start simple: no mood picker, no details. "Not quite?" appears after a couple of skips,
   // and a pick's details open when the person asks or lingers on it.
   const [tuneOpen, setTuneOpen] = useState(false);
+  /** "Not quite? Something lighter?": one guess from the latest skips, in place of the full row. */
+  const [steerHint, setSteerHint] = useState<SteerGuess | null>(null);
+  const [wash, setWash] = useState<{ key: number; mood: Mood } | null>(null);
   const [moodChosen, setMoodChosen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   /** "Can't eat this": what the skipped pick hints at, offered first in the sheet. */
@@ -355,7 +370,7 @@ export function ZestApp() {
     setIndex((i) => i + 1);
     setSwipes((s) => s + 1);
     skipsSinceNudge.current += 1;
-    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
+    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE && !tuneOpen) setSteerHint(steerGuess(skipped.current, mood));
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
     // Once every ring has been searched, the end of the queue starts a second look instead.
@@ -366,7 +381,17 @@ export function ZestApp() {
     } else if (left === 0 && exhausted.current.has(mood)) {
       appendSecondLook(index + 1);
     }
-  }, [current, index, signals, queue, refilling, mood, fetchQueue, appendSecondLook]);
+  }, [current, index, signals, queue, refilling, mood, fetchQueue, appendSecondLook, tuneOpen]);
+
+  // An ignored guess bows out quietly and rests for a few skips.
+  useEffect(() => {
+    if (!steerHint) return;
+    const t = setTimeout(() => {
+      setSteerHint(null);
+      skipsSinceNudge.current = -HINT_REST_SKIPS;
+    }, HINT_MS);
+    return () => clearTimeout(t);
+  }, [steerHint]);
 
   const soloGo = useCallback(() => {
     if (!current) return;
@@ -944,12 +969,15 @@ export function ZestApp() {
   // "Not quite?" answers. Each closes the row; skipping twice more brings it back.
   const settleNudge = (wait = 0) => {
     setTuneOpen(false);
+    setSteerHint(null);
     skipsSinceNudge.current = -wait;
   };
   const nudgeMood = (m: Mood) => {
     settleNudge();
     setMoodChosen(true);
-    setNotice(`${NUDGE_LABEL[m]} it is.`);
+    haptic(12);
+    setWash((w) => ({ key: (w?.key ?? 0) + 1, mood: m }));
+    setNotice(`${NUDGE_LABEL[m]} it is. New picks on the way.`);
     if (m === mood) load(m);
     else changeMood(m);
   };
@@ -959,6 +987,14 @@ export function ZestApp() {
     settleNudge();
     soloSkip();
     openDiet();
+  };
+  const takeHint = () => {
+    if (!steerHint) return;
+    if (steerHint.kind === "mood") nudgeMood(steerHint.mood);
+    else {
+      settleNudge();
+      onWildcardTap();
+    }
   };
   const openArea = () => {
     settleNudge();
@@ -1091,6 +1127,15 @@ export function ZestApp() {
         steering is offered), then "Back" on the left whenever there's a pick to return to,
         and notices on the right (in place of the swipe badge), under the row if it's open.
       */}
+      {wash && (
+        <div
+          key={wash.key}
+          aria-hidden="true"
+          onAnimationEnd={() => setWash(null)}
+          className="animate-wash pointer-events-none absolute inset-0 z-10"
+          style={{ background: `radial-gradient(circle at 50% 30%, color-mix(in srgb, ${WASH[wash.mood]} 40%, transparent), transparent 70%)` }}
+        />
+      )}
       {!receiptOpen && !areaOpen && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3">
           {steering && (
@@ -1108,8 +1153,6 @@ export function ZestApp() {
                         onWildcardTap();
                       }
                 }
-                onCantEat={!inParty && current ? cantEat : undefined}
-                onElsewhere={inParty ? undefined : openArea}
                 onClose={() => settleNudge(1)}
                 onBack={canGoBack ? rewind : undefined}
               />
@@ -1139,6 +1182,26 @@ export function ZestApp() {
               )}
             </div>
           </div>
+          {/* One guess, small and out of the way; never while someone is reading the details. */}
+          {steerHint && !steering && !inParty && current && expandedId !== current.id && (
+            <div className="animate-rise pointer-events-auto inline-flex h-11 items-center self-start rounded-full bg-black/60 text-sm font-semibold text-white shadow-lg backdrop-blur-md">
+              <button type="button" onClick={takeHint} className="inline-flex h-11 items-center gap-1.5 rounded-full pr-2.5 pl-3.5 transition hover:bg-white/10 active:scale-95">
+                <span className="font-medium text-white/60">Not quite?</span> {steerHint.text}
+              </button>
+              <span aria-hidden="true" className="h-5 w-px bg-white/20" />
+              <button
+                type="button"
+                onClick={() => {
+                  setSteerHint(null);
+                  setTuneOpen(true);
+                }}
+                aria-label="More ways to steer the picks"
+                className="grid size-11 place-items-center rounded-full text-white/70 transition hover:text-white"
+              >
+                <SlidersIcon size={16} />
+              </button>
+            </div>
+          )}
         </div>
       )}
       {receiptOpen ? (
@@ -1196,6 +1259,7 @@ export function ZestApp() {
           hint={!hinted && swipes === 0}
           returning={current.id === returningId}
           onHinted={() => setHinted(true)}
+          onCantEatHere={cantEat}
         />
       )}
         </>

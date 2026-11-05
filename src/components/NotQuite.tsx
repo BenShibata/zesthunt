@@ -1,5 +1,5 @@
 import type { Mood } from "@/lib/types";
-import { DiceIcon, PinIcon, RewindIcon, UtensilsIcon, XIcon } from "./Icons";
+import { DiceIcon, RewindIcon, XIcon } from "./Icons";
 
 /** The five moods, worded as a nudge relative to what's on screen. */
 export const NUDGE_LABEL: Record<Mood, string> = {
@@ -12,17 +12,15 @@ export const NUDGE_LABEL: Record<Mood, string> = {
 const NUDGES = (Object.keys(NUDGE_LABEL) as Mood[]).map((mood) => ({ mood, label: NUDGE_LABEL[mood] }));
 
 /**
- * "Not quite?": shown after a couple of skips (or from the menu), instead of asking for a
- * mood up front. One tap steers the next picks, says the pick can't work for what you eat,
- * or moves the search.
+ * "Not quite?" in full: every way to steer the next picks. Solo, it opens from the one-guess
+ * chip or the menu; in a party, from Request. "Can't eat this" lives in a pick's details and
+ * "Somewhere else" on the area line and menu, so this row is only about steering.
  */
 export function NotQuite({
   mood,
   moodChosen,
   onMood,
   onSurprise,
-  onCantEat,
-  onElsewhere,
   onClose,
   onBack,
   group,
@@ -36,8 +34,6 @@ export function NotQuite({
   moodChosen: boolean;
   onMood: (m: Mood) => void;
   onSurprise?: () => void;
-  onCantEat?: () => void;
-  onElsewhere?: () => void;
   onClose: () => void;
 }) {
   // Compact so the whole row fits over the photo even on small phones; ::after pads taps to 44px.
@@ -84,18 +80,6 @@ export function NotQuite({
           <button type="button" onClick={onSurprise} className={`${chip} bg-white/10 text-white hover:bg-white/15`} aria-label="Surprise me: a pick from another mood (or shake your phone)">
             <DiceIcon size={15} />
             Surprise me
-          </button>
-        )}
-        {onCantEat && (
-          <button type="button" onClick={onCantEat} className={`${chip} bg-teal/25 text-teal-bright hover:bg-teal/35`}>
-            <UtensilsIcon size={15} />
-            Can&apos;t eat this
-          </button>
-        )}
-        {onElsewhere && (
-          <button type="button" onClick={onElsewhere} className={`${chip} bg-white/10 text-white hover:bg-white/15`}>
-            <PinIcon size={15} />
-            Somewhere else
           </button>
         )}
       </div>

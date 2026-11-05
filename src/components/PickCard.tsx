@@ -31,6 +31,8 @@ interface Props {
   onCantEat?: () => void;
   /** In a party: a private heads-up for me only ("this looks meat-focused"). Never removes anything. */
   fitNote?: { kind: "food" | "time"; text: string } | null;
+  /** Solo: this place won't work for what I eat. Offered in the details, then asks what you eat. */
+  onCantEatHere?: () => void;
   /** A place you chose before and asked to remember: offered first, with a badge. */
   returning?: boolean;
   /** First card of the session: lean left and right once to show it can be swiped. */
@@ -45,7 +47,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, returning, fitNote }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, onCantEatHere, returning, fitNote }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -212,6 +214,12 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               {voted === undefined && <PaymentLine payment={pick.payment} />}
               <TangentChips pick={pick} onTangent={onTangent} />
               <AboutPlace pick={pick} closesIn={closesIn} />
+              {onCantEatHere && (
+                <button type="button" onClick={onCantEatHere} className="-ml-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline">
+                  <UtensilsIcon size={14} />
+                  Can&apos;t eat here? Tell us what you eat
+                </button>
+              )}
               {/* A soft fade at the bottom edge says there's more to scroll to. */}
               <div aria-hidden="true" className="pointer-events-none sticky -bottom-2 -mt-6 h-6 bg-gradient-to-t from-ink to-transparent" />
             </div>

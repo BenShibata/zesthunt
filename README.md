@@ -83,7 +83,7 @@ Little touches along the way: the first card of a session leans left and right o
 The first screen is one pick and three buttons: **Another**, **search** and **Let's go**. Nothing to set up. Options arrive when behaviour says they'd help:
 
 1. **Open:** the photo, the walk time, the dish, the place and when it closes. Everything else (what you eat, parties, privacy receipt, area, steering) is in the **⋯** menu. The ⋯ shows a small count when food choices are on.
-2. **After two skips in a row:** a **"Not quite? Steer the next picks"** row slides in under the logo: **Lighter, Heartier, Quicker, Cheaper, A treat** (the five moods, worded as a nudge), **Surprise me**, **Can't eat this** and **Somewhere else**. One tap closes it; ✕ hides it for a few more skips. It's always in the menu as "Steer the picks".
+2. **After three skips in a row:** one small chip appears over the photo with a single guess from what the last three skips have in common (`src/lib/steer.ts`): "Not quite? **Something cheaper?**" if most were pricey, "Something quicker?" if most were far, otherwise the other way from what they lean toward (heavy skips → "Something lighter?"), or "Surprise me?" when there's no clear lean. One tap steers, with a short vibration, a soft wash of colour over the next pick and "Lighter it is. New picks on the way." The sliders button opens the full row (**Lighter, Heartier, Quicker, Cheaper, A treat, Surprise me**). An ignored chip fades after 6 seconds and stays away for four more skips, and it never shows while the details are open. "Can't eat here?" now lives in a pick's details, and "Somewhere else" on the area line and in the menu. The full row is always in the menu as "Steer the picks".
    - **Can't eat this** skips the pick and opens "What do you eat?" with what that dish hints at offered first ("Based on this pick, maybe: No meat or fish / Keep away from shellfish"). So food needs are asked for when they matter, not up front.
 3. **Lingering on a pick** (4 seconds) or tapping **Details** opens the rest: rating, price, payment, the "More like this" chips and the plate estimate.
 4. **After Let's go:** if no allergies are set, **"Anything to keep away from?"** with one-tap chips (picks refresh when you go back), and **"Eating with others? Decide together"**, which opens a party with this pick in the deck.
@@ -172,12 +172,12 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | Another (skip) | swipe left / **Another** | ← |
 | Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
-| Steer (Lighter, Heartier…) | **Not quite?** row after two skips, or ⋯ → Steer the picks | Tab to it, Enter |
+| Steer (Lighter, Heartier…) | **Not quite?** chip after three skips (sliders for all choices), or ⋯ → Steer the picks | Tab to it, Enter |
 | See details | tap **Details**, or linger on a pick | Tab to it, Enter |
 | What you eat and allergies | ⋯ → **What I eat** (a small count shows how many choices are on, never the choices themselves), or **Can't eat this** | Tab to it, Enter |
 | Start a hunt party | ⋯ → **Decide with friends**, or after Let's go | Tab to it, Enter |
 | Search a craving | tap the search button (center) | Tab to it, Enter |
-| Surprise (wildcard) | **Surprise me** in the Not quite? row, or shake the phone | Tab to it, Enter |
+| Surprise (wildcard) | **Surprise me** in the full steer row, or shake the phone | Tab to it, Enter |
 | Speak a craving | hold the search button (it turns into a mic while listening) | (typing is the keyboard path) |
 
 ## Project layout
