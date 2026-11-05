@@ -312,3 +312,17 @@ describe("runPipeline: photos and contact", () => {
     expect(a).toMatchObject({ phone: "(415) 555-0134", phoneDial: "+14155550134", reservable: true });
   });
 });
+
+describe("runPipeline: sponsored deals", () => {
+  it("shows a sponsor's deal only on its own card, without changing which places come up or their order", async () => {
+    ranked.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const before = (await run()).picks.map((p) => p.id);
+    vi.stubEnv("SPONSORS", JSON.stringify([{ placeId: "c", deal: "10% off with code ZEST" }, { placeId: "elsewhere", deal: "Not here" }]));
+    const { picks } = await run();
+    expect(picks.map((p) => p.id)).toEqual(before);
+    expect(picks.find((p) => p.id === "c")!.sponsored).toEqual({ deal: "10% off with code ZEST" });
+    expect(picks.filter((p) => p.sponsored)).toHaveLength(1);
+    vi.unstubAllEnvs();
+  });
+});

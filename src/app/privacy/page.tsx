@@ -30,6 +30,13 @@ const sections: { title: string; body: string[] }[] = [
     ],
   },
   {
+    title: "How Zesthunt makes money",
+    body: [
+      "Some links out (ordering on DoorDash or Uber Eats, booking on OpenTable) may carry a Zesthunt referral tag, so we may earn a small fee if you order or book. Your price doesn't change, and the link only names the restaurant: never your location or anything about you. Once you tap through, that site's own privacy policy applies.",
+      "Some restaurants pay to show a deal on their own card, labeled “Sponsored”. It only appears when that place comes up on its own: sponsors are never moved up, added to your picks, or ranked differently. There's no ad network and no tracking: the deal is plain text sent with the pick.",
+    ],
+  },
+  {
     title: "Voice",
     body: ["Hold-to-speak runs on your phone's own speech recognition. Audio never leaves the device; only the words do. If your browser can't do that on-device, you type instead."],
   },

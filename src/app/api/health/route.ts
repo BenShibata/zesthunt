@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 import { env, isDemo } from "@/server/env";
 import { upstash } from "@/server/upstash";
+import { sponsorCount } from "@/server/sponsors";
 
 const NO_STORE = { "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" };
 
@@ -29,6 +30,13 @@ export async function GET() {
     walkTimes: env.useRoutes ? "google routes" : "distance estimate",
     ranking: !env.anthropicModel ? "rule-based (ANTHROPIC_MODEL=off)" : env.anthropicKey ? env.anthropicModel : "rule-based (no ANTHROPIC_API_KEY)",
     rooms,
+    // Revenue: how many sponsors are set up, and which referral partners are tagged (yes/no only).
+    sponsors: sponsorCount(),
+    referrals: {
+      doordash: Boolean(process.env.NEXT_PUBLIC_REFERRAL_DOORDASH?.trim()),
+      ubereats: Boolean(process.env.NEXT_PUBLIC_REFERRAL_UBEREATS?.trim()),
+      opentable: Boolean(process.env.NEXT_PUBLIC_REFERRAL_OPENTABLE?.trim()),
+    },
   };
   const ok = !isDemo() && rooms === "upstash";
   return Response.json({ ok, ...status }, { status: ok ? 200 : 503, headers: NO_STORE });

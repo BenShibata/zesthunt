@@ -3,8 +3,8 @@
 import type { ReactNode } from "react";
 import type { Pick } from "@/lib/types";
 import type { AimKey } from "@/lib/aim";
-import { directionsUrl, orderAhead } from "@/lib/links";
-import { BagIcon, CarIcon, MoreIcon, PhoneIcon, WalkIcon } from "./Icons";
+import { bookTableUrl, directionsUrl, orderAhead, referralsOn } from "@/lib/links";
+import { BagIcon, CarIcon, ClockIcon, MoreIcon, PhoneIcon, TagIcon, WalkIcon } from "./Icons";
 
 /**
  * "Let's go": the same choices as aiming a pull, as a menu. Directions, ordering on the
@@ -13,6 +13,7 @@ import { BagIcon, CarIcon, MoreIcon, PhoneIcon, WalkIcon } from "./Icons";
  */
 export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (target: AimKey) => void; onClose: () => void }) {
   const order = orderAhead(pick);
+  const book = bookTableUrl(pick);
   const walking = pick.travelMode === "walk";
   const row =
     "flex min-h-14 w-full items-center gap-3 rounded-2xl px-3 text-left text-base font-semibold text-white transition hover:bg-white/8 active:scale-[0.99]";
@@ -64,6 +65,18 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
             </span>
           </a>
         )}
+        {book && (
+          <a href={book} target="_blank" rel="noopener noreferrer" onClick={() => onChoose("journey")} className={row}>
+            {icon(<ClockIcon size={20} />)}
+            <span>
+              Book a table
+              {sub("Find it on OpenTable")}
+            </span>
+          </a>
+        )}
+        {pick.sponsored && (
+          <SponsoredRow deal={pick.sponsored.deal} url={pick.sponsored.url} className={row} icon={icon(<TagIcon size={20} />, "bg-star/20 text-star")} />
+        )}
         <button type="button" onClick={() => onChoose("journey")} className={row}>
           {icon(<MoreIcon size={20} />)}
           <span>
@@ -71,7 +84,28 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
             {sub("Hours, price, split the bill, send to a friend")}
           </span>
         </button>
+        {referralsOn && <p className="px-3 pt-1 pb-2 text-xs text-white/50">Zesthunt may earn a small fee from some of these links. Your price doesn&apos;t change.</p>}
       </section>
     </div>
+  );
+}
+
+/** A sponsor's own deal, labeled as sponsored. Paid for by the restaurant; it never changes which places you see. */
+function SponsoredRow({ deal, url, className, icon }: { deal: string; url?: string; className: string; icon: ReactNode }) {
+  const body = (
+    <>
+      {icon}
+      <span>
+        <span className="mr-1.5 rounded bg-star/20 px-1.5 py-0.5 align-middle text-[11px] font-bold tracking-wide text-star uppercase">Sponsored</span>
+        {deal}
+      </span>
+    </>
+  );
+  return url ? (
+    <a href={url} target="_blank" rel="noopener noreferrer sponsored" className={className}>
+      {body}
+    </a>
+  ) : (
+    <div className={className}>{body}</div>
   );
 }

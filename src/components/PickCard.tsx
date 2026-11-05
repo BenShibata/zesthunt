@@ -350,6 +350,19 @@ export function PickCard({
               </>
             )}
           </p>
+          {/* A sponsor's own deal: paid for by the restaurant, clearly labeled, and only ever on its own card. */}
+          {pick.sponsored && (
+            <p className="mt-2 flex items-center gap-2 text-sm text-white/90">
+              <span className="shrink-0 rounded bg-star/20 px-1.5 py-0.5 text-[11px] font-bold tracking-wide text-star uppercase">Sponsored</span>
+              {pick.sponsored.url ? (
+                <a href={pick.sponsored.url} target="_blank" rel="noopener noreferrer sponsored" className="min-w-0 truncate font-semibold underline-offset-2 hover:underline">
+                  {pick.sponsored.deal}
+                </a>
+              ) : (
+                <span className="min-w-0 truncate font-semibold">{pick.sponsored.deal}</span>
+              )}
+            </p>
+          )}
           {onCantEat && fitNote ? (
             // A private heads-up with the choice right beside it: the person decides, not us.
             <div className="mt-2 rounded-2xl bg-star/12 px-3 py-2 text-sm text-white/90 ring-1 ring-star/30" role="note">

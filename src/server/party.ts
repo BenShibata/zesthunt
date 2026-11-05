@@ -79,6 +79,7 @@ export const PartyCardSchema = z.object({
   phoneDial: z.string().max(20).regex(/^\+?\d+$/).optional(),
   reservable: z.boolean().nullable().optional(),
   added: z.boolean().optional(),
+  sponsored: z.object({ deal: z.string().max(80), url: z.string().max(500).startsWith("https://").optional() }).optional(),
 });
 
 export class PartyError extends Error {

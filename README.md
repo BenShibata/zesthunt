@@ -52,6 +52,15 @@ For real places, copy `.env.example` to `.env.local` and fill in:
 
 Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (or your location) on first open. On Vercel it starts from the city-level `x-vercel-ip-*` headers.
 
+## Making money
+
+Two kinds, both off until you set them, and neither tracks anyone:
+
+- **Referral links.** "Order to go" (DoorDash, Uber Eats) and **Book a table** (an OpenTable search, shown only when Google says the place takes reservations) can carry your referral tag. Join each partner's affiliate program, then set `NEXT_PUBLIC_REFERRAL_DOORDASH`, `NEXT_PUBLIC_REFERRAL_UBEREATS` and `NEXT_PUBLIC_REFERRAL_OPENTABLE` in Vercel and redeploy. Each is either a tracking link with `{url}` where the destination goes, or plain parameters to append (`ref=zesthunt`); see `tagLink` in `src/lib/links.ts`. While any is set, the Let's go menu and the journey screen say "Zesthunt may earn a small fee from some links. Your price doesn't change." (needed for affiliate disclosure rules). The restaurant's own ordering site is never tagged.
+- **Sponsored deals (our own ads).** Restaurants pay you directly to show a deal on their own card: a labeled **Sponsored** line ("10% off with code ZEST", optionally linked) on the card, in the Let's go menu and on the journey screen. It appears only when that place comes up on its own: it's attached after ranking (`src/server/sponsors.ts`), so a sponsor is never moved up, added, or shown to the ranker. Set `SPONSORS` in Vercel to a JSON list of `{ "placeId", "deal", "url"?, "until"? }` (the Google place ID; `until` is the last day, `YYYY-MM-DD`) and redeploy. Bad entries are skipped. No ad network, no scripts, no cookies: the deal is plain text sent with the pick.
+
+`/api/health` shows how many sponsors are set up and which referral partners are tagged (yes or no). The privacy page explains both.
+
 ## How a pick is made
 
 `POST /api/picks` streams newline-delimited JSON (`meta`, `pick`…, `done`):
