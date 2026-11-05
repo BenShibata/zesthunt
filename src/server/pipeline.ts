@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { MOODS, type AreaSource, type Mood, type Pick, type PicksEvent, type ThirdParty } from "@/lib/types";
+import { MOODS, type AreaSource, type Mood, type Pick, type PickPhoto, type PicksEvent, type ThirdParty } from "@/lib/types";
 import { mealFrame } from "@/lib/time";
 import { dietSafeSuggestion, dishCategory } from "@/lib/categories";
 import { buildMockQueue } from "@/lib/mockPicks";
@@ -8,7 +8,7 @@ import { MAX_REACH, REACHES } from "@/lib/reach";
 import { env, isDemo } from "./env";
 import { safeErrorLabel } from "./memory";
 import { cityFromHeaders, coarseFromHeaders, haversineMeters, roundToArea, type LatLng } from "./geo";
-import { geocodeArea, nearbyOpenPlaces, textSearchOpenPlaces, type Place } from "./places";
+import { geocodeArea, nearbyOpenPlaces, textSearchOpenPlaces, type Place, type PlacePhoto } from "./places";
 import { travelTimes, type Travel } from "./routes";
 import { balanceScore, profileFor, toPlate, type Profile } from "./heuristics";
 import { rankWithClaude } from "./rank";
@@ -356,6 +356,11 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     labels: ranked?.labels ?? prof.labels,
     balance: balanceScore([plate.protein, plate.veg, plate.grain]),
     upgradeTip: tip || undefined,
+    photos: place.photos.length > 1 ? place.photos.map(photoOf) : undefined,
+    storefront: place.storefront ? photoOf(place.storefront) : undefined,
+    phone: place.phone ?? undefined,
+    phoneDial: place.phoneDial ?? undefined,
+    reservable: place.reservable,
     photo: place.photoName
       ? { kind: "url", url: `/api/photo?name=${encodeURIComponent(place.photoName)}`, attribution: place.photoAuthor ?? undefined }
       : { kind: "mock", palette: ["#c8401f", "#3f8f6b", "#efe3c8"], motif: "plate" },
@@ -366,6 +371,10 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     vegetarianOptions: place.servesVegetarianFood,
     placeTypes: [place.primaryType, ...place.types].filter((t): t is string => Boolean(t)).slice(0, 8),
   };
+}
+
+function photoOf(p: PlacePhoto): PickPhoto {
+  return { kind: "url", url: `/api/photo?name=${encodeURIComponent(p.name)}`, attribution: p.author ?? undefined };
 }
 
 /**

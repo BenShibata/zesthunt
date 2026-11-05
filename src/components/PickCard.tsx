@@ -6,14 +6,26 @@ import { CLOSING_SOON_MINUTES, distanceText, formatClock, mealFrame, minutesUnti
 import { PickPhoto } from "./PickPhoto";
 import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, PartyIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
-import type { useSwipe } from "@/hooks/useSwipe";
+import { BagIcon, CarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon, ClockIcon, ExternalIcon, LeafIcon, PartyIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import { useCardGestures } from "@/hooks/useCardGestures";
+import { directionsUrl } from "@/lib/links";
 
 interface Props {
   pick: Pick;
   now: Date;
-  swipes: number;
-  swipe: ReturnType<typeof useSwipe>;
+  /** Swipe left, or the right-hand arrow. */
+  onNext: () => void;
+  /** Swipe right, or the left-hand arrow. Omitted when there's nothing to go back to. */
+  onBack?: () => void;
+  /**
+   * Pull the photo down and let go (or tap the handle): "go" starts the journey solo, "vote"
+   * votes in a group, "add" adds a searched place to the group's vote.
+   */
+  onPull?: () => void;
+  pullAction?: PullAction;
+  /** In a group, on a card you voted for: the handle offers to take the vote back. */
+  onUnvote?: () => void;
+  disabled?: boolean;
   /** A notice is showing over the photo: hide the swipe-count badge so they don't collide. */
   quietBadge?: boolean;
   /** Tapping a chip searches for more of that ("noodles", "veggie"). Omitted where cravings don't apply (parties). */
@@ -25,7 +37,7 @@ interface Props {
    */
   expanded?: boolean;
   onExpand?: () => void;
-  /** In a party: you already voted for this card (others' votes stay secret). */
+  /** In a party: you voted for this card (others' votes stay secret). */
   voted?: boolean;
   /** In a party: remove this place for everyone (anonymously) because I can't eat there. */
   onCantEat?: () => void;
@@ -47,52 +59,131 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, onCantEatHere, returning, fitNote }: Props) {
+type PullAction = "go" | "vote" | "add";
+const PULL_TEXT: Record<PullAction, { idle: string; armed: string; aria: (name: string) => string }> = {
+  go: { idle: "Pull down to go", armed: "Let go to go!", aria: (n) => `Go to ${n}: start the journey` },
+  vote: { idle: "Pull down to vote", armed: "Let go to vote!", aria: (n) => `Vote for ${n}` },
+  add: { idle: "Pull down to add it", armed: "Let go to add!", aria: (n) => `Add ${n} to the group's vote` },
+};
+
+export function PickCard({
+  pick,
+  now,
+  quietBadge,
+  onTangent,
+  expanded = true,
+  onExpand,
+  voted,
+  hint,
+  onHinted,
+  onCantEat,
+  onCantEatHere,
+  returning,
+  fitNote,
+  onNext,
+  onBack,
+  onPull,
+  pullAction = "go",
+  onUnvote,
+  disabled,
+}: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
   const rating = ratingText(pick.rating, pick.ratingCount);
-  const { dx, progress, handlers } = swipe;
+  // Tap the photo to flip through the place's photos (food-first); back to the first on a new pick.
+  const [shot, setShot] = useState({ id: pick.id, i: 0 });
+  const gallery = pick.photos && pick.photos.length > 1 ? pick.photos : [pick.photo];
+  const at = shot.id === pick.id ? shot.i % gallery.length : 0;
+  const photo = gallery[at];
+  const gestures = useCardGestures({
+    onNext,
+    onBack: onBack ?? (() => {}),
+    onPull: voted ? undefined : onPull,
+    onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
+    disabled,
+  });
+  const { dx, progress, pull, tension, armed, launching } = gestures;
+  const text = PULL_TEXT[pullAction];
+  const transform = launching
+    ? "translateY(-115%) scale(0.9)"
+    : dx
+      ? `translateX(${dx}px) rotate(${dx / 40}deg)`
+      : pull
+        ? `translateY(${pull}px) scale(${1 - tension * 0.04})`
+        : undefined;
 
   return (
     <article aria-labelledby="pick-title" aria-describedby="pick-reason" className="flex min-h-0 flex-1 flex-col">
-      {/* Photo: swipe surface */}
+      {/* Photo: swipe sideways for next / back, pull down and let go to launch, tap to flip. */}
       <div
-        {...handlers}
-        className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx ? "animate-nudge" : ""}`}
+        {...gestures.photoHandlers}
+        className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx && !pull ? "animate-nudge" : ""}`}
         onAnimationEnd={(e) => e.animationName === "nudge" && onHinted?.()}
         style={{
-          transform: dx ? `translateX(${dx}px) rotate(${dx / 40}deg)` : undefined,
-          transition: dx ? "none" : "transform 220ms ease-out",
+          transform,
+          opacity: launching ? 0 : 1,
+          transition: launching ? "transform 260ms cubic-bezier(.55,-0.35,.75,.2), opacity 260ms ease-in" : dx || pull ? "none" : "transform 260ms cubic-bezier(.2,1.6,.4,1)",
         }}
       >
-        <PickPhoto key={pick.id} photo={pick.photo} alt={`Photo of the food style at ${pick.name}`} />
+        <PickPhoto
+          key={`${pick.id}-${at}`}
+          photo={photo}
+          instant={at > 0}
+          alt={`Photo ${gallery.length > 1 ? `${at + 1} of ${gallery.length} ` : ""}at ${pick.name}${gallery.length > 1 ? ". Tap for the next photo" : ""}`}
+        />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/70" />
-
+        {gallery.length > 1 && (
+          <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 top-3 flex justify-center gap-1">
+            {gallery.map((_, i) => (
+              <span key={i} className={`h-1.5 rounded-full transition-all ${i === at ? "w-4 bg-white" : "w-1.5 bg-white/50"}`} />
+            ))}
+          </div>
+        )}
+        {/* While pulling: the string draws back, then says to let go. */}
+        {pull > 0 && (
+          <p
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-x-0 top-1/3 text-center font-display text-3xl font-extrabold drop-shadow-lg transition-transform ${armed ? "scale-110 text-paprika-bright" : "text-white/85"}`}
+          >
+            {armed ? text.armed : text.idle}
+          </p>
+        )}
+        {/* Quiet arrows for moving on without swiping. */}
+        {onBack && (
+          <button
+            type="button"
+            onClick={onBack}
+            aria-label="Previous pick"
+            className="absolute top-1/2 left-2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white/80 backdrop-blur-sm transition hover:bg-black/50 hover:text-white"
+          >
+            <ChevronLeftIcon size={22} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onNext}
+          aria-label="Next pick"
+          className="absolute top-1/2 right-2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white/80 backdrop-blur-sm transition hover:bg-black/50 hover:text-white"
+        >
+          <ChevronRightIcon size={22} />
+        </button>
         {/* Swipe feedback */}
         <span
           aria-hidden="true"
           className="pointer-events-none absolute left-5 top-1/3 rotate-[-12deg] rounded-lg border-4 border-paprika-bright px-3 py-1 font-display text-3xl font-extrabold text-paprika-bright"
-          style={{ opacity: Math.max(0, progress) }}
+          style={{ opacity: onBack ? Math.max(0, progress) : 0 }}
         >
-          {voted === undefined ? "GO" : "VOTE"}
+          BACK
         </span>
         <span
           aria-hidden="true"
           className="pointer-events-none absolute right-5 top-1/3 rotate-[12deg] rounded-lg border-4 border-white px-3 py-1 font-display text-3xl font-extrabold text-white"
           style={{ opacity: Math.max(0, -progress) }}
         >
-          {voted === undefined ? "SKIP" : "PASS"}
+          NEXT
         </span>
 
-        {/* In a party, only your own vote is shown (going Back to a card you're in on). */}
-        {voted && (
-          <div className="pointer-events-none absolute right-3 top-3">
-            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-social/85 px-3 text-sm font-semibold text-white backdrop-blur-md">
-              <span aria-hidden="true">♥</span> You voted
-            </span>
-          </div>
-        )}
         {returning && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center gap-1 rounded-full bg-paprika/90 px-3 text-sm font-semibold text-white backdrop-blur-md">
@@ -105,15 +196,7 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">Second look</span>
           </div>
         )}
-        {expanded && voted === undefined && !returning && !pick.secondLook && (
-          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
-            <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
-              {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
-            </span>
-          </div>
-        )}
-
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 p-4">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 px-4 pt-4 pb-11">
           {pick.travelUnknown ? (
             <p className="flex items-center gap-2 font-display text-[1.75rem] leading-none font-extrabold tracking-tight whitespace-nowrap text-white drop-shadow-lg">
               <PartyIcon size={26} className="shrink-0" />
@@ -133,7 +216,7 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               credit, and a Places photo carries its photographer's name. */}
           {!pick.placeId.startsWith("mock-") && (
             <span className="flex min-w-0 max-w-[40%] shrink flex-col items-end text-right text-[11px] leading-tight text-white/75 drop-shadow">
-              {pick.photo.kind === "url" && pick.photo.attribution && <span className="max-w-full truncate">Photo: {pick.photo.attribution}</span>}
+              {photo.kind === "url" && photo.attribution && <span className="max-w-full truncate">Photo: {photo.attribution}</span>}
               {/* Never truncated: the "Google Maps" credit has to stay readable. */}
               <span className="whitespace-nowrap">Google Maps</span>
             </span>
@@ -141,11 +224,43 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
         </div>
       </div>
 
-      {/* Details. Opened, they scroll on their own (the photo above stays the swipe surface),
-          so someone curious can read all about the place without leaving the pick. */}
+      {/* The bowstring: where photo meets details. Pull the photo down from here, or just tap it. */}
+      {(onPull || voted) && (
+        <div className="relative z-20 h-0">
+          <div className="absolute inset-x-0 -top-9 flex justify-center" style={{ transform: pull ? `translateY(${pull * 0.15}px)` : undefined }}>
+            {voted ? (
+              <button
+                type="button"
+                onClick={onUnvote}
+                aria-label={`You voted for ${pick.name}. Take your vote back`}
+                className="inline-flex h-10 items-center gap-1.5 rounded-full bg-social px-4 text-sm font-semibold text-white shadow-lg ring-4 ring-ink-2 transition active:scale-95"
+              >
+                <span aria-hidden="true">♥</span> You voted
+                <span className="font-medium text-white/75">· Take back</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onPull}
+                disabled={disabled}
+                aria-label={text.aria(pick.name)}
+                className={`inline-flex h-10 items-center gap-1.5 rounded-full px-4 text-sm font-semibold text-white shadow-lg ring-4 ring-ink-2 transition active:scale-95 disabled:opacity-50 ${
+                  armed ? "bg-paprika-bright" : "bg-paprika"
+                } ${hint ? "animate-tug" : ""}`}
+              >
+                <ChevronDownIcon size={16} />
+                {text.idle}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Details: their own panel. Swipe sideways here too; opened, they scroll up and down. */}
       <div
         key={pick.id}
-        className={`animate-rise flex items-start gap-4 px-4 pt-4 pb-2 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
+        {...gestures.panelHandlers}
+        className={`animate-rise relative flex touch-pan-y items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-8 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
         {...(expanded ? { tabIndex: 0, "aria-label": `Details about ${pick.name}` } : {})}
       >
         <div className="min-w-0 flex-1">
@@ -221,7 +336,7 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
                 </button>
               )}
               {/* A soft fade at the bottom edge says there's more to scroll to. */}
-              <div aria-hidden="true" className="pointer-events-none sticky -bottom-2 -mt-6 h-6 bg-gradient-to-t from-ink to-transparent" />
+              <div aria-hidden="true" className="pointer-events-none sticky -bottom-2 -mt-6 h-6 bg-gradient-to-t from-ink-2 to-transparent" />
             </div>
           ) : (
             onExpand && (
@@ -245,8 +360,8 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
 
 /**
  * Everything else worth knowing before you go, for anyone curious: Google's description,
- * where it is, hours, what it offers, and links out to the menu, photos and reviews.
- * Only what's known is shown; nothing is guessed.
+ * the storefront and where it is (to find the door), hours, what it offers, and links out
+ * to the menu, photos and reviews. Only what's known is shown; nothing is guessed.
  */
 function AboutPlace({ pick, closesIn }: { pick: Pick; closesIn: number | null }) {
   const offers = [pick.takeout && "Takeout", pick.delivery && "Delivery", pick.vegetarianOptions && "Vegetarian options"].filter(Boolean) as string[];
@@ -258,6 +373,22 @@ function AboutPlace({ pick, closesIn }: { pick: Pick; closesIn: number | null })
         About {pick.name}
       </h2>
       {pick.about && <p className="mt-1.5 text-white/85">{pick.about}</p>}
+      {pick.storefront?.kind === "url" && (
+        <figure className="mt-3">
+          {/* eslint-disable-next-line @next/next/no-img-element -- proxied per request, like the card photo */}
+          <img
+            src={pick.storefront.url}
+            alt={`The storefront of ${pick.name}`}
+            loading="lazy"
+            referrerPolicy="no-referrer"
+            draggable={false}
+            className="h-40 w-full rounded-2xl bg-white/5 object-cover"
+          />
+          <figcaption className="mt-1 text-right text-[11px] text-white/50">
+            {pick.storefront.attribution ? `Photo: ${pick.storefront.attribution} · ` : ""}Google Maps
+          </figcaption>
+        </figure>
+      )}
       <ul className="mt-2 space-y-1.5">
         {pick.address && (
           <li className={row}>
@@ -265,6 +396,10 @@ function AboutPlace({ pick, closesIn }: { pick: Pick; closesIn: number | null })
             <span>
               {pick.address}
               {!pick.travelUnknown && pick.distanceMeters > 0 && <span className="text-white/55"> · {distanceText(pick.distanceMeters)} away</span>}
+              <a href={directionsUrl(pick)} target="_blank" rel="noopener noreferrer" className="ml-1 inline-flex min-h-11 items-center gap-1 align-middle font-semibold text-teal-bright hover:underline">
+                Map
+                <ExternalIcon size={12} />
+              </a>
             </span>
           </li>
         )}

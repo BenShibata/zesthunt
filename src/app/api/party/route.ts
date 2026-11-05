@@ -6,6 +6,7 @@ import {
   PartyCardSchema,
   PartyError,
   addCards,
+  addPlace,
   createParty,
   decideNow,
   extendParty,
@@ -36,6 +37,7 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("state"), ...Auth, since: z.number().int().min(0).max(1000) }),
   z.object({ action: z.literal("swipe"), ...Auth, pickId: z.string().max(200), dir: z.enum(["go", "skip"]) }),
   z.object({ action: z.literal("cards"), ...Auth, cards: z.array(PartyCardSchema).max(40) }),
+  z.object({ action: z.literal("add"), ...Auth, card: PartyCardSchema }),
 ]);
 
 /**
@@ -78,6 +80,8 @@ export async function POST(request: Request) {
         return Response.json(await extendParty(body.code, body.memberId, body.key), { headers: NO_STORE });
       case "steer":
         return Response.json(await steerParty(body.code, body.memberId, body.key, body.mood), { headers: NO_STORE });
+      case "add":
+        return Response.json(await addPlace(body.code, body.memberId, body.key, body.card as PartyCard), { headers: NO_STORE });
       case "cards":
         return Response.json({ deckSize: await addCards(body.code, body.memberId, body.key, body.cards as PartyCard[]) }, { headers: NO_STORE });
     }

@@ -175,3 +175,26 @@ body {
     opacity: 0;
   }
 }
+
+/* The first pick's pull handle tugs down twice: "pull me". */
+@keyframes tug {
+  0%, 40%, 100% { transform: translateY(0); }
+  15% { transform: translateY(7px); }
+  30% { transform: translateY(2px); }
+}
+
+.animate-tug {
+  animation: tug 1.6s ease-in-out 2.6s 2 both;
+}
+
+/* Pulling a pick down is ours, not the browser's pull-to-refresh. */
+html,
+body {
+  overscroll-behavior-y: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-tug {
+    animation: none;
+  }
+}

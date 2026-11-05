@@ -75,6 +75,16 @@ export interface Pick {
   /** At most one gentle tip, shown on the locked-in screen. */
   upgradeTip?: string;
   photo: PickPhoto;
+  /** More photos to flip through, food-first (the first is `photo`). Real places only. */
+  photos?: PickPhoto[];
+  /** The storefront, shown in the details for finding the door. */
+  storefront?: PickPhoto;
+  /** For "Call to reserve": shown and dialed numbers, and whether Google says it takes reservations. */
+  phone?: string;
+  phoneDial?: string;
+  reservable?: boolean | null;
+  /** In a party: someone added this place from a search (never says who). */
+  added?: boolean;
   /** Google rating (1–5) and how many ratings, when Places has them. */
   rating?: number | null;
   ratingCount?: number | null;

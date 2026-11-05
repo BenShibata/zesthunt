@@ -76,17 +76,24 @@ Every API route has a per-IP limit per minute: picks 40, party actions 60, party
 
 ## Start simple, ask as you get closer
 
-**After Let's go:** **Want to come? Send to a friend** shares one place (name, dish, closing time, Maps link; never your location) from your own share sheet, lighter than a party. **Remember [place] for next time** (off by default) saves it on this phone only (`localStorage` key `zesthunt:wins:v1`, up to 5); next session, if it's open nearby, it comes first with "Your pick last time". ⋯ → Forget remembered places clears them.
+**On the journey screen:** **Want to come? Send to a friend** shares one place (name, dish, closing time, Maps link; never your location) from your own share sheet, lighter than a party. **Remember [place] for next time** (off by default) saves it on this phone only (`localStorage` key `zesthunt:wins:v1`, up to 5); next session, if it's open nearby, it comes first with "Your pick last time". ⋯ → Forget remembered places clears them.
 
-Little touches along the way: the first card of a session leans left and right once so swiping is discovered rather than explained; the loading screen keeps you company ("Sniffing out what's open nearby…"); the locked-in screen notes how quickly you decided ("decided in 42 seconds, 3 swipes", worked out on the phone); and a party reveal opens with a short "Counting the votes…" drum roll. Motion is skipped with `prefers-reduced-motion`.
+Little touches along the way: the first card of a session leans left and right once so swiping is discovered rather than explained; the loading screen keeps you company ("Sniffing out what's open nearby…"); the journey screen notes how quickly you decided ("decided in 42 seconds", worked out on the phone); and a party reveal opens with a short "Counting the votes…" drum roll. Motion is skipped with `prefers-reduced-motion`.
 
-The first screen is one pick and three buttons: **Another**, **search** and **Let's go**. Nothing to set up. Options arrive when behaviour says they'd help:
+The first screen is one pick and one button (**search**). Nothing to set up:
+
+- **Swipe left** for the next pick, **swipe right** to go back to the previous one. This works on the photo and on the details below it (whose up-and-down scrolling stays separate). Quiet **‹ ›** arrows on the photo and the keyboard's ← → do the same without swiping.
+- **Pull the photo down and let go** to start the journey, like drawing a bow: it stretches with "Pull down to go", says "Let go to go!" (with a buzz) once it's far enough, and flies off on release. The **Pull down to go** handle where the photo meets the details can simply be tapped (or press ↓). The first pick's handle tugs down twice as a hint. The browser's own pull-to-refresh is turned off so it doesn't get in the way.
+- **Tap the photo** to flip through the place's photos (dots show how many). Google doesn't say which photos show food, so the order is a free best guess (`foodFirst` in `src/server/places.ts`): photos posted by visitors first (diners mostly photograph their plates), then the business's own, and Google's cover photo (usually the storefront) last. The storefront itself appears in the details.
+- **The journey** (after going) offers three ways: **Head there** (directions, with the walk or drive time), **Order to go** (the restaurant's own site, or DoorDash / Uber Eats, when Google says it does takeout or delivery), and **Call to reserve** (when Google lists a phone number; "Call them" if it doesn't say it takes reservations). Phone number and reservations come from the same Places request as everything else, at no extra cost.
+
+Options arrive when behaviour says they'd help:
 
 1. **Open:** the photo, the walk time, the dish, the place and when it closes. Everything else (what you eat, parties, privacy receipt, area, steering) is in the **⋯** menu. The ⋯ shows a small count when food choices are on.
 2. **After three skips in a row:** one small chip appears over the photo with a single guess from what the last three skips have in common (`src/lib/steer.ts`): "Not quite? **Something cheaper?**" if most were pricey, "Something quicker?" if most were far, otherwise the other way from what they lean toward (heavy skips → "Something lighter?"), or "Surprise me?" when there's no clear lean. One tap steers, with a short vibration, a soft wash of colour over the next pick and "Lighter it is. New picks on the way." The sliders button opens the full row (**Lighter, Heartier, Quicker, Cheaper, A treat, Surprise me**). An ignored chip fades after 6 seconds and stays away for four more skips, and it never shows while the details are open. "Can't eat here?" now lives in a pick's details, and "Somewhere else" on the area line and in the menu. The full row is always in the menu as "Steer the picks".
    - **Can't eat this** skips the pick and opens "What do you eat?" with what that dish hints at offered first ("Based on this pick, maybe: No meat or fish / Keep away from shellfish"). So food needs are asked for when they matter, not up front.
-3. **Lingering on a pick** (4 seconds) or tapping **Details** opens the rest: rating, price, payment, the "More like this" chips and the plate estimate.
-4. **After Let's go:** if no allergies are set, **"Anything to keep away from?"** with one-tap chips (picks refresh when you go back), and **"Eating with others? Decide together"**, which opens a party with this pick in the deck.
+3. **Lingering on a pick** (4 seconds) or tapping **Details** opens the rest, in its own panel below the photo: rating, price, payment, the "More like this" chips and the plate estimate, then (scrolling) the About section with the storefront photo, the address with a **Map** link, hours, what it offers and links to the menu and website.
+4. **After going:** if no allergies are set, **"Anything to keep away from?"** with one-tap chips (picks refresh when you go back), and **"Eating with others? Decide together"**, which opens a party with this pick in the deck.
 
 The area line appears only when it matters: a rough IP guess ("San Francisco (approx.) · Change"), a search that has gone farther than a walk ("· short drive", "· longer drive"), or an active craving.
 
@@ -111,19 +118,20 @@ The area line appears only when it matters: a rough IP guess ("San Francisco (ap
 
 ## Hunt party
 
-The headline feature, so it has its own button: **Hunt together** in the top bar (also in the ⋯ menu and on the screen after Let's go).
+The headline feature, so it has its own button: **Hunt together** in the top bar (also in the ⋯ menu and on the journey screen). A group works like solo: the same swipes, the same photo, the same search.
 
 1. **One tap to start.** The room opens with the picks in hand and the invite shows straight away: a **QR code** (drawn on the phone, for friends standing nearby), the code, **Share link** (share sheet, or copies the link) for everyone else, and the name you were handed (**"You're Ramen to the group" · Rename**). Links look like `zesthunt.com/#p=CODE`; the code sits after the `#`, so it never reaches the server or its logs.
 2. **No form to join.** Opening the link joins straight away with a food name ("Taco", "Dumpling"…), renamable from Invite.
-3. **Clear voting.** In a party the bottom bar is **Pass** and **♥ Vote for it** (swipe left/right works too, stamped PASS / VOTE), with "3/8 voted" in the middle. A one-line tip says so when you start or join.
-4. **Secret ballot.** Nobody sees anyone else's votes until the result, so one person's pick can't sway the rest. The server enforces it: room state carries only your own votes (`myVotes`) until there's a match. The bar shows only who's finished ("🔒 Votes are secret · 2 of 3 done", ✓ on avatars), and going Back to a card you voted for shows "♥ You voted".
-5. **The reveal.** A card everyone's in on (all but one from 4 people) is an instant match. Otherwise, when you've voted on every card, **Reveal results** (with who's still voting, if anyone) picks the most-liked card. In the last 2 minutes the bar offers Reveal results and a one-time **+5 min**. The results screen shows "The group picked…", how many voted for it and who, and the runners-up, then **Let's go to …**.
+3. **Voting is pulling down.** Swipe left for the next place, right to go back, and **pull down (or tap "Pull down to vote") to vote**, which moves on to the next place. Going back to one you voted for shows **♥ You voted · Take back**; tapping it takes the vote back (stored as a pass, so it no longer counts). There's no vote counter.
+   **Anyone can add a place.** The search button works in a group too: search ("ramen"), swipe through what turns up, and pull one down to **add it to everyone's list with your vote** (`add` action; a place already on the list just gets the vote). Everyone else sees a quiet "A new place was added to vote on: Rice & Ramen Co.", never who added it. At the end of the list: "You've seen every place so far", with **Search to add a place**, **Go back through them** and **Reveal now**.
+4. **Secret ballot.** Nobody sees anyone else's votes until the result, so one person's pick can't sway the rest. The server enforces it: room state carries only your own votes (`myVotes`) until there's a match. The bar shows who's here and "🔒 Secret votes · first match wins".
+5. **How it ends.** The first match ends it: a place everyone's in on (all but one from 4 people). Otherwise, 12 seconds before time's up, the phones still in the room ask for the reveal and the most-voted place wins (if nobody voted, the room just ends). **Reveal now** ends it early; in the last 2 minutes the bar also offers a one-time **+5 min**. The results screen shows "The group picked…", how many voted for it and who, and the runners-up, then **Let's go to …**.
 6. **You decide what you can eat; we never remove a place on a guess.** Each phone reads the cards against its owner's "What I eat" (`src/lib/partyFit.ts`: Google's vegetarian flag, plus the place's name, type and dish) and shows a **private note** on cards that might not fit: "Heads up: this looks meat-focused. It may still work for you. Only you see this." Beside it, **Can't eat this? Remove it for everyone** lets the person decide. Removals are anonymous (`unfit` action, card IDs only): the place drops out for everyone, doesn't count toward "voted", can't match or win, and everyone sees "1 place removed: someone can't eat there, or it closes too soon." If removals leave fewer than 6 places, the host's phone fetches more.
 7. **Time to get there.** The only automatic removal, and only when it's certain: a place you'd reach (after the 10-minute vote and your own trip) with under 10 minutes before closing. Shorter-than-comfortable windows stay, with a private "Heads up: it closes about 20 min after you'd get there." Solo uses the same rule: places you'd reach with under 10 minutes left are left out; the rest keep their "Closes in N min" warning.
-8. **A fixed ballot.** The deck is the picks the party started with, so everyone can finish it. New cards arrive only from a request.
+8. **An open list.** The list starts with the picks in hand and grows when someone adds a place or makes a request.
 9. **Requests.** **Request** in the party bar (or ⋯ → Request something different) opens "Ask the group for something different": Lighter, Heartier, Quicker, Cheaper or A treat. Only that word goes to the room. The host's phone (the one with a location) fetches a few places that fit and adds them to the end of everyone's list, so nothing is skipped and everyone still votes on every card. Everyone sees "Taco asked for heartier places…" and then "4 heartier places added to the end of the list." Rooms opened by an AI assistant have no host, so Request isn't offered there.
 10. **Privacy.** Rooms have a hard 10-minute TTL from creation (15 with the one-time extension) that activity doesn't extend. A room holds only the code, nicknames (plus a hashed join key), restaurant cards, swipes, the match, the latest nudge word, whether time was added, and which places don't fit someone (no who, no why). Never location, cravings, typed text or travel times; each device works out its own walk time.
-11. Party traffic goes through one `POST /api/party` endpoint (create, join, state, swipe, cards, rename, reveal, extend, steer, unfit) so codes and keys stay out of URLs. Members poll every 2 s.
+11. Party traffic goes through one `POST /api/party` endpoint (create, join, state, swipe, cards, add, rename, reveal, extend, steer, unfit) so codes and keys stay out of URLs. Members poll every 2 s.
 
 ## Paying (without Zesthunt touching money)
 
@@ -168,15 +176,16 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 
 | Action | Touch | Keyboard |
 | --- | --- | --- |
-| Let's go (lock in) | swipe right / **Let's go** | → |
-| Another (skip) | swipe left / **Another** | ← |
-| Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
+| Next pick | swipe left (on the photo or the details), or **›** on the photo | → |
+| Back to the previous pick | swipe right, or **‹** on the photo | ← or Backspace |
+| Go (start the journey) / vote in a group / add a searched place | pull the photo down and let go, or tap the **Pull down to…** handle | ↓ |
+| Next photo of the place | tap the photo | (each photo is described for screen readers) |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
 | Steer (Lighter, Heartier…) | **Not quite?** chip after three skips (sliders for all choices), or ⋯ → Steer the picks | Tab to it, Enter |
 | See details | tap **Details**, or linger on a pick | Tab to it, Enter |
 | What you eat and allergies | ⋯ → **What I eat** (a small count shows how many choices are on, never the choices themselves), or **Can't eat this** | Tab to it, Enter |
-| Start a hunt party | ⋯ → **Decide with friends**, or after Let's go | Tab to it, Enter |
-| Search a craving | tap the search button (center) | Tab to it, Enter |
+| Start a hunt party | **Hunt together**, ⋯ → **Hunt together**, or on the journey screen | Tab to it, Enter |
+| Search a craving (in a group: find a place to add) | tap the search button (center) | Tab to it, Enter |
 | Surprise (wildcard) | **Surprise me** in the full steer row, or shake the phone | Tab to it, Enter |
 | Speak a craving | hold the search button (it turns into a mic while listening) | (typing is the keyboard path) |
 

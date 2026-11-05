@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PartyCard } from "@/lib/types";
 import { resetUpstashForTests } from "./upstash";
 import { resetRoomStoreForTests } from "./partyStore";
-import { createOpenParty, createParty, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
+import { addPlace, createOpenParty, createParty, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
 
 const card = (id: string) => ({ id, placeId: id, name: id }) as PartyCard;
 
@@ -146,4 +146,36 @@ describe("hunt party", () => {
     state = await partyState(host.code, host.memberId, host.key, 0);
     expect(JSON.stringify(state)).not.toMatch(/Vegetarian|allerg/i);
   });
+
+  it("lets anyone add a searched place: marked as added (not by whom), with their vote", async () => {
+    const host = await createParty("Ana", [card("x")]);
+    const friend = await joinParty(host.code, "Ben");
+    const r = await addPlace(friend.code, friend.memberId, friend.key, card("ramen"));
+    expect(r).toEqual({ id: "ramen", existed: false });
+    const seen = await partyState(host.code, host.memberId, host.key, 0);
+    const added = seen.deck.find((c) => c.id === "ramen")!;
+    expect(added.added).toBe(true);
+    expect(JSON.stringify(added)).not.toContain(friend.memberId);
+    expect((await partyState(friend.code, friend.memberId, friend.key, 0)).myVotes).toContain("ramen");
+    // The host votes too: with two people, that's a match.
+    await recordSwipe(host.code, host.memberId, host.key, "ramen", "go");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBe("ramen");
+  });
+
+  it("adding a place that's already in the list just votes for it", async () => {
+    const host = await createParty("Ana", [card("x")]);
+    const r = await addPlace(host.code, host.memberId, host.key, { ...card("x2"), placeId: "x" });
+    expect(r).toEqual({ id: "x", existed: true });
+    const s = await partyState(host.code, host.memberId, host.key, 0);
+    expect(s.deck).toHaveLength(1);
+    expect(s.myVotes).toEqual(["x"]);
+  });
+
+  it("takes a vote back when it's changed to a pass", async () => {
+    const host = await createParty("Ana", [card("x")]);
+    await recordSwipe(host.code, host.memberId, host.key, "x", "go");
+    await recordSwipe(host.code, host.memberId, host.key, "x", "skip");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).myVotes).toEqual([]);
+  });
 });
+

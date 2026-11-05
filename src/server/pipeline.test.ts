@@ -49,6 +49,11 @@ function place(id: string, extra: Partial<Place> = {}): Place {
     nextCloseTime: null,
     photoName: null,
     photoAuthor: null,
+    photos: [],
+    storefront: null,
+    phone: null,
+    phoneDial: null,
+    reservable: null,
     summary: null,
     servesVegetarianFood: null,
     takeout: null,
@@ -283,5 +288,27 @@ describe("runPipeline: never gives up", () => {
     const { picks, events } = await run();
     expect(events.at(-1)).toEqual({ type: "done" });
     expect(picks.map((p) => p.id)).toEqual(expect.arrayContaining(["a", "p1"]));
+  });
+});
+
+describe("runPipeline: photos and contact", () => {
+  it("passes the food-first photos, storefront, phone and reservations to the pick", async () => {
+    places.list = [
+      place("a", {
+        photoName: "places/a/photos/v1",
+        photoAuthor: "Sam",
+        photos: [{ name: "places/a/photos/v1", author: "Sam" }, { name: "places/a/photos/cover", author: "A" }],
+        storefront: { name: "places/a/photos/cover", author: "A" },
+        phone: "(415) 555-0134",
+        phoneDial: "+14155550134",
+        reservable: true,
+      }),
+      ...places.list.slice(1),
+    ];
+    const { picks } = await run();
+    const a = picks.find((p) => p.id === "a")!;
+    expect(a.photos).toHaveLength(2);
+    expect(a.storefront).toMatchObject({ kind: "url", url: expect.stringContaining("cover") });
+    expect(a).toMatchObject({ phone: "(415) 555-0134", phoneDial: "+14155550134", reservable: true });
   });
 });

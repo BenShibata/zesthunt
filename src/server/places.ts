@@ -17,6 +17,7 @@ export interface Place {
   websiteUri: string | null;
   openNow: boolean | null;
   nextCloseTime: string | null;
+  /** The photo shown first: our best guess at the food (see `foodFirst`). */
   photoName: string | null;
   /** The photographer's name, shown with the photo as Google requires. */
   photoAuthor: string | null;
@@ -29,6 +30,20 @@ export interface Place {
   ratingCount: number | null;
   /** The place's Google Maps page (menu, photos, reviews). */
   mapsUri: string | null;
+  /** Up to 5 photos, food-first, for flipping through on the card. */
+  photos: PlacePhoto[];
+  /** Google's cover photo, usually the storefront: shown in the details. */
+  storefront: PlacePhoto | null;
+  /** "(415) 555-0134" to show, "+1 415-555-0134" to dial. */
+  phone: string | null;
+  phoneDial: string | null;
+  /** Google says it takes reservations. null = unknown. */
+  reservable: boolean | null;
+}
+
+export interface PlacePhoto {
+  name: string;
+  author: string | null;
 }
 
 const FIELD_MASK = [
@@ -54,6 +69,10 @@ const FIELD_MASK = [
   "places.rating",
   "places.userRatingCount",
   "places.googleMapsUri",
+  // Same tier again: for "Call to reserve" on the journey screen.
+  "places.nationalPhoneNumber",
+  "places.internationalPhoneNumber",
+  "places.reservable",
 ].join(",");
 
 const INCLUDED_TYPES = ["restaurant", "cafe", "bakery", "meal_takeaway", "sandwich_shop", "ice_cream_shop", "dessert_shop"];
@@ -85,11 +104,38 @@ interface RawPlace {
   rating?: number;
   userRatingCount?: number;
   googleMapsUri?: string;
+  nationalPhoneNumber?: string;
+  internationalPhoneNumber?: string;
+  reservable?: boolean;
+}
+
+const squash = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+/**
+ * Google doesn't say which photos show food, so this is a best guess, free of charge:
+ * the first photo is Google's cover (most often the storefront), so it goes last; photos
+ * posted by visitors come first, since diners mostly photograph their plates; the
+ * business's own photos come after them.
+ */
+export function foodFirst(raw: RawPlace["photos"], placeName: string): { photos: PlacePhoto[]; storefront: PlacePhoto | null } {
+  const all = (raw ?? [])
+    .filter((p) => p.name)
+    .map((p) => ({ name: p.name, author: p.authorAttributions?.[0]?.displayName?.slice(0, 80) ?? null }));
+  if (all.length === 0) return { photos: [], storefront: null };
+  const [cover, ...rest] = all;
+  const place = squash(placeName);
+  const byBusiness = (p: PlacePhoto) => {
+    const a = squash(p.author ?? "");
+    return a.length >= 4 && (place.includes(a) || a.includes(place));
+  };
+  const photos = [...rest.filter((p) => !byBusiness(p)), ...rest.filter(byBusiness), cover].slice(0, 5);
+  return { photos, storefront: all.length > 1 ? cover : null };
 }
 
 function toPlace(r: RawPlace): Place | null {
   if (!r.id || !r.location || !r.displayName?.text) return null;
   const p = r.paymentOptions;
+  const { photos, storefront } = foodFirst(r.photos, r.displayName.text);
   return {
     id: r.id,
     name: r.displayName.text,
@@ -103,8 +149,13 @@ function toPlace(r: RawPlace): Place | null {
     websiteUri: r.websiteUri ?? null,
     openNow: r.currentOpeningHours?.openNow ?? null,
     nextCloseTime: r.currentOpeningHours?.nextCloseTime ?? null,
-    photoName: r.photos?.[0]?.name ?? null,
-    photoAuthor: r.photos?.[0]?.authorAttributions?.[0]?.displayName?.slice(0, 80) ?? null,
+    photoName: photos[0]?.name ?? null,
+    photoAuthor: photos[0]?.author ?? null,
+    photos,
+    storefront,
+    phone: r.nationalPhoneNumber?.slice(0, 40) ?? null,
+    phoneDial: r.internationalPhoneNumber?.replace(/[^+\d]/g, "").slice(0, 20) || null,
+    reservable: r.reservable ?? null,
     summary: r.editorialSummary?.text ?? null,
     servesVegetarianFood: r.servesVegetarianFood ?? null,
     takeout: r.takeout ?? null,

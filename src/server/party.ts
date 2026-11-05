@@ -34,6 +34,8 @@ export const NicknameSchema = z
   .transform((s) => s.replace(/[\u0000-\u001f<>]/g, "").trim().slice(0, 20))
   .pipe(z.string().min(1));
 
+const UrlPhoto = z.object({ kind: z.literal("url"), url: z.string().max(600).startsWith("/api/photo?"), attribution: z.string().max(80).optional() });
+
 /** Restaurant card as the client sends it. Anything extra is dropped by Zod. */
 export const PartyCardSchema = z.object({
   id: z.string().max(200),
@@ -70,10 +72,13 @@ export const PartyCardSchema = z.object({
   mapsUrl: z.string().max(500).startsWith("https://").optional(),
   vegetarianOptions: z.boolean().nullable().optional(),
   placeTypes: z.array(z.string().max(40)).max(8).optional(),
-  photo: z.union([
-    z.object({ kind: z.literal("url"), url: z.string().max(600).startsWith("/api/photo?"), attribution: z.string().max(80).optional() }),
-    z.object({ kind: z.literal("mock"), palette: z.tuple([z.string(), z.string(), z.string()]), motif: z.enum(["bowl", "plate", "wrap", "cup"]) }),
-  ]),
+  photo: z.union([UrlPhoto, z.object({ kind: z.literal("mock"), palette: z.tuple([z.string(), z.string(), z.string()]), motif: z.enum(["bowl", "plate", "wrap", "cup"]) })]),
+  photos: z.array(UrlPhoto).max(5).optional(),
+  storefront: UrlPhoto.optional(),
+  phone: z.string().max(40).optional(),
+  phoneDial: z.string().max(20).regex(/^\+?\d+$/).optional(),
+  reservable: z.boolean().nullable().optional(),
+  added: z.boolean().optional(),
 });
 
 export class PartyError extends Error {
@@ -156,6 +161,25 @@ export async function addCards(code: string, memberId: string, key: string, card
   const { size } = await roomStore().deck(code, 0);
   const room = Math.max(0, MAX_DECK - size);
   return roomStore().appendDeck(code, cards.slice(0, room).map((c) => JSON.stringify(c)), meta.expiresAt);
+}
+
+/**
+ * Anyone can add a place they searched for: it goes to the end of everyone's list, marked as
+ * added (never by whom), and counts as their vote. A place already in the list just gets the vote.
+ */
+export async function addPlace(code: string, memberId: string, key: string, card: PartyCard) {
+  const { meta } = await authed(code, memberId, key);
+  const store = roomStore();
+  const deck = await store.deck(code, 0);
+  const existing = deck.cards.map((c) => JSON.parse(c) as PartyCard).find((c) => c.placeId === card.placeId);
+  let id = existing?.id;
+  if (!id) {
+    if (deck.size >= MAX_DECK) throw new PartyError(409, "The list is full. Vote on what's there.");
+    await store.appendDeck(code, [JSON.stringify({ ...card, added: true })], meta.expiresAt);
+    id = card.id;
+  }
+  await recordSwipe(code, memberId, key, id, "go");
+  return { id, existed: Boolean(existing) };
 }
 
 /** Who said go to each card. */

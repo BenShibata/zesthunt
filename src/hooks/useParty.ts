@@ -6,6 +6,8 @@ import { haptic } from "@/lib/haptics";
 import { rankResult, type PartyResult } from "@/lib/partyResults";
 
 const POLL_MS = 2000;
+/** With no match, the reveal is asked for this long before the room ends (polls carry it to everyone). */
+const REVEAL_BEFORE_END_MS = 12_000;
 
 interface Session {
   code: string;
@@ -168,13 +170,39 @@ export function useParty() {
     [auth],
   );
 
-  const swipe = useCallback(
-    (pickId: string, dir: "go" | "skip") => {
+  /** Vote for a place, or take the vote back. Shown at once here; the room hears right after. */
+  const vote = useCallback(
+    (pickId: string, on: boolean) => {
       if (!session) return;
-      void call({ action: "swipe", code: session.code, memberId: session.memberId, key: session.key, pickId, dir }).catch(() => {});
+      setMyVotes((v) => (on ? [...new Set([...v, pickId])] : v.filter((id) => id !== pickId)));
+      void call({ action: "swipe", code: session.code, memberId: session.memberId, key: session.key, pickId, dir: on ? "go" : "skip" }).catch(() => {});
     },
     [session],
   );
+
+  /** Add a place found by searching: to the end of everyone's list, with my vote. */
+  const add = useCallback(
+    async (card: PartyCard) => {
+      if (!session) throw new Error("Not in a party.");
+      const r = await call<{ id: string; existed: boolean }>({ action: "add", code: session.code, memberId: session.memberId, key: session.key, card });
+      setMyVotes((v) => [...new Set([...v, r.id])]);
+      return r;
+    },
+    [session],
+  );
+
+  // When time's nearly up with no match, any phone still here asks for the reveal: the
+  // most-voted place wins. (If nobody voted, the room just ends.)
+  useEffect(() => {
+    if (!session || match) return;
+    const t = setTimeout(
+      () => {
+        if (!matchRef.current) void call({ action: "reveal", code: session.code, memberId: session.memberId, key: session.key }).catch(() => {});
+      },
+      Math.max(0, expiresAt - Date.now() - REVEAL_BEFORE_END_MS),
+    );
+    return () => clearTimeout(t);
+  }, [session, match, expiresAt]);
 
   const addCards = useCallback(
     async (cards: PartyCard[]) => {
@@ -272,7 +300,8 @@ export function useParty() {
     clearEnded: () => setEnded(false),
     create,
     join,
-    swipe,
+    vote,
+    add,
     addCards,
     leave: reset,
   };
