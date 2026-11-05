@@ -18,6 +18,8 @@ export interface Place {
   openNow: boolean | null;
   nextCloseTime: string | null;
   photoName: string | null;
+  /** The photographer's name, shown with the photo as Google requires. */
+  photoAuthor: string | null;
   summary: string | null;
   servesVegetarianFood: boolean | null;
   takeout: boolean | null;
@@ -42,6 +44,8 @@ const FIELD_MASK = [
   "places.currentOpeningHours.openNow",
   "places.currentOpeningHours.nextCloseTime",
   "places.photos.name",
+  // Google requires the photographer's credit wherever a Places photo is shown.
+  "places.photos.authorAttributions",
   "places.editorialSummary",
   "places.servesVegetarianFood",
   "places.takeout",
@@ -73,7 +77,7 @@ interface RawPlace {
   paymentOptions?: PaymentOptions;
   websiteUri?: string;
   currentOpeningHours?: { openNow?: boolean; nextCloseTime?: string };
-  photos?: { name: string }[];
+  photos?: { name: string; authorAttributions?: { displayName?: string }[] }[];
   editorialSummary?: { text?: string };
   servesVegetarianFood?: boolean;
   takeout?: boolean;
@@ -100,6 +104,7 @@ function toPlace(r: RawPlace): Place | null {
     openNow: r.currentOpeningHours?.openNow ?? null,
     nextCloseTime: r.currentOpeningHours?.nextCloseTime ?? null,
     photoName: r.photos?.[0]?.name ?? null,
+    photoAuthor: r.photos?.[0]?.authorAttributions?.[0]?.displayName?.slice(0, 80) ?? null,
     summary: r.editorialSummary?.text ?? null,
     servesVegetarianFood: r.servesVegetarianFood ?? null,
     takeout: r.takeout ?? null,

@@ -106,7 +106,7 @@ async function search(req: PicksRequest, want: number, signal: AbortSignal) {
   if (!isDemo() && !(await dailyLimit("mcp-search", env.mcpDailyLimit)).ok) {
     return { picks, problem: "Zesthunt has reached today's limit for assistant requests. Try again tomorrow, or open zesthunt.com." };
   }
-  for await (const e of runPipeline(req, new Headers(), signal, { rankWithAI: false }) as AsyncGenerator<PicksEvent>) {
+  for await (const e of runPipeline(req, new Headers(), signal, { rankWithAI: false, maxReach: 1 }) as AsyncGenerator<PicksEvent>) {
     if (e.type === "pick") picks.push(e.pick);
     else if (e.type === "need_location") problem = "Couldn't find that area. Ask the user for a nearby neighborhood, cross-streets or ZIP.";
     else if (e.type === "empty") problem = e.message;

@@ -43,9 +43,10 @@ For real places, copy `.env.example` to `.env.local` and fill in:
 
 | Variable | What it's for |
 | --- | --- |
-| `GOOGLE_MAPS_API_KEY` | Places API (New), Routes API, Geocoding API. Server-side only. |
+| `GOOGLE_MAPS_API_KEY` | Places API (New) and Geocoding API (plus Routes API if `USE_ROUTES_API=true`). Server-side only. |
 | `ANTHROPIC_API_KEY` | Ranks and describes picks. Without it, picks use rule-based descriptions from the place type. |
-| `ANTHROPIC_MODEL` | Optional. Defaults to `claude-opus-5-5`. |
+| `ANTHROPIC_MODEL` | Optional. Which model ranks picks: `haiku` (default, about $1 per 1,000 searches), `sonnet` (about $20), `opus` (about $35), `off` (free rule-based picks, no AI), or any full model ID. Rough costs; for comparison, the Google place search is about $35–40 per 1,000 after the free tier. On Vercel, change it under Settings → Environment Variables and redeploy; `/api/health` shows which one is live. |
+| `USE_ROUTES_API` | Optional. `true` uses the paid Google Routes API for walk and drive times. Off by default: times are estimated from distance and shown with "~". |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Party rooms and rate limits. Needed on Vercel; locally, both live in memory. |
 | `MCP_DAILY_LIMIT` | Optional. Most live place searches the `/mcp` connector may run per UTC day, across all callers. Defaults to 2000. |
 
@@ -57,15 +58,17 @@ Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (o
 
 1. **Where:** the device location rounded to ~1 km, else a typed neighborhood/ZIP (Geocoding), else the platform's city-level IP estimate, else ask.
 2. **What's open:**
-   - **With a craving** ("ramen"): Places Text Search for it, open now, near the area. Two or more matches within 1.5 km → walk; otherwise matches within 8 km → drive. No matches → the usual search, and the phone says "Nothing for “ramen” open nearby, so here's what is." Craving searches are never cached.
-   - **Otherwise:** the 20 nearest open places (Nearby Search, 1.5 km). When fewer than 10 are left after the phone's exclude list, it adds the 20 most popular nearby and a Text Search for the mood ("salad poke healthy bowl" for Fresh, and so on). Fewer than 5 → widens to an 8 km drive and says so. "Try a short drive" on the empty screen asks for the 8 km search directly.
+   - **With a craving** ("ramen"): Places Text Search for it, open now, near the area. Two or more matches within 1.5 km → walk; otherwise matches within 8 km → drive. No (more) matches → everything open, starting close by again, and the phone says so ("Nothing for “ramen” open nearby, so here's what is", or "That's every “ramen” place nearby. Here's everything else open.") and drops the craving. Craving searches are never cached.
+   - **Otherwise, ring by ring** (`src/lib/reach.ts`): walking distance (1.5 km), a short drive (8 km), a longer drive (20 km), a long drive (50 km, the Places maximum). In each ring: the 20 nearest (on foot) or most popular (driving) open places. When fewer than 10 are new after the phone's exclude list, it adds the other 20, then a Text Search for the mood ("salad poke healthy bowl" for Fresh, and so on), then the other moods' searches. Still thin (under 5 on foot, under 3 driving) → the next ring out, keeping what it found. The phone sends back the ring it reached, so refills never search closer rings again, and says when it goes farther ("You've seen what's open within walking distance. Now looking a short drive away."). "Try a short drive" asks for the 8 km ring directly. The `/mcp` connector stops at a short drive.
    - Cached per ~1 km area for 5 minutes. The field list includes rating, rating count and the Google Maps link, which are in the same billing tier as the fields already requested.
-3. **How far:** Routes API route matrix (walking), with a distance estimate if it fails.
+3. **How far:** estimated from straight-line distance by default (free, shown with "~"). With `USE_ROUTES_API=true`, the Routes API route matrix (walking), falling back to the estimate if it fails.
 4. **Rank and describe:** Claude picks only from those places, with output streamed as structured JSON. Each pick is sent to the phone as soon as its object closes, then validated with Zod. Invented IDs, duplicates, "they serve…" claims, and calorie or diet talk are dropped or replaced. If Claude is slower than 2.5 s for the first pick, a rule-based pick shows first.
 
 Prompts and the output schema are in [`src/server/prompts.ts`](src/server/prompts.ts). Claude never receives coordinates, addresses or IPs.
 
-Photos go through `/api/photo` so the key stays server-side and the browser never contacts Google. Each one is a billed Places Photo call, so the route is rate-limited (120 a minute per IP) and the browser may keep a photo for an hour (`private`, so no CDN copies).
+Photos go through `/api/photo` so the key stays server-side and the browser never contacts Google. Each one is a billed Places Photo call, so the route is rate-limited (120 a minute per IP) and the browser may keep a photo for an hour (`private`, so no CDN copies). A card's photo loads only after the card has been on screen for about a second, so quickly skipped picks cost nothing. Real places show Google's required credit on the photo: the photographer's name and "Google Maps".
+
+`GET /api/health` reports what the deployment is running on (places, walk times, ranking, rooms) and returns 503 if it has fallen back to demo places or in-memory rooms. Point an uptime monitor at it.
 
 ### Limits
 
@@ -80,12 +83,12 @@ Little touches along the way: the first card of a session leans left and right o
 The first screen is one pick and three buttons: **Another**, **search** and **Let's go**. Nothing to set up. Options arrive when behaviour says they'd help:
 
 1. **Open:** the photo, the walk time, the dish, the place and when it closes. Everything else (what you eat, parties, privacy receipt, area, steering) is in the **⋯** menu. The ⋯ shows a small count when food choices are on.
-2. **After two skips in a row:** a **"Not quite? Steer the next picks"** row slides in under the logo: **Lighter, Heartier, Quicker, Cheaper, A treat** (the five moods, worded as a nudge), **Surprise me**, **Can't eat this** and **Somewhere else**. One tap closes it; ✕ hides it for a few more skips. It's always in the menu as "Steer the picks".
+2. **After three skips in a row:** one small chip appears over the photo with a single guess from what the last three skips have in common (`src/lib/steer.ts`): "Not quite? **Something cheaper?**" if most were pricey, "Something quicker?" if most were far, otherwise the other way from what they lean toward (heavy skips → "Something lighter?"), or "Surprise me?" when there's no clear lean. One tap steers, with a short vibration, a soft wash of colour over the next pick and "Lighter it is. New picks on the way." The sliders button opens the full row (**Lighter, Heartier, Quicker, Cheaper, A treat, Surprise me**). An ignored chip fades after 6 seconds and stays away for four more skips, and it never shows while the details are open. "Can't eat here?" now lives in a pick's details, and "Somewhere else" on the area line and in the menu. The full row is always in the menu as "Steer the picks".
    - **Can't eat this** skips the pick and opens "What do you eat?" with what that dish hints at offered first ("Based on this pick, maybe: No meat or fish / Keep away from shellfish"). So food needs are asked for when they matter, not up front.
 3. **Lingering on a pick** (4 seconds) or tapping **Details** opens the rest: rating, price, payment, the "More like this" chips and the plate estimate.
 4. **After Let's go:** if no allergies are set, **"Anything to keep away from?"** with one-tap chips (picks refresh when you go back), and **"Eating with others? Decide together"**, which opens a party with this pick in the deck.
 
-The area line appears only when it matters: a rough IP guess ("San Francisco (approx.) · Change"), a widened drive, or an active craving.
+The area line appears only when it matters: a rough IP guess ("San Francisco (approx.) · Change"), a search that has gone farther than a walk ("· short drive", "· longer drive"), or an active craving.
 
 ## Finding the right food
 
@@ -95,7 +98,8 @@ The area line appears only when it matters: a rough IP guess ("San Francisco (ap
 - **Menu, photos and reviews:** a link on the locked-in screen opens the place on Google Maps.
 - **Every chip is a way forward:** the dish type and health labels on the card are buttons. "More noodles" searches for noodles nearby, and "Protein", "Veg" and "Whole grain" search for high-protein, veggie and whole-grain places. They set the craving, so ✕ on the craving chip goes back to plain picks. (In a party they're plain labels, since cravings are solo-only.)
 - **Notices float, nothing jumps:** "Got it: fewer salads" and other notices appear over the top of the photo, in place of the swipe-count badge, and **Back** sits in the photo's top-left corner whenever there's a pick to return to. Neither pushes the card or the buttons around.
-- **Out of picks:** the empty screen offers a short drive (when on foot), other directions (Heartier, Quicker…), clearing the craving, or ordering in, instead of a dead end.
+- **All about the place:** opened details scroll on their own (the photo stays the swipe surface): Google's short description, the address and how far, hours, takeout / delivery / vegetarian options, and links to the menu, photos and reviews on Google Maps and to the restaurant's site. Only what Places reports is shown.
+- **Never out of picks:** refills go one ring farther whenever the closer ones have been seen, and say so. After the farthest ring, the hunt goes round again: "That's everything open around you. Here's a second look at the ones you passed." Each passed place comes back once per round, marked "Second look", in the order first shown (with skip signals still applied); only a place that would now close before you got there is left out. The empty screen (short drive, other directions, ordering in) is left for when nothing at all is open within 50 km.
 
 ## The queue
 
@@ -168,12 +172,12 @@ Test it locally with the MCP Inspector (`npx @modelcontextprotocol/inspector`, t
 | Another (skip) | swipe left / **Another** | ← |
 | Back to the previous pick | **Back** in the photo's top-left corner | Backspace |
 | More like this | tap a chip on the card ("More noodles", "Veg") | Tab to it, Enter |
-| Steer (Lighter, Heartier…) | **Not quite?** row after two skips, or ⋯ → Steer the picks | Tab to it, Enter |
+| Steer (Lighter, Heartier…) | **Not quite?** chip after three skips (sliders for all choices), or ⋯ → Steer the picks | Tab to it, Enter |
 | See details | tap **Details**, or linger on a pick | Tab to it, Enter |
 | What you eat and allergies | ⋯ → **What I eat** (a small count shows how many choices are on, never the choices themselves), or **Can't eat this** | Tab to it, Enter |
 | Start a hunt party | ⋯ → **Decide with friends**, or after Let's go | Tab to it, Enter |
 | Search a craving | tap the search button (center) | Tab to it, Enter |
-| Surprise (wildcard) | **Surprise me** in the Not quite? row, or shake the phone | Tab to it, Enter |
+| Surprise (wildcard) | **Surprise me** in the full steer row, or shake the phone | Tab to it, Enter |
 | Speak a craving | hold the search button (it turns into a mic while listening) | (typing is the keyboard path) |
 
 ## Project layout

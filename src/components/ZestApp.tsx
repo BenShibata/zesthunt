@@ -19,6 +19,9 @@ import { PickCard, PickSkeleton } from "./PickCard";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
+import { reachAt } from "@/lib/reach";
+import { secondLookRound, seenIds } from "@/lib/secondLook";
+import { steerGuess, type SteerGuess } from "@/lib/steer";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
 import { InviteSheet, JoinScreen, PartyBar, PartyResults, PartyWaiting } from "./Party";
@@ -42,8 +45,19 @@ function clearHash() {
 const IDLE_MS = 10 * 60 * 1000;
 /** Lingering this long on a pick opens its details: interest earns more detail. */
 const DWELL_MS = 4000;
-/** Skips in a row before "Not quite?" offers to steer. */
-const SKIPS_BEFORE_NUDGE = 2;
+/** Skips in a row before "Not quite?" offers its one best guess. */
+const SKIPS_BEFORE_NUDGE = 3;
+/** An ignored guess fades after this long, and waits this many more skips before coming back. */
+const HINT_MS = 6000;
+const HINT_REST_SKIPS = 4;
+/** The colour a steer washes over the next pick. */
+const WASH: Record<Mood, string> = {
+  fresh: "var(--color-teal-bright)",
+  comfort: "var(--color-paprika-bright)",
+  fast: "var(--color-star)",
+  cheap: "var(--color-teal-bright)",
+  treat: "var(--color-social-bright)",
+};
 const PARTY_COACH = "Vote for the places you'd go, or Pass. Votes stay secret until the reveal.";
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
@@ -85,6 +99,9 @@ export function ZestApp() {
   // Start simple: no mood picker, no details. "Not quite?" appears after a couple of skips,
   // and a pick's details open when the person asks or lingers on it.
   const [tuneOpen, setTuneOpen] = useState(false);
+  /** "Not quite? Something lighter?": one guess from the latest skips, in place of the full row. */
+  const [steerHint, setSteerHint] = useState<SteerGuess | null>(null);
+  const [wash, setWash] = useState<{ key: number; mood: Mood } | null>(null);
   const [moodChosen, setMoodChosen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   /** "Can't eat this": what the skipped pick hints at, offered first in the sheet. */
@@ -119,6 +136,12 @@ export function ZestApp() {
   const [returningId, setReturningId] = useState<string | null>(null);
   const [winsCount, setWinsCount] = useState(() => (typeof window === "undefined" ? 0 : readWins().length));
   const widenRef = useRef(false);
+  /** The ring the last search reached (see lib/reach); refills start there. Reset by a fresh search. */
+  const reachRef = useRef(0);
+  /** Mirrors for callbacks that run after a stream event, outside render. */
+  const queueRef = useRef<Pick[]>([]);
+  const indexRef = useRef(0);
+  const secondLooks = useRef(0);
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
@@ -154,9 +177,32 @@ export function ZestApp() {
       dietary: hasDietary(dietRef.current) ? dietRef.current : null,
       craving: cravingRef.current,
       ...(widenRef.current ? { widen: true } : {}),
+      ...(reachRef.current > 0 ? { reach: reachRef.current } : {}),
     }),
     [dietRef],
   );
+
+  useEffect(() => {
+    queueRef.current = queue;
+    indexRef.current = index;
+  }, [queue, index]);
+
+  /**
+   * Every ring has been searched and the person is at the end: go round again with the
+   * places they passed, rather than a dead end. Returns false if there's nothing to show.
+   */
+  const appendSecondLook = useCallback((from: number) => {
+    const round = secondLookRound(skipped.current, queueRef.current.slice(from), Date.now());
+    if (round.length === 0) return false;
+    secondLooks.current += 1;
+    setQueue((q) => [...q, ...round]);
+    setNotice(
+      secondLooks.current === 1
+        ? "That's everything open around you. Here's a second look at the ones you passed."
+        : "Round again: the ones you passed.",
+    );
+    return true;
+  }, []);
 
   /**
    * Streams picks from the server. "replace" starts a fresh queue (first pick shows as
@@ -173,14 +219,28 @@ export function ZestApp() {
       const onEvent = (e: PicksEvent) => {
         if (ctrl.signal.aborted) return;
         switch (e.type) {
-          case "meta":
+          case "meta": {
             setFeedMode(e.mode);
             setLastMeta(e);
-            if (e.sparse && !opts.append) setNotice("Not much open within walking distance, so these are a short drive.");
-            if (e.cravingMatched === false && !opts.append && cravingRef.current) {
-              setNotice(`Nothing for “${cravingRef.current}” open nearby, so here’s what is.`);
+            const from = reachAt(reachRef.current).label;
+            if (typeof e.reach === "number") reachRef.current = e.reach;
+            // Going farther is never silent: say where the new picks are.
+            if (e.sparse) {
+              const to = reachAt(reachRef.current).label;
+              setNotice(opts.append ? `You've seen what's open within ${from}. Now looking ${to} away.` : `Not much open within ${from}, so these are ${to} away.`);
+            }
+            if (e.cravingMatched === false && cravingRef.current) {
+              setNotice(
+                opts.append
+                  ? `That's every “${cravingRef.current}” place nearby. Here's everything else open.`
+                  : `Nothing for “${cravingRef.current}” open nearby, so here’s what is.`,
+              );
+              // The search moved on from the craving, so refills shouldn't keep asking for it.
+              cravingRef.current = null;
+              setCraving(null);
             }
             break;
+          }
           case "pick":
             got++;
             firstOfSession.current = false;
@@ -215,6 +275,8 @@ export function ZestApp() {
             break;
           case "empty":
             exhausted.current.add(m);
+            // Waiting at the end of the queue: go round again instead of stopping.
+            if (opts.append && indexRef.current >= queueRef.current.length && appendSecondLook(indexRef.current)) break;
             if (got === 0) {
               setFeed((f) => (opts.append && f.status === "ready" ? f : { status: "empty", message: e.message, suggestion: e.suggestion }));
             }
@@ -223,7 +285,10 @@ export function ZestApp() {
             if (got === 0) setFeed((f) => (opts.append && f.status === "ready" ? f : { status: "error", message: e.message }));
             break;
           case "done":
-            if (opts.append && got === 0) exhausted.current.add(m);
+            if (opts.append && got === 0) {
+              exhausted.current.add(m);
+              if (indexRef.current >= queueRef.current.length) appendSecondLook(indexRef.current);
+            }
             if (!opts.append) returnTried.current = true;
             break;
         }
@@ -239,11 +304,14 @@ export function ZestApp() {
           if (inflight.current === ctrl) setRefilling(false);
         });
     },
-    [baseQuery],
+    [baseQuery, appendSecondLook],
   );
 
   const load = useCallback(
     (m: Mood, extra: Partial<PicksQuery> = {}) => {
+      // A fresh search starts close by again.
+      reachRef.current = 0;
+      secondLooks.current = 0;
       exhausted.current.delete(m);
       setQueue([]);
       setIndex(0);
@@ -302,16 +370,28 @@ export function ZestApp() {
     setIndex((i) => i + 1);
     setSwipes((s) => s + 1);
     skipsSinceNudge.current += 1;
-    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
+    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE && !tuneOpen) setSteerHint(steerGuess(skipped.current, mood));
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
+    // Once every ring has been searched, the end of the queue starts a second look instead.
     const left = queue.length - (index + 1);
     if (left <= REFILL_AT && !refilling && !exhausted.current.has(mood)) {
-      const exclude = [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)];
       setRefilling(true);
-      fetchQueue(mood, next, { append: true, extra: { exclude } });
+      fetchQueue(mood, next, { append: true, extra: { exclude: seenIds([queue, skipped.current]) } });
+    } else if (left === 0 && exhausted.current.has(mood)) {
+      appendSecondLook(index + 1);
     }
-  }, [current, index, signals, queue, refilling, mood, fetchQueue]);
+  }, [current, index, signals, queue, refilling, mood, fetchQueue, appendSecondLook, tuneOpen]);
+
+  // An ignored guess bows out quietly and rests for a few skips.
+  useEffect(() => {
+    if (!steerHint) return;
+    const t = setTimeout(() => {
+      setSteerHint(null);
+      skipsSinceNudge.current = -HINT_REST_SKIPS;
+    }, HINT_MS);
+    return () => clearTimeout(t);
+  }, [steerHint]);
 
   const soloGo = useCallback(() => {
     if (!current) return;
@@ -364,7 +444,7 @@ export function ZestApp() {
     } else if (feed.status === "ready" || feed.status === "loading") {
       setFeed({ status: "loading" });
     }
-    const exclude = [...fit.map((p) => p.id), ...skipped.current.map((p) => p.id)];
+    const exclude = seenIds([fit, skipped.current]);
     setRefilling(true);
     fetchQueue(m, signals, { append: true, extra: { exclude } });
   };
@@ -377,7 +457,7 @@ export function ZestApp() {
     let taken = false;
     streamPicks(
       // A wildcard is about stepping outside the current search, so it leaves the craving out.
-      { ...baseQuery(wildMood, signals), craving: null, exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
+      { ...baseQuery(wildMood, signals), craving: null, exclude: seenIds([queue, skipped.current]) },
       (e) => {
         if (e.type === "meta") setLastMeta(e);
         if (taken || e.type !== "pick") return;
@@ -862,7 +942,7 @@ export function ZestApp() {
       ? {
           label: lastMeta.areaSource === "device" ? "you" : (lastMeta.areaLabel ?? "you"),
           approx: lastMeta.areaSource === "ip",
-          drive: lastMeta.mode === "drive",
+          farther: lastMeta.mode === "drive" ? reachAt(lastMeta.reach ?? 1).label : null,
         }
       : null;
 
@@ -889,12 +969,15 @@ export function ZestApp() {
   // "Not quite?" answers. Each closes the row; skipping twice more brings it back.
   const settleNudge = (wait = 0) => {
     setTuneOpen(false);
+    setSteerHint(null);
     skipsSinceNudge.current = -wait;
   };
   const nudgeMood = (m: Mood) => {
     settleNudge();
     setMoodChosen(true);
-    setNotice(`${NUDGE_LABEL[m]} it is.`);
+    haptic(12);
+    setWash((w) => ({ key: (w?.key ?? 0) + 1, mood: m }));
+    setNotice(`${NUDGE_LABEL[m]} it is. New picks on the way.`);
     if (m === mood) load(m);
     else changeMood(m);
   };
@@ -904,6 +987,14 @@ export function ZestApp() {
     settleNudge();
     soloSkip();
     openDiet();
+  };
+  const takeHint = () => {
+    if (!steerHint) return;
+    if (steerHint.kind === "mood") nudgeMood(steerHint.mood);
+    else {
+      settleNudge();
+      onWildcardTap();
+    }
   };
   const openArea = () => {
     settleNudge();
@@ -1036,6 +1127,15 @@ export function ZestApp() {
         steering is offered), then "Back" on the left whenever there's a pick to return to,
         and notices on the right (in place of the swipe badge), under the row if it's open.
       */}
+      {wash && (
+        <div
+          key={wash.key}
+          aria-hidden="true"
+          onAnimationEnd={() => setWash(null)}
+          className="animate-wash pointer-events-none absolute inset-0 z-10"
+          style={{ background: `radial-gradient(circle at 50% 30%, color-mix(in srgb, ${WASH[wash.mood]} 40%, transparent), transparent 70%)` }}
+        />
+      )}
       {!receiptOpen && !areaOpen && (
         <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex flex-col gap-2 p-3">
           {steering && (
@@ -1053,8 +1153,6 @@ export function ZestApp() {
                         onWildcardTap();
                       }
                 }
-                onCantEat={!inParty && current ? cantEat : undefined}
-                onElsewhere={inParty ? undefined : openArea}
                 onClose={() => settleNudge(1)}
                 onBack={canGoBack ? rewind : undefined}
               />
@@ -1084,6 +1182,26 @@ export function ZestApp() {
               )}
             </div>
           </div>
+          {/* One guess, small and out of the way; never while someone is reading the details. */}
+          {steerHint && !steering && !inParty && current && expandedId !== current.id && (
+            <div className="animate-rise pointer-events-auto inline-flex h-11 items-center self-start rounded-full bg-black/60 text-sm font-semibold text-white shadow-lg backdrop-blur-md">
+              <button type="button" onClick={takeHint} className="inline-flex h-11 items-center gap-1.5 rounded-full pr-2.5 pl-3.5 transition hover:bg-white/10 active:scale-95">
+                <span className="font-medium text-white/60">Not quite?</span> {steerHint.text}
+              </button>
+              <span aria-hidden="true" className="h-5 w-px bg-white/20" />
+              <button
+                type="button"
+                onClick={() => {
+                  setSteerHint(null);
+                  setTuneOpen(true);
+                }}
+                aria-label="More ways to steer the picks"
+                className="grid size-11 place-items-center rounded-full text-white/70 transition hover:text-white"
+              >
+                <SlidersIcon size={16} />
+              </button>
+            </div>
+          )}
         </div>
       )}
       {receiptOpen ? (
@@ -1141,6 +1259,7 @@ export function ZestApp() {
           hint={!hinted && swipes === 0}
           returning={current.id === returningId}
           onHinted={() => setHinted(true)}
+          onCantEatHere={cantEat}
         />
       )}
         </>

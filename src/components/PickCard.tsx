@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from "react";
 import type { HealthLabel, Pick } from "@/lib/types";
-import { CLOSING_SOON_MINUTES, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
+import { CLOSING_SOON_MINUTES, distanceText, formatClock, mealFrame, minutesUntil, priceText, ratingText } from "@/lib/time";
 import { PickPhoto } from "./PickPhoto";
 import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { CarIcon, ChevronDownIcon, ClockIcon, LeafIcon, PartyIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, PartyIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import type { useSwipe } from "@/hooks/useSwipe";
 
 interface Props {
@@ -31,6 +31,8 @@ interface Props {
   onCantEat?: () => void;
   /** In a party: a private heads-up for me only ("this looks meat-focused"). Never removes anything. */
   fitNote?: { kind: "food" | "time"; text: string } | null;
+  /** Solo: this place won't work for what I eat. Offered in the details, then asks what you eat. */
+  onCantEatHere?: () => void;
   /** A place you chose before and asked to remember: offered first, with a badge. */
   returning?: boolean;
   /** First card of the session: lean left and right once to show it can be swiped. */
@@ -45,7 +47,7 @@ const LABEL_QUERY: Record<HealthLabel, string> = {
   "Whole grain": "whole grain bowl",
 };
 
-export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, returning, fitNote }: Props) {
+export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expanded = true, onExpand, voted, hint, onHinted, onCantEat, onCantEatHere, returning, fitNote }: Props) {
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -98,7 +100,12 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
             </span>
           </div>
         )}
-        {expanded && voted === undefined && !returning && (
+        {pick.secondLook && voted === undefined && !returning && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">Second look</span>
+          </div>
+        )}
+        {expanded && voted === undefined && !returning && !pick.secondLook && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
               {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
@@ -122,11 +129,25 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               </span>
             </p>
           )}
+          {/* Google's terms: Places content shown without a Google map carries a "Google Maps"
+              credit, and a Places photo carries its photographer's name. */}
+          {!pick.placeId.startsWith("mock-") && (
+            <span className="flex min-w-0 max-w-[40%] shrink flex-col items-end text-right text-[11px] leading-tight text-white/75 drop-shadow">
+              {pick.photo.kind === "url" && pick.photo.attribution && <span className="max-w-full truncate">Photo: {pick.photo.attribution}</span>}
+              {/* Never truncated: the "Google Maps" credit has to stay readable. */}
+              <span className="whitespace-nowrap">Google Maps</span>
+            </span>
+          )}
         </div>
       </div>
 
-      {/* Details */}
-      <div key={pick.id} className="animate-rise flex items-start gap-4 px-4 pt-4 pb-2">
+      {/* Details. Opened, they scroll on their own (the photo above stays the swipe surface),
+          so someone curious can read all about the place without leaving the pick. */}
+      <div
+        key={pick.id}
+        className={`animate-rise flex items-start gap-4 px-4 pt-4 pb-2 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
+        {...(expanded ? { tabIndex: 0, "aria-label": `Details about ${pick.name}` } : {})}
+      >
         <div className="min-w-0 flex-1">
           {expanded && <p className="mb-1 text-xs font-semibold tracking-wide text-white/60 uppercase">{mealFrame(now)}</p>}
           <h1 id="pick-title" className="font-display text-[1.75rem] leading-[1.1] font-bold tracking-tight text-white">
@@ -192,6 +213,15 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
               {/* How to pay is a "getting there" detail: not shown while a group is voting. */}
               {voted === undefined && <PaymentLine payment={pick.payment} />}
               <TangentChips pick={pick} onTangent={onTangent} />
+              <AboutPlace pick={pick} closesIn={closesIn} />
+              {onCantEatHere && (
+                <button type="button" onClick={onCantEatHere} className="-ml-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline">
+                  <UtensilsIcon size={14} />
+                  Can&apos;t eat here? Tell us what you eat
+                </button>
+              )}
+              {/* A soft fade at the bottom edge says there's more to scroll to. */}
+              <div aria-hidden="true" className="pointer-events-none sticky -bottom-2 -mt-6 h-6 bg-gradient-to-t from-ink to-transparent" />
             </div>
           ) : (
             onExpand && (
@@ -210,6 +240,67 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
         {expanded && <PlateRing plate={pick.plate} />}
       </div>
     </article>
+  );
+}
+
+/**
+ * Everything else worth knowing before you go, for anyone curious: Google's description,
+ * where it is, hours, what it offers, and links out to the menu, photos and reviews.
+ * Only what's known is shown; nothing is guessed.
+ */
+function AboutPlace({ pick, closesIn }: { pick: Pick; closesIn: number | null }) {
+  const offers = [pick.takeout && "Takeout", pick.delivery && "Delivery", pick.vegetarianOptions && "Vegetarian options"].filter(Boolean) as string[];
+  const row = "flex items-start gap-2";
+  const link = "inline-flex min-h-11 items-center gap-1.5 rounded-full bg-white/10 px-3.5 text-sm font-semibold text-white hover:bg-white/15";
+  return (
+    <section aria-labelledby={`about-${pick.id}`} className="mt-4 border-t border-white/10 pt-3 pb-3 text-sm text-white/80">
+      <h2 id={`about-${pick.id}`} className="text-xs font-semibold tracking-wide text-white/60 uppercase">
+        About {pick.name}
+      </h2>
+      {pick.about && <p className="mt-1.5 text-white/85">{pick.about}</p>}
+      <ul className="mt-2 space-y-1.5">
+        {pick.address && (
+          <li className={row}>
+            <PinIcon size={15} className="mt-0.5 shrink-0 text-white/55" />
+            <span>
+              {pick.address}
+              {!pick.travelUnknown && pick.distanceMeters > 0 && <span className="text-white/55"> · {distanceText(pick.distanceMeters)} away</span>}
+            </span>
+          </li>
+        )}
+        {pick.closesAt && (
+          <li className={row}>
+            <ClockIcon size={15} className="mt-0.5 shrink-0 text-white/55" />
+            <span>
+              Open now, till {formatClock(pick.closesAt)}
+              {closesIn != null && closesIn < 120 && <span className="text-white/55"> · {closesIn} min left</span>}
+            </span>
+          </li>
+        )}
+        {offers.length > 0 && (
+          <li className={row}>
+            <BagIcon size={15} className="mt-0.5 shrink-0 text-white/55" />
+            <span>{offers.join(" · ")}</span>
+          </li>
+        )}
+      </ul>
+      {(pick.mapsUrl || pick.websiteUrl) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {pick.mapsUrl && (
+            <a href={pick.mapsUrl} target="_blank" rel="noopener noreferrer" className={link}>
+              Menu, photos &amp; reviews
+              <ExternalIcon size={13} className="opacity-70" />
+            </a>
+          )}
+          {pick.websiteUrl && (
+            <a href={pick.websiteUrl} target="_blank" rel="noopener noreferrer" className={link}>
+              Website
+              <ExternalIcon size={13} className="opacity-70" />
+            </a>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

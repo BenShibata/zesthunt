@@ -15,6 +15,16 @@ function getClient() {
  * Emits each complete object inside the top-level "picks" array as soon as its
  * closing brace streams in, so the first pick can be shown before the rest are written.
  */
+/** Models that accept the server-side refusal fallback (`fallbacks: "default"`). */
+export function supportsServerFallback(model: string): boolean {
+  return /^claude-(opus-5|fable-5|mythos-5|sonnet-5-5)/.test(model);
+}
+
+/** Older models (Haiku 4.5, the 4.5 generation and before) reject the effort setting. */
+export function supportsEffort(model: string): boolean {
+  return !/^claude-(3|haiku-4|sonnet-4-5|opus-4-5|opus-4-1|opus-4-0|sonnet-4-0|opus-4$|sonnet-4$)/.test(model);
+}
+
 export function createPicksScanner(onObject: (json: string) => void) {
   let buf = "";
   let pos = 0;
@@ -84,15 +94,17 @@ export async function* rankWithClaude(
     }
   });
 
+  const model = env.anthropicModel!;
   const stream = getClient().beta.messages.stream(
     {
-      model: env.anthropicModel,
+      model,
       max_tokens: 8000,
-      betas: ["server-side-fallback-2026-07-01"],
-      // If a safety classifier declines, the API retries on a recommended fallback model.
-      fallbacks: "default",
+      // Where the model supports it, a safety-classifier decline is retried on a recommended
+      // fallback model. Haiku has no server-side fallback; a decline there falls back to the
+      // rule-based picks in the pipeline instead.
+      ...(supportsServerFallback(model) ? { betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" as const } : {}),
       // Ranking ~20 places is a light task and the user is waiting: keep effort low.
-      output_config: { effort: "low", format: betaZodOutputFormat(RankingSchema) },
+      output_config: { ...(supportsEffort(model) ? { effort: "low" as const } : {}), format: betaZodOutputFormat(RankingSchema) },
       system: SYSTEM_PROMPT,
       messages: [{ role: "user", content: buildUserMessage(params) }],
     },
