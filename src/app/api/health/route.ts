@@ -27,7 +27,7 @@ export async function GET() {
   const status = {
     places: isDemo() ? "demo (no GOOGLE_MAPS_API_KEY)" : "google",
     walkTimes: env.useRoutes ? "google routes" : "distance estimate",
-    ranking: env.anthropicKey ? env.anthropicModel : "rule-based (no ANTHROPIC_API_KEY)",
+    ranking: !env.anthropicModel ? "rule-based (ANTHROPIC_MODEL=off)" : env.anthropicKey ? env.anthropicModel : "rule-based (no ANTHROPIC_API_KEY)",
     rooms,
   };
   const ok = !isDemo() && rooms === "upstash";

@@ -1,12 +1,28 @@
 import "server-only";
 
+/**
+ * One setting picks the ranking model: ANTHROPIC_MODEL = haiku (the default), sonnet, opus,
+ * off (free rule-based picks, no AI), or any full model ID. Ranking ~20 places is a light
+ * task, so the smallest model does it well for about a tenth of a cent per search.
+ */
+export const MODEL_SHORTCUTS: Record<string, string> = {
+  haiku: "claude-haiku-5-5",
+  sonnet: "claude-sonnet-5-5",
+  opus: "claude-opus-5-5",
+};
+
+export function rankingModel(raw: string | undefined): string | null {
+  const v = raw?.trim().toLowerCase() || "haiku";
+  if (/^(off|none|rules|false|0)$/.test(v)) return null;
+  return MODEL_SHORTCUTS[v] ?? raw!.trim();
+}
+
 /** Server-side config. Keys never leave the server. */
 export const env = {
   googleKey: process.env.GOOGLE_MAPS_API_KEY || null,
   anthropicKey: process.env.ANTHROPIC_API_KEY || null,
-  // Ranking ~20 places into short picks is a light task: the smallest current model does it
-  // for about a tenth of a cent per search. Set ANTHROPIC_MODEL to use a larger one.
-  anthropicModel: process.env.ANTHROPIC_MODEL || "claude-haiku-5-5",
+  /** The model that ranks picks, or null for the free rule-based picks. See `rankingModel`. */
+  anthropicModel: rankingModel(process.env.ANTHROPIC_MODEL),
   /**
    * Off by default: walk and drive times are estimated from distance (shown with "~"),
    * which costs nothing. Set USE_ROUTES_API=true to pay for Google Routes times instead.

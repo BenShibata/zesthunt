@@ -70,7 +70,7 @@ export async function* runPipeline(
   signal: AbortSignal,
   opts: PipelineOptions = {},
 ): AsyncGenerator<PicksEvent> {
-  const useAI = Boolean(env.anthropicKey) && opts.rankWithAI !== false;
+  const useAI = Boolean(env.anthropicKey && env.anthropicModel) && opts.rankWithAI !== false;
   const [h, m] = req.localTime.slice(-5).split(":").map(Number);
   const frame = mealFrame(new Date(2000, 0, 1, h, m));
   const exclude = new Set(req.exclude ?? []);

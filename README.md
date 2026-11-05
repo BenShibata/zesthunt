@@ -45,7 +45,7 @@ For real places, copy `.env.example` to `.env.local` and fill in:
 | --- | --- |
 | `GOOGLE_MAPS_API_KEY` | Places API (New) and Geocoding API (plus Routes API if `USE_ROUTES_API=true`). Server-side only. |
 | `ANTHROPIC_API_KEY` | Ranks and describes picks. Without it, picks use rule-based descriptions from the place type. |
-| `ANTHROPIC_MODEL` | Optional. Defaults to `claude-haiku-5-5`, the smallest current model (about a tenth of a cent per search). Set a larger model if you want richer descriptions. |
+| `ANTHROPIC_MODEL` | Optional. Which model ranks picks: `haiku` (default, about $1 per 1,000 searches), `sonnet` (about $20), `opus` (about $35), `off` (free rule-based picks, no AI), or any full model ID. Rough costs; for comparison, the Google place search is about $35–40 per 1,000 after the free tier. On Vercel, change it under Settings → Environment Variables and redeploy; `/api/health` shows which one is live. |
 | `USE_ROUTES_API` | Optional. `true` uses the paid Google Routes API for walk and drive times. Off by default: times are estimated from distance and shown with "~". |
 | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` | Party rooms and rate limits. Needed on Vercel; locally, both live in memory. |
 | `MCP_DAILY_LIMIT` | Optional. Most live place searches the `/mcp` connector may run per UTC day, across all callers. Defaults to 2000. |
