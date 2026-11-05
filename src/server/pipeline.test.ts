@@ -9,10 +9,10 @@ vi.mock("./env", () => ({
   isDemo: () => false,
 }));
 
-const places = vi.hoisted(() => ({ list: [] as Place[], popular: [] as Place[], text: {} as Record<string, Place[]>, drive: null as Place[] | null }));
+const places = vi.hoisted(() => ({ list: [] as Place[], popular: [] as Place[], text: {} as Record<string, Place[]>, drive: null as Place[] | null, ring: {} as Record<number, Place[]> }));
 vi.mock("./places", () => ({
   nearbyOpenPlaces: vi.fn(async (_o: unknown, radius: number, rank?: string) =>
-    radius > 2000 ? (places.drive ?? places.list) : rank === "POPULARITY" ? places.popular : places.list,
+    places.ring[radius] ?? (radius > 2000 ? (places.drive ?? places.list) : rank === "POPULARITY" ? places.popular : places.list),
   ),
   textSearchOpenPlaces: vi.fn(async (_o: unknown, query: string) => places.text[query] ?? []),
   geocodeArea: vi.fn(async () => null),
@@ -81,6 +81,7 @@ beforeEach(() => {
   places.popular = [];
   places.text = {};
   places.drive = null;
+  places.ring = {};
   ranked.picks = [];
   ranked.fail = false;
 });
@@ -188,10 +189,10 @@ describe("runPipeline: finding more", () => {
   });
 
   it("searches a short drive when asked, without calling it sparse", async () => {
-    places.drive = [place("d1", { location: FAR }), place("d2", { location: FAR })];
+    places.drive = ["d1", "d2", "d3"].map((id) => place(id, { location: FAR }));
     const { picks, events } = await run({ widen: true });
-    expect(events[0]).toMatchObject({ mode: "drive", sparse: false });
-    expect(picks.map((p) => p.id).sort()).toEqual(["d1", "d2"]);
+    expect(events[0]).toMatchObject({ mode: "drive", sparse: false, reach: 1 });
+    expect(picks.map((p) => p.id).sort()).toEqual(["d1", "d2", "d3"]);
   });
 
   it("leaves out only places that close before you could realistically get there", async () => {
@@ -215,3 +216,64 @@ describe("runPipeline: finding more", () => {
     expect(picks.find((p) => p.id === "a")!.photo).toMatchObject({ kind: "url", attribution: "Sam Lee" });
   });
 });
+
+describe("runPipeline: never gives up", () => {
+  // ~15 km and ~40 km from the origin.
+  const FARTHER = { lat: 37.905, lng: -122.42 };
+  const FARTHEST = { lat: 38.13, lng: -122.42 };
+
+  it("goes one ring farther when what's close by has all been seen, and says so", async () => {
+    places.ring = { 8000: ["d1", "d2", "d3", "d4"].map((id) => place(id, { location: FAR })) };
+    const { picks, events } = await run({ exclude: ["a", "b", "c", "d", "e", "f"] });
+    expect(events[0]).toMatchObject({ type: "meta", mode: "drive", sparse: true, reach: 1 });
+    expect(picks.map((p) => p.id).sort()).toEqual(["d1", "d2", "d3", "d4"]);
+  });
+
+  it("keeps the few places left close by when it has to go farther", async () => {
+    places.ring = { 8000: ["d1", "d2", "d3"].map((id) => place(id, { location: FAR })) };
+    const { picks } = await run({ exclude: ["a", "b", "c", "d"] });
+    expect(picks.map((p) => p.id)).toEqual(expect.arrayContaining(["e", "f", "d1", "d2", "d3"]));
+  });
+
+  it("starts at the ring the phone reached, without searching the closer ones again", async () => {
+    places.ring = { 20000: ["x1", "x2", "x3"].map((id) => place(id, { location: FARTHER })) };
+    const { events } = await run({ reach: 2 });
+    expect(events[0]).toMatchObject({ reach: 2, sparse: false });
+    const radii = vi.mocked(placesApi.nearbyOpenPlaces).mock.calls.map((c) => c[1]);
+    expect(radii.every((r) => r === 20000)).toBe(true);
+  });
+
+  it("tries every mood's search before leaving a ring", async () => {
+    places.list = [];
+    places.text = { "noodles soup comfort food": ["n1", "n2", "n3", "n4", "n5"].map((id) => place(id)) };
+    const { events } = await run({ mood: "fresh" });
+    expect(events[0]).toMatchObject({ mode: "walk", reach: 0 });
+  });
+
+  it("reaches the farthest ring before saying it's seen everything", async () => {
+    places.ring = { 8000: [], 20000: [], 50000: [place("z1", { location: FARTHEST })] };
+    const { picks, events } = await run({ exclude: ["a", "b", "c", "d", "e", "f"] });
+    expect(events[0]).toMatchObject({ reach: 3 });
+    expect(picks.map((p) => p.id)).toEqual(["z1"]);
+
+    const end = await run({ reach: 3, exclude: ["a", "b", "c", "d", "e", "f", "z1"] });
+    expect(end.events.at(-1)).toMatchObject({ type: "empty", message: expect.stringMatching(/a long drive/) });
+  });
+
+  it("lets the assistant connector stop at a short drive", async () => {
+    places.ring = { 8000: [], 20000: [place("x1", { location: FARTHER })] };
+    const events: PicksEvent[] = [];
+    const req = { localTime: "12:30", mood: "fast" as const, location: { lat: 37.77, lng: -122.42 }, exclude: ["a", "b", "c", "d", "e", "f"] };
+    for await (const e of runPipeline(req, new Headers(), new AbortController().signal, { maxReach: 1 })) events.push(e);
+    expect(events.at(-1)).toMatchObject({ type: "empty" });
+    expect(vi.mocked(placesApi.nearbyOpenPlaces).mock.calls.every((c) => c[1] <= 8000)).toBe(true);
+  });
+
+  it("moves on from a craving that's run out to everything open, from close by", async () => {
+    places.text = { ramen: [place("r1")] };
+    const { picks, events } = await run({ craving: "ramen", reach: 1, exclude: ["r1"] });
+    expect(events[0]).toMatchObject({ cravingMatched: false, reach: 0, mode: "walk" });
+    expect(picks.length).toBeGreaterThan(0);
+  });
+});
+

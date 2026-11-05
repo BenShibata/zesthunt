@@ -12,6 +12,8 @@ export interface PicksQuery {
   firstOfSession?: boolean;
   /** Search a short drive away (8 km) instead of a walk. */
   widen?: boolean;
+  /** The ring the last refill reached (see lib/reach), so the next one starts there. */
+  reach?: number;
 }
 
 /** Same rounding as the server: two decimals ≈ 1.1 km. */

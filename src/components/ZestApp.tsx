@@ -19,6 +19,8 @@ import { PickCard, PickSkeleton } from "./PickCard";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
+import { reachAt } from "@/lib/reach";
+import { secondLookRound, seenIds } from "@/lib/secondLook";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
 import { InviteSheet, JoinScreen, PartyBar, PartyResults, PartyWaiting } from "./Party";
@@ -119,6 +121,12 @@ export function ZestApp() {
   const [returningId, setReturningId] = useState<string | null>(null);
   const [winsCount, setWinsCount] = useState(() => (typeof window === "undefined" ? 0 : readWins().length));
   const widenRef = useRef(false);
+  /** The ring the last search reached (see lib/reach); refills start there. Reset by a fresh search. */
+  const reachRef = useRef(0);
+  /** Mirrors for callbacks that run after a stream event, outside render. */
+  const queueRef = useRef<Pick[]>([]);
+  const indexRef = useRef(0);
+  const secondLooks = useRef(0);
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
@@ -154,9 +162,32 @@ export function ZestApp() {
       dietary: hasDietary(dietRef.current) ? dietRef.current : null,
       craving: cravingRef.current,
       ...(widenRef.current ? { widen: true } : {}),
+      ...(reachRef.current > 0 ? { reach: reachRef.current } : {}),
     }),
     [dietRef],
   );
+
+  useEffect(() => {
+    queueRef.current = queue;
+    indexRef.current = index;
+  }, [queue, index]);
+
+  /**
+   * Every ring has been searched and the person is at the end: go round again with the
+   * places they passed, rather than a dead end. Returns false if there's nothing to show.
+   */
+  const appendSecondLook = useCallback((from: number) => {
+    const round = secondLookRound(skipped.current, queueRef.current.slice(from), Date.now());
+    if (round.length === 0) return false;
+    secondLooks.current += 1;
+    setQueue((q) => [...q, ...round]);
+    setNotice(
+      secondLooks.current === 1
+        ? "That's everything open around you. Here's a second look at the ones you passed."
+        : "Round again: the ones you passed.",
+    );
+    return true;
+  }, []);
 
   /**
    * Streams picks from the server. "replace" starts a fresh queue (first pick shows as
@@ -173,14 +204,28 @@ export function ZestApp() {
       const onEvent = (e: PicksEvent) => {
         if (ctrl.signal.aborted) return;
         switch (e.type) {
-          case "meta":
+          case "meta": {
             setFeedMode(e.mode);
             setLastMeta(e);
-            if (e.sparse && !opts.append) setNotice("Not much open within walking distance, so these are a short drive.");
-            if (e.cravingMatched === false && !opts.append && cravingRef.current) {
-              setNotice(`Nothing for “${cravingRef.current}” open nearby, so here’s what is.`);
+            const from = reachAt(reachRef.current).label;
+            if (typeof e.reach === "number") reachRef.current = e.reach;
+            // Going farther is never silent: say where the new picks are.
+            if (e.sparse) {
+              const to = reachAt(reachRef.current).label;
+              setNotice(opts.append ? `You've seen what's open within ${from}. Now looking ${to} away.` : `Not much open within ${from}, so these are ${to} away.`);
+            }
+            if (e.cravingMatched === false && cravingRef.current) {
+              setNotice(
+                opts.append
+                  ? `That's every “${cravingRef.current}” place nearby. Here's everything else open.`
+                  : `Nothing for “${cravingRef.current}” open nearby, so here’s what is.`,
+              );
+              // The search moved on from the craving, so refills shouldn't keep asking for it.
+              cravingRef.current = null;
+              setCraving(null);
             }
             break;
+          }
           case "pick":
             got++;
             firstOfSession.current = false;
@@ -215,6 +260,8 @@ export function ZestApp() {
             break;
           case "empty":
             exhausted.current.add(m);
+            // Waiting at the end of the queue: go round again instead of stopping.
+            if (opts.append && indexRef.current >= queueRef.current.length && appendSecondLook(indexRef.current)) break;
             if (got === 0) {
               setFeed((f) => (opts.append && f.status === "ready" ? f : { status: "empty", message: e.message, suggestion: e.suggestion }));
             }
@@ -223,7 +270,10 @@ export function ZestApp() {
             if (got === 0) setFeed((f) => (opts.append && f.status === "ready" ? f : { status: "error", message: e.message }));
             break;
           case "done":
-            if (opts.append && got === 0) exhausted.current.add(m);
+            if (opts.append && got === 0) {
+              exhausted.current.add(m);
+              if (indexRef.current >= queueRef.current.length) appendSecondLook(indexRef.current);
+            }
             if (!opts.append) returnTried.current = true;
             break;
         }
@@ -239,11 +289,14 @@ export function ZestApp() {
           if (inflight.current === ctrl) setRefilling(false);
         });
     },
-    [baseQuery],
+    [baseQuery, appendSecondLook],
   );
 
   const load = useCallback(
     (m: Mood, extra: Partial<PicksQuery> = {}) => {
+      // A fresh search starts close by again.
+      reachRef.current = 0;
+      secondLooks.current = 0;
       exhausted.current.delete(m);
       setQueue([]);
       setIndex(0);
@@ -305,13 +358,15 @@ export function ZestApp() {
     if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE) setTuneOpen(true);
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
+    // Once every ring has been searched, the end of the queue starts a second look instead.
     const left = queue.length - (index + 1);
     if (left <= REFILL_AT && !refilling && !exhausted.current.has(mood)) {
-      const exclude = [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)];
       setRefilling(true);
-      fetchQueue(mood, next, { append: true, extra: { exclude } });
+      fetchQueue(mood, next, { append: true, extra: { exclude: seenIds([queue, skipped.current]) } });
+    } else if (left === 0 && exhausted.current.has(mood)) {
+      appendSecondLook(index + 1);
     }
-  }, [current, index, signals, queue, refilling, mood, fetchQueue]);
+  }, [current, index, signals, queue, refilling, mood, fetchQueue, appendSecondLook]);
 
   const soloGo = useCallback(() => {
     if (!current) return;
@@ -364,7 +419,7 @@ export function ZestApp() {
     } else if (feed.status === "ready" || feed.status === "loading") {
       setFeed({ status: "loading" });
     }
-    const exclude = [...fit.map((p) => p.id), ...skipped.current.map((p) => p.id)];
+    const exclude = seenIds([fit, skipped.current]);
     setRefilling(true);
     fetchQueue(m, signals, { append: true, extra: { exclude } });
   };
@@ -377,7 +432,7 @@ export function ZestApp() {
     let taken = false;
     streamPicks(
       // A wildcard is about stepping outside the current search, so it leaves the craving out.
-      { ...baseQuery(wildMood, signals), craving: null, exclude: [...queue.map((p) => p.id), ...skipped.current.map((p) => p.id)] },
+      { ...baseQuery(wildMood, signals), craving: null, exclude: seenIds([queue, skipped.current]) },
       (e) => {
         if (e.type === "meta") setLastMeta(e);
         if (taken || e.type !== "pick") return;
@@ -862,7 +917,7 @@ export function ZestApp() {
       ? {
           label: lastMeta.areaSource === "device" ? "you" : (lastMeta.areaLabel ?? "you"),
           approx: lastMeta.areaSource === "ip",
-          drive: lastMeta.mode === "drive",
+          farther: lastMeta.mode === "drive" ? reachAt(lastMeta.reach ?? 1).label : null,
         }
       : null;
 

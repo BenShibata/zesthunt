@@ -54,6 +54,8 @@ export interface Pick {
   timeEstimated?: boolean;
   /** Party cards on a device with no location: no travel time to show. */
   travelUnknown?: boolean;
+  /** Shown again after every ring was searched: a place this person passed earlier. Device only. */
+  secondLook?: boolean;
   distanceMeters: number;
   location: { lat: number; lng: number };
   address: string;
@@ -100,6 +102,8 @@ export type PicksEvent =
       type: "meta";
       mode: FeedMode;
       sparse: boolean;
+      /** The ring (see REACHES in lib/reach) these picks came from. Send it back with the next refill. */
+      reach?: number;
       /** The typed words or the IP city, for the "What we sent" receipt. Null for a device point. */
       areaLabel: string | null;
       areaSource: AreaSource;

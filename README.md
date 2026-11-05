@@ -58,8 +58,8 @@ Locally there is no IP geolocation, so the app asks for a neighborhood or ZIP (o
 
 1. **Where:** the device location rounded to ~1 km, else a typed neighborhood/ZIP (Geocoding), else the platform's city-level IP estimate, else ask.
 2. **What's open:**
-   - **With a craving** ("ramen"): Places Text Search for it, open now, near the area. Two or more matches within 1.5 km → walk; otherwise matches within 8 km → drive. No matches → the usual search, and the phone says "Nothing for “ramen” open nearby, so here's what is." Craving searches are never cached.
-   - **Otherwise:** the 20 nearest open places (Nearby Search, 1.5 km). When fewer than 10 are left after the phone's exclude list, it adds the 20 most popular nearby and a Text Search for the mood ("salad poke healthy bowl" for Fresh, and so on). Fewer than 5 → widens to an 8 km drive and says so. "Try a short drive" on the empty screen asks for the 8 km search directly.
+   - **With a craving** ("ramen"): Places Text Search for it, open now, near the area. Two or more matches within 1.5 km → walk; otherwise matches within 8 km → drive. No (more) matches → everything open, starting close by again, and the phone says so ("Nothing for “ramen” open nearby, so here's what is", or "That's every “ramen” place nearby. Here's everything else open.") and drops the craving. Craving searches are never cached.
+   - **Otherwise, ring by ring** (`src/lib/reach.ts`): walking distance (1.5 km), a short drive (8 km), a longer drive (20 km), a long drive (50 km, the Places maximum). In each ring: the 20 nearest (on foot) or most popular (driving) open places. When fewer than 10 are new after the phone's exclude list, it adds the other 20, then a Text Search for the mood ("salad poke healthy bowl" for Fresh, and so on), then the other moods' searches. Still thin (under 5 on foot, under 3 driving) → the next ring out, keeping what it found. The phone sends back the ring it reached, so refills never search closer rings again, and says when it goes farther ("You've seen what's open within walking distance. Now looking a short drive away."). "Try a short drive" asks for the 8 km ring directly. The `/mcp` connector stops at a short drive.
    - Cached per ~1 km area for 5 minutes. The field list includes rating, rating count and the Google Maps link, which are in the same billing tier as the fields already requested.
 3. **How far:** estimated from straight-line distance by default (free, shown with "~"). With `USE_ROUTES_API=true`, the Routes API route matrix (walking), falling back to the estimate if it fails.
 4. **Rank and describe:** Claude picks only from those places, with output streamed as structured JSON. Each pick is sent to the phone as soon as its object closes, then validated with Zod. Invented IDs, duplicates, "they serve…" claims, and calorie or diet talk are dropped or replaced. If Claude is slower than 2.5 s for the first pick, a rule-based pick shows first.
@@ -88,7 +88,7 @@ The first screen is one pick and three buttons: **Another**, **search** and **Le
 3. **Lingering on a pick** (4 seconds) or tapping **Details** opens the rest: rating, price, payment, the "More like this" chips and the plate estimate.
 4. **After Let's go:** if no allergies are set, **"Anything to keep away from?"** with one-tap chips (picks refresh when you go back), and **"Eating with others? Decide together"**, which opens a party with this pick in the deck.
 
-The area line appears only when it matters: a rough IP guess ("San Francisco (approx.) · Change"), a widened drive, or an active craving.
+The area line appears only when it matters: a rough IP guess ("San Francisco (approx.) · Change"), a search that has gone farther than a walk ("· short drive", "· longer drive"), or an active craving.
 
 ## Finding the right food
 
@@ -98,7 +98,7 @@ The area line appears only when it matters: a rough IP guess ("San Francisco (ap
 - **Menu, photos and reviews:** a link on the locked-in screen opens the place on Google Maps.
 - **Every chip is a way forward:** the dish type and health labels on the card are buttons. "More noodles" searches for noodles nearby, and "Protein", "Veg" and "Whole grain" search for high-protein, veggie and whole-grain places. They set the craving, so ✕ on the craving chip goes back to plain picks. (In a party they're plain labels, since cravings are solo-only.)
 - **Notices float, nothing jumps:** "Got it: fewer salads" and other notices appear over the top of the photo, in place of the swipe-count badge, and **Back** sits in the photo's top-left corner whenever there's a pick to return to. Neither pushes the card or the buttons around.
-- **Out of picks:** the empty screen offers a short drive (when on foot), other directions (Heartier, Quicker…), clearing the craving, or ordering in, instead of a dead end.
+- **Never out of picks:** refills go one ring farther whenever the closer ones have been seen, and say so. After the farthest ring, the hunt goes round again: "That's everything open around you. Here's a second look at the ones you passed." Each passed place comes back once per round, marked "Second look", in the order first shown (with skip signals still applied); only a place that would now close before you got there is left out. The empty screen (short drive, other directions, ordering in) is left for when nothing at all is open within 50 km.
 
 ## The queue
 

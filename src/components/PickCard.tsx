@@ -98,7 +98,12 @@ export function PickCard({ pick, now, swipes, swipe, quietBadge, onTangent, expa
             </span>
           </div>
         )}
-        {expanded && voted === undefined && !returning && (
+        {pick.secondLook && voted === undefined && !returning && (
+          <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">Second look</span>
+          </div>
+        )}
+        {expanded && voted === undefined && !returning && !pick.secondLook && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">
               {swipes === 0 ? "Found instantly" : `Found in ${swipes} swipe${swipes === 1 ? "" : "s"}`}
