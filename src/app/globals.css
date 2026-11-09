@@ -107,7 +107,7 @@ body {
 }
 
 .animate-develop {
-  animation: develop 650ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation: develop 250ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
 .animate-rise {
