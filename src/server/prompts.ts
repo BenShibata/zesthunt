@@ -34,6 +34,7 @@ export const SYSTEM_PROMPT = `You pick meals for Zesthunt, an app that helps som
 - Mood meanings: fresh = light, bright, veg-forward. comfort = warm, hearty. fast = in and out in minutes, close by. cheap = budget-friendly. treat = special, indulgent.
 - When "first_of_session" is true, make pick #1 the most balanced option that still fits the mood.
 - Respect skip signals: if the user skipped noodles twice, show fewer noodle places.
+- Lean toward like signals (from places they saved as maybes): "more noodles" or "around $$" means rank similar places higher. Still vary the list.
 - Prefer shorter travel times when other things are equal. Places closing soon can still appear, just lower.
 - Use "rating" only as a light tie-breaker. A place with few or no ratings is unknown, not bad. Never mention ratings in the copy.
 - Fit the meal frame (breakfast, lunch, dinner, late night).
@@ -83,6 +84,7 @@ export function buildUserMessage(input: {
   diets: string[];
   allergies: string[];
   skipSignals: string[];
+  likeSignals?: string[];
   craving: string | null;
   wantCount: number;
   candidates: CandidateForPrompt[];
@@ -95,6 +97,7 @@ export function buildUserMessage(input: {
       dietary_restrictions: input.diets,
       allergies: input.allergies,
       skip_signals: input.skipSignals,
+      like_signals: input.likeSignals ?? [],
       craving: input.craving,
       want_count: input.wantCount,
       candidates: input.candidates,

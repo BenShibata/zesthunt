@@ -89,6 +89,39 @@ export function applySignals(picks: Pick[], signals: string[]): Pick[] {
   return [...picks.filter((p) => !avoid(p)), ...picks.filter(avoid)];
 }
 
+/**
+ * Turns this session's maybes into "leaning toward" hints: the kinds of food saved, and the
+ * usual price. Runs on the device; only the phrases ("more noodles", "around $$") are sent.
+ */
+export function maybeSignals(maybes: Pick[]): string[] {
+  if (maybes.length === 0) return [];
+  const counts = new Map<string, number>();
+  for (const p of maybes) if (p.category) counts.set(p.category, (counts.get(p.category) ?? 0) + 1);
+  const cats = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => `more ${c}`).slice(0, 3);
+  const prices = maybes.map((p) => p.priceLevel).filter((n): n is NonNullable<typeof n> => n != null);
+  const usual = prices.length > 0 ? Math.round(prices.reduce((a, b) => a + b, 0) / prices.length) : null;
+  return [...cats, ...(usual ? [`around ${"$".repeat(usual)}`] : [])];
+}
+
+/** How much a pick looks like the person's maybes: same kind of food counts most, then price. */
+export function maybeLikeness(p: Pick, signals: string[]): number {
+  let n = 0;
+  for (const s of signals) {
+    if (p.category && s === `more ${p.category}`) n += 2;
+    if (s.startsWith("around ") && p.priceLevel === s.length - "around ".length) n += 1;
+  }
+  return n;
+}
+
+/** Moves picks that look like the person's maybes ahead, keeping order otherwise (nothing is removed). */
+export function applyMaybes(picks: Pick[], signals: string[]): Pick[] {
+  if (signals.length === 0) return picks;
+  return picks
+    .map((p, i) => ({ p, i, score: maybeLikeness(p, signals) }))
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .map((x) => x.p);
+}
+
 /** Picks that fit a mood first, keeping their order within each group. */
 export function orderForMood(picks: Pick[], mood: Pick["moods"][number]): Pick[] {
   return [...picks.filter((p) => p.moods.includes(mood)), ...picks.filter((p) => !p.moods.includes(mood))];

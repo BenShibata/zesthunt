@@ -2,7 +2,7 @@ import "server-only";
 import { z } from "zod";
 import { MOODS, type AreaSource, type Mood, type Pick, type PickPhoto, type PicksEvent, type ThirdParty } from "@/lib/types";
 import { mealFrame } from "@/lib/time";
-import { dietSafeSuggestion, dishCategory } from "@/lib/categories";
+import { dietSafeSuggestion, dishCategory, maybeLikeness } from "@/lib/categories";
 import { buildMockQueue } from "@/lib/mockPicks";
 import { MAX_REACH, REACHES } from "@/lib/reach";
 import { env, isDemo } from "./env";
@@ -27,6 +27,8 @@ export const PicksRequestSchema = z.object({
     .nullable()
     .optional(),
   skipSignals: z.array(z.string().max(60)).max(12).optional(),
+  /** From places the person saved as maybes ("more noodles", "around $$"): lean toward look-alikes. */
+  likeSignals: z.array(z.string().max(60)).max(8).optional(),
   /** What the user typed or said ("something with noodles"). Used for this response only. */
   craving: z.string().max(140).nullable().optional(),
   exclude: z.array(z.string().max(200)).max(300).optional(),
@@ -171,7 +173,7 @@ export async function* runPipeline(
   // A matched craving keeps Google's relevance order; otherwise rank by mood, balance and distance.
   const heuristicOrder = cravingMatched
     ? places.filter((p) => shortlist.includes(p))
-    : rankHeuristically(shortlist, travel, req.mood, firstOfSession);
+    : rankHeuristically(shortlist, travel, req.mood, firstOfSession, req.likeSignals ?? []);
   const make = (p: Place, ranked?: RankedPick): Pick => {
     const pick = buildPick(p, travel.get(p.id)!, mode, ranked);
     return { ...pick, suggestion: dietSafeSuggestion(pick.suggestion, diets) };
@@ -187,6 +189,7 @@ export async function* runPipeline(
           diets,
           allergies,
           skipSignals: req.skipSignals ?? [],
+          likeSignals: req.likeSignals ?? [],
           craving,
           wantCount: WANT_COUNT,
           candidates,
@@ -303,14 +306,16 @@ async function gatherPlaces(
   return { places, reach: maxReach, cravingMatched: false };
 }
 
-function rankHeuristically(places: Place[], travel: Map<string, Travel>, mood: Mood, firstOfSession: boolean): Place[] {
+function rankHeuristically(places: Place[], travel: Map<string, Travel>, mood: Mood, firstOfSession: boolean, likeSignals: string[] = []): Place[] {
   const score = (p: Place) => {
     const prof = profileFor(p);
     const balance = balanceScore(prof.plate);
     const moodFit = prof.moods.includes(mood) ? 1 : 0;
     // A well-rated place nudges up; too few ratings to tell counts as neutral.
     const rated = p.rating != null && (p.ratingCount ?? 0) >= 20 ? (p.rating - 4) * 0.6 : 0;
-    return moodFit * 2 + balance * (firstOfSession ? 2 : 1) + rated - travel.get(p.id)!.minutes / 30;
+    // Look-alikes of the person's maybes move up (same kind of food counts most, then price).
+    const leaning = likeSignals.length > 0 ? maybeLikeness({ category: dishCategory(prof.suggestion, [p.primaryType, ...p.types]), priceLevel: p.priceLevel } as Pick, likeSignals) * 0.8 : 0;
+    return moodFit * 2 + balance * (firstOfSession ? 2 : 1) + rated + leaning - travel.get(p.id)!.minutes / 30;
   };
   return [...places].sort((a, b) => score(b) - score(a));
 }

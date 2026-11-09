@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { cantEatHints, dietSafeSuggestion } from "./categories";
+import { applyMaybes, cantEatHints, dietSafeSuggestion, maybeLikeness, maybeSignals } from "./categories";
+import { buildMockQueue } from "./mockPicks";
+
+const buildMockQueueForMaybes = () => buildMockQueue("fresh", new Date("2026-11-09T19:00:00Z"), { firstOfSession: false, allMoods: true });
 
 describe("dietSafeSuggestion", () => {
   it("leaves suggestions alone with no diet set", () => {
@@ -44,5 +47,24 @@ describe("cantEatHints", () => {
 
   it("offers nothing when the dish gives no hint", () => {
     expect(cantEatHints(pick("Try a quick sit-down lunch here"))).toEqual({ diets: [], allergies: [] });
+  });
+});
+
+describe("maybes", () => {
+  const all = buildMockQueueForMaybes();
+  it("turns maybes into leaning-toward hints: kinds of food first, then the usual price", () => {
+    const noodles = all.filter((p) => p.category === "noodles").slice(0, 1);
+    const sig = maybeSignals(noodles.map((p) => ({ ...p, priceLevel: 2 as const })));
+    expect(sig).toEqual(["more noodles", "around $$"]);
+    expect(maybeSignals([])).toEqual([]);
+  });
+
+  it("moves look-alikes ahead without dropping anything", () => {
+    const sig = ["more noodles"];
+    const out = applyMaybes(all, sig);
+    expect(out).toHaveLength(all.length);
+    const firstOther = out.findIndex((p) => p.category !== "noodles");
+    expect(out.slice(0, firstOther).every((p) => p.category === "noodles")).toBe(true);
+    expect(maybeLikeness({ ...all[0], category: "noodles", priceLevel: 2 }, ["more noodles", "around $$"])).toBe(3);
   });
 });

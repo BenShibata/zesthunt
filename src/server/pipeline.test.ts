@@ -342,3 +342,29 @@ describe("runPipeline: honest headlines", () => {
     expect(picks.find((p) => p.id === "a")).toMatchObject({ guessed: false, suggestion: "Try the tonkotsu ramen" });
   });
 });
+
+describe("runPipeline: maybes", () => {
+  it("leans toward places like the person's maybes, without dropping any", async () => {
+    ranked.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    places.list = [
+      place("a"),
+      place("b"),
+      place("r1", { primaryType: "ramen_restaurant", types: ["ramen_restaurant", "restaurant"] }),
+      place("c"),
+      place("d"),
+      place("e"),
+    ];
+    const plain = (await run()).picks.map((p) => p.id);
+    const leaning = (await run({ likeSignals: ["more noodles"] })).picks.map((p) => p.id);
+    expect(leaning[0]).toBe("r1");
+    expect(leaning.slice().sort()).toEqual(plain.slice().sort());
+  });
+
+  it("tells the ranker what the person is leaning toward", async () => {
+    const rank = await import("./rank");
+    const spy = vi.spyOn(rank, "rankWithClaude");
+    await run({ likeSignals: ["more noodles", "around $$"] });
+    expect(spy.mock.calls[0][0]).toMatchObject({ likeSignals: ["more noodles", "around $$"] });
+  });
+});

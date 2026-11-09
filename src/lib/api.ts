@@ -7,6 +7,8 @@ export interface PicksQuery {
   areaQuery?: string | null;
   dietary?: Dietary | null;
   skipSignals?: string[];
+  /** From places saved as maybes, e.g. "more noodles", "around $$". */
+  likeSignals?: string[];
   exclude?: string[];
   craving?: string | null;
   firstOfSession?: boolean;
