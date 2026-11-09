@@ -1,8 +1,10 @@
 import "server-only";
 import { createHash, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { MAX_DECK, MAX_MEMBERS, ROOM_TTL_MS, roomStore, type StoredMember } from "./partyStore";
+import { MAX_DECK, MAX_MEMBERS, ROOM_TTL_MS, roomStore, type Answer, type StoredMember } from "./partyStore";
 import type { Mood, PartyCard, PartyState } from "@/lib/types";
+import { summarizeWishes, type Wish } from "@/lib/wishes";
+import { ALL_CRAVINGS } from "@/lib/cravings";
 
 /** Friendly names handed out on join, so nobody has to fill in a form. Tap to rename. */
 const FOOD_NAMES = ["Taco", "Ramen", "Dumpling", "Mango", "Biscuit", "Noodle", "Pickle", "Waffle", "Mochi", "Falafel", "Churro", "Kimchi", "Bao", "Pretzel"];
@@ -12,7 +14,7 @@ export function pickName(taken: string[]): string {
   return free.length > 0 ? free[randomInt(free.length)] : `Guest ${taken.length + 1}`;
 }
 
-/** "Go"s needed for a match: everyone in groups of up to 3, all but one in bigger groups (so one holdout can't stall it). */
+/** "Love it"s needed for an instant match: everyone in groups of up to 3, all but one in bigger groups (so one holdout can't stall it). */
 export function matchNeeded(members: number): number {
   return members <= 3 ? members : members - 1;
 }
@@ -79,6 +81,8 @@ export const PartyCardSchema = z.object({
   phoneDial: z.string().max(20).regex(/^\+?\d+$/).optional(),
   reservable: z.boolean().nullable().optional(),
   added: z.boolean().optional(),
+  guessed: z.boolean().optional(),
+  kind: z.string().max(60).optional(),
   sponsored: z.object({ deal: z.string().max(80), url: z.string().max(500).startsWith("https://").optional() }).optional(),
 });
 
@@ -179,19 +183,69 @@ export async function addPlace(code: string, memberId: string, key: string, card
     await store.appendDeck(code, [JSON.stringify({ ...card, added: true })], meta.expiresAt);
     id = card.id;
   }
-  await recordSwipe(code, memberId, key, id, "go");
+  await recordSwipe(code, memberId, key, id, "love");
   return { id, existed: Boolean(existing) };
 }
 
-/** Who said go to each card. */
-function likesFrom(swipes: Record<string, "go" | "skip">, memberIds: string[], unfit: string[] = []): Record<string, string[]> {
-  const likes: Record<string, string[]> = {};
-  for (const [k, dir] of Object.entries(swipes)) {
+/** A member's answer, with the older yes/no read as love/no. */
+export type Vote = "love" | "ok" | "no";
+const asVote = (a: Answer): Vote => (a === "go" ? "love" : a === "skip" ? "no" : a);
+const POINTS: Record<Vote, number> = { love: 2, ok: 1, no: 0 };
+
+type Tally = Record<string, { love: string[]; ok: string[]; no: string[] }>;
+
+/** Everyone's answers per place still in play (removed places can't win, however they were rated). */
+function tallyFrom(swipes: Record<string, Answer>, memberIds: string[], unfit: string[] = []): Tally {
+  const t: Tally = {};
+  for (const [k, a] of Object.entries(swipes)) {
     const [member, pickId] = k.split("|");
-    // A place that doesn't fit someone can't win, however many votes it had.
-    if (dir === "go" && memberIds.includes(member) && !unfit.includes(pickId)) (likes[pickId] ??= []).push(member);
+    if (!memberIds.includes(member) || unfit.includes(pickId)) continue;
+    (t[pickId] ??= { love: [], ok: [], no: [] })[asVote(a)].push(member);
   }
-  return likes;
+  return t;
+}
+
+/** Who's "in" (love or OK) on each place: what the reveal lists. */
+function likesFrom(t: Tally): Record<string, string[]> {
+  return Object.fromEntries(Object.entries(t).map(([id, v]) => [id, [...v.love, ...v.ok]]).filter(([, l]) => l.length > 0));
+}
+
+/** The group's best: most points (love 2, OK 1), then fewer "Not for me", then earliest in the list. Null if nobody's in on anything. */
+export function bestPlace(t: Tally, order: string[]): string | null {
+  let best: string | null = null;
+  let bestKey: [number, number] = [0, 0];
+  for (const id of order) {
+    const v = t[id];
+    if (!v) continue;
+    const pts = v.love.length * POINTS.love + v.ok.length * POINTS.ok;
+    const key: [number, number] = [pts, -v.no.length];
+    if (pts > 0 && (key[0] > bestKey[0] || (key[0] === bestKey[0] && key[1] > bestKey[1]) || !best)) {
+      best = id;
+      bestKey = key;
+    }
+  }
+  return best;
+}
+
+/**
+ * Ends the vote when it can: an instant match when enough people love the same place, or
+ * (faster) as soon as everyone has answered every place in play, the best place wins.
+ */
+async function maybeFinish(code: string, expiresAt: number, lovedId?: string) {
+  const store = roomStore();
+  const [members, swipes, unfit, deck, match] = await Promise.all([store.members(code), store.swipes(code), store.unfit(code), store.deck(code, 0), store.match(code)]);
+  if (match || members.length < 2) return;
+  const ids = members.map((m) => m.id);
+  const t = tallyFrom(swipes, ids, unfit);
+  if (lovedId && (t[lovedId]?.love.length ?? 0) >= matchNeeded(members.length)) {
+    await store.setMatch(code, lovedId, expiresAt);
+    return;
+  }
+  const inPlay = deck.cards.map((c) => (JSON.parse(c) as PartyCard).id).filter((id) => !unfit.includes(id));
+  const everyoneDone = inPlay.length > 0 && ids.every((m) => inPlay.every((id) => swipes[`${m}|${id}`] !== undefined));
+  if (!everyoneDone) return;
+  const best = bestPlace(t, inPlay);
+  if (best) await store.setMatch(code, best, expiresAt);
 }
 
 /**
@@ -201,19 +255,30 @@ function likesFrom(swipes: Record<string, "go" | "skip">, memberIds: string[], u
 export async function markUnfit(code: string, memberId: string, key: string, pickIds: string[]) {
   const { meta } = await authed(code, memberId, key);
   await roomStore().addUnfit(code, pickIds, meta.expiresAt);
+  // Removing the last unanswered place can mean everyone's done.
+  await maybeFinish(code, meta.expiresAt);
 }
 
-/** Records a swipe, then checks for a match: a pick enough members (2+) swiped right on. */
-export async function recordSwipe(code: string, memberId: string, key: string, pickId: string, dir: "go" | "skip") {
+/** Records an answer (or changes it), then checks whether the vote can end. */
+export async function recordSwipe(code: string, memberId: string, key: string, pickId: string, dir: Answer) {
   const { meta } = await authed(code, memberId, key);
-  const store = roomStore();
-  await store.swipe(code, memberId, pickId, dir, meta.expiresAt);
-  if (dir !== "go") return;
-  const [members, swipes, unfit] = await Promise.all([store.members(code), store.swipes(code), store.unfit(code)]);
-  const goes = likesFrom(swipes, members.map((m) => m.id), unfit)[pickId]?.length ?? 0;
-  if (members.length >= 2 && goes >= matchNeeded(members.length)) {
-    await store.setMatch(code, pickId, meta.expiresAt);
-  }
+  await roomStore().swipe(code, memberId, pickId, dir, meta.expiresAt);
+  await maybeFinish(code, meta.expiresAt, asVote(dir) === "love" ? pickId : undefined);
+}
+
+/** A member's wishes (budget, distance, food words from the fixed list). Only a nameless summary is ever shown. */
+export const WishSchema = z.object({
+  price: z.union([z.literal(1), z.literal(2), z.literal(3), z.null()]),
+  reach: z.enum(["walk", "drive"]).nullable(),
+  crave: z
+    .array(z.string().max(30))
+    .max(3)
+    .transform((c) => c.filter((w) => ALL_CRAVINGS.includes(w))),
+});
+
+export async function setWishes(code: string, memberId: string, key: string, wish: Wish) {
+  const { meta } = await authed(code, memberId, key);
+  await roomStore().setWish(code, memberId, JSON.stringify(wish), meta.expiresAt);
 }
 
 /** "Reveal results": the most-liked card wins (earliest in the deck breaks ties) and every vote is shown. Needs at least one "I'm in". */
@@ -221,11 +286,10 @@ export async function decideNow(code: string, memberId: string, key: string) {
   const { meta } = await authed(code, memberId, key);
   const store = roomStore();
   const [members, swipes, deck, unfit] = await Promise.all([store.members(code), store.swipes(code), store.deck(code, 0), store.unfit(code)]);
-  const likes = likesFrom(swipes, members.map((m) => m.id), unfit);
+  const t = tallyFrom(swipes, members.map((m) => m.id), unfit);
   const order = deck.cards.map((c) => (JSON.parse(c) as PartyCard).id);
-  let best: string | null = null;
-  for (const id of order) if ((likes[id]?.length ?? 0) > (best ? likes[best].length : 0)) best = id;
-  if (!best) throw new PartyError(409, "Nobody's said I'm in to anything yet. Keep voting!");
+  const best = bestPlace(t, order);
+  if (!best) throw new PartyError(409, "Nobody's said Love it or OK to anything yet. Keep going!");
   await store.setMatch(code, best, meta.expiresAt);
   return { match: best };
 }
@@ -251,14 +315,29 @@ export async function steerParty(code: string, memberId: string, key: string, mo
 export async function partyState(code: string, memberId: string, key: string, since: number): Promise<PartyState> {
   const { meta } = await authed(code, memberId, key);
   const store = roomStore();
-  const [members, deck, swipes, match, unfit] = await Promise.all([
+  const [members, deck, swipes, match, unfit, wishes] = await Promise.all([
     store.members(code),
     store.deck(code, since),
     store.swipes(code),
     store.match(code),
     store.unfit(code),
+    store.wishes(code),
   ]);
-  const allLikes = likesFrom(swipes, members.map((m) => m.id), unfit);
+  const ids = members.map((m) => m.id);
+  const t = tallyFrom(swipes, ids, unfit);
+  const allLikes = likesFrom(t);
+  const myAnswers: Record<string, Vote> = {};
+  for (const [k, a] of Object.entries(swipes)) {
+    const [m, pickId] = k.split("|");
+    if (m === memberId) myAnswers[pickId] = asVote(a);
+  }
+  const wishList = Object.entries(wishes)
+    .filter(([m]) => ids.includes(m))
+    .map(([, w]) => {
+      const parsed = WishSchema.safeParse(JSON.parse(w));
+      return parsed.success ? parsed.data : null;
+    })
+    .filter((w): w is Wish => w !== null);
   // Progress counts votes on places still in play, so removed ones don't block "done".
   const progress: Record<string, number> = {};
   for (const k of Object.keys(swipes)) {
@@ -274,9 +353,13 @@ export async function partyState(code: string, memberId: string, key: string, si
     deckSize: deck.size,
     progress,
     match,
-    // Secret ballot: other people's votes only leave the server once there's a result.
+    // Secret ballot: other people's answers only leave the server once there's a result.
     likes: match ? allLikes : {},
+    loves: match ? Object.fromEntries(Object.entries(t).map(([id, v]) => [id, v.love]).filter(([, l]) => l.length > 0)) : {},
     myVotes: Object.keys(allLikes).filter((id) => allLikes[id].includes(memberId)),
+    myAnswers,
+    // Wishes only as a nameless summary.
+    wishes: summarizeWishes(wishList),
     needed: matchNeeded(Math.max(2, members.length)),
     extended: Boolean(meta.extended),
     steer: meta.steer ?? null,

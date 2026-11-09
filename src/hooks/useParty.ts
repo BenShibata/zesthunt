@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Mood, PartyCard, PartyMember, PartyState, PartySteer, Pick } from "@/lib/types";
 import { haptic } from "@/lib/haptics";
 import { rankResult, type PartyResult } from "@/lib/partyResults";
+import { NO_WISHES, type Wish, type WishSummary } from "@/lib/wishes";
 
 const POLL_MS = 2000;
 /** With no match, the reveal is asked for this long before the room ends (polls carry it to everyone). */
@@ -40,6 +41,14 @@ export function partyLink(code: string) {
   return `${window.location.origin}/#p=${code}`;
 }
 
+/**
+ * Answers given here that the room hasn't echoed back yet (the poll can land before the
+ * answer does): keep showing them rather than flicker back.
+ */
+function pendingAnswers(mine: Record<string, "love" | "ok" | "no">, server: Record<string, "love" | "ok" | "no">) {
+  return Object.fromEntries(Object.entries(mine).filter(([id]) => !(id in server)));
+}
+
 /** Reads a join code from the share link's #p=CODE (fragments never reach the server). */
 export function codeFromHash(): string | null {
   if (typeof window === "undefined") return null;
@@ -65,6 +74,9 @@ export function useParty() {
   const [result, setResult] = useState<PartyResult | null>(null);
   const [likes, setLikes] = useState<Record<string, string[]>>({});
   const [myVotes, setMyVotes] = useState<string[]>([]);
+  const [myAnswers, setMyAnswers] = useState<Record<string, "love" | "ok" | "no">>({});
+  const [loves, setLoves] = useState<Record<string, string[]>>({});
+  const [wishes, setWishSummary] = useState<WishSummary>(NO_WISHES);
   const [unfit, setUnfit] = useState<string[]>([]);
   const [needed, setNeeded] = useState(2);
   const [extended, setExtended] = useState(false);
@@ -85,6 +97,9 @@ export function useParty() {
     setMatch(null);
     setLikes({});
     setMyVotes([]);
+    setMyAnswers({});
+    setLoves({});
+    setWishSummary(NO_WISHES);
     setUnfit([]);
     setExtended(false);
     setSteer(null);
@@ -170,12 +185,22 @@ export function useParty() {
     [auth],
   );
 
-  /** Vote for a place, or take the vote back. Shown at once here; the room hears right after. */
-  const vote = useCallback(
-    (pickId: string, on: boolean) => {
+  /** Answer a place (Love it / OK / Not for me), or change the answer. Shown at once here; the room hears right after. */
+  const answer = useCallback(
+    (pickId: string, a: "love" | "ok" | "no") => {
       if (!session) return;
-      setMyVotes((v) => (on ? [...new Set([...v, pickId])] : v.filter((id) => id !== pickId)));
-      void call({ action: "swipe", code: session.code, memberId: session.memberId, key: session.key, pickId, dir: on ? "go" : "skip" }).catch(() => {});
+      setMyAnswers((m) => ({ ...m, [pickId]: a }));
+      setMyVotes((v) => (a === "no" ? v.filter((id) => id !== pickId) : [...new Set([...v, pickId])]));
+      void call({ action: "swipe", code: session.code, memberId: session.memberId, key: session.key, pickId, dir: a }).catch(() => {});
+    },
+    [session],
+  );
+
+  /** What would work for me (budget, distance, food words): the room shows only a nameless summary. */
+  const setWishes = useCallback(
+    async (wish: Wish) => {
+      if (!session) return;
+      await call({ action: "wishes", code: session.code, memberId: session.memberId, key: session.key, wish });
     },
     [session],
   );
@@ -186,6 +211,7 @@ export function useParty() {
       if (!session) throw new Error("Not in a party.");
       const r = await call<{ id: string; existed: boolean }>({ action: "add", code: session.code, memberId: session.memberId, key: session.key, card });
       setMyVotes((v) => [...new Set([...v, r.id])]);
+      setMyAnswers((m) => ({ ...m, [r.id]: "love" }));
       return r;
     },
     [session],
@@ -230,6 +256,9 @@ export function useParty() {
         setProgress(s.progress);
         setLikes(s.likes);
         setMyVotes(s.myVotes);
+        setMyAnswers((mine) => ({ ...s.myAnswers, ...pendingAnswers(mine, s.myAnswers) }));
+        setLoves(s.loves);
+        setWishSummary((prev) => (JSON.stringify(prev) === JSON.stringify(s.wishes) ? prev : s.wishes));
         setUnfit((prev) => [...new Set([...prev, ...s.unfit])]);
         setNeeded(s.needed);
         setExtended(s.extended);
@@ -247,7 +276,7 @@ export function useParty() {
           matchRef.current = s.match;
           setMatch(s.match);
           setMatchedCard(deckRef.current.find((c) => c.id === s.match) ?? null);
-          setResult(rankResult(deckRef.current, s.likes, s.members, s.match));
+          setResult(rankResult(deckRef.current, s.likes, s.members, s.match, s.loves));
           haptic([30, 60, 30, 60, 90]);
         }
       } catch (e) {
@@ -274,6 +303,10 @@ export function useParty() {
     nickname: members.find((m) => m.id === session?.memberId)?.nickname ?? null,
     likes,
     myVotes,
+    myAnswers,
+    loves,
+    wishes,
+    setWishes,
     unfit,
     markUnfit,
     needed,
@@ -300,7 +333,7 @@ export function useParty() {
     clearEnded: () => setEnded(false),
     create,
     join,
-    vote,
+    answer,
     add,
     addCards,
     leave: reset,

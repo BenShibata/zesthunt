@@ -7,6 +7,8 @@ import {
   PartyError,
   addCards,
   addPlace,
+  setWishes,
+  WishSchema,
   createParty,
   decideNow,
   extendParty,
@@ -35,7 +37,8 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("extend"), ...Auth }),
   z.object({ action: z.literal("steer"), ...Auth, mood: z.enum(MOODS) }),
   z.object({ action: z.literal("state"), ...Auth, since: z.number().int().min(0).max(1000) }),
-  z.object({ action: z.literal("swipe"), ...Auth, pickId: z.string().max(200), dir: z.enum(["go", "skip"]) }),
+  z.object({ action: z.literal("swipe"), ...Auth, pickId: z.string().max(200), dir: z.enum(["love", "ok", "no", "go", "skip"]) }),
+  z.object({ action: z.literal("wishes"), ...Auth, wish: WishSchema }),
   z.object({ action: z.literal("cards"), ...Auth, cards: z.array(PartyCardSchema).max(40) }),
   z.object({ action: z.literal("add"), ...Auth, card: PartyCardSchema }),
 ]);
@@ -66,6 +69,9 @@ export async function POST(request: Request) {
         return Response.json(await joinParty(body.code, body.nickname), { headers: NO_STORE });
       case "state":
         return Response.json(await partyState(body.code, body.memberId, body.key, body.since), { headers: NO_STORE });
+      case "wishes":
+        await setWishes(body.code, body.memberId, body.key, body.wish);
+        return Response.json({ ok: true }, { headers: NO_STORE });
       case "swipe":
         await recordSwipe(body.code, body.memberId, body.key, body.pickId, body.dir);
         return Response.json({ ok: true }, { headers: NO_STORE });

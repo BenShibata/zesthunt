@@ -19,3 +19,6 @@ export function cravingShortcuts(frame: MealFrame, diets: string[] = []): string
   const veg = diets.some((d) => /veg/i.test(d));
   return BY_FRAME[frame].filter((c) => !(veg && MEATY.test(c)));
 }
+
+/** Every shortcut word, for group wishes: a fixed list, so a room never holds typed text. */
+export const ALL_CRAVINGS: readonly string[] = [...new Set(Object.values(BY_FRAME).flat())].sort();

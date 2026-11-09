@@ -83,6 +83,13 @@ export interface Pick {
   phone?: string;
   phoneDial?: string;
   reservable?: boolean | null;
+  /**
+   * The dish line is our guess from the place's type (no AI ranking ran), so the card leads
+   * with the place and its type instead of presenting the guess as fact.
+   */
+  guessed?: boolean;
+  /** The place's type in words ("Indian restaurant"), when Google gives one. */
+  kind?: string;
   /** A deal the restaurant pays to show on its own card, labeled "Sponsored". Never affects ranking. */
   sponsored?: { deal: string; url?: string };
   /** In a party: someone added this place from a search (never says who). */
@@ -158,8 +165,14 @@ export interface PartyState {
    * are a secret ballot, so nobody's pick sways anyone else's.
    */
   likes: Record<string, string[]>;
-  /** The cards this member said "I'm in" to (their own votes are never secret from them). */
+  /** Who loved each card, by member id. Empty until the reveal, like `likes` (which counts love and OK). */
+  loves: Record<string, string[]>;
+  /** The cards this member is in on (Love it or OK); their own answers are never secret from them. */
   myVotes: string[];
+  /** This member's answer to each card they've answered. */
+  myAnswers: Record<string, "love" | "ok" | "no">;
+  /** The group's wishes, as a nameless summary. */
+  wishes: import("./wishes").WishSummary;
   /** "Go"s a card needs to be a match: everyone in groups of up to 3, all but one in bigger groups. */
   needed: number;
   /** The one-time "+5 minutes" has been used. */

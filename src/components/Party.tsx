@@ -68,7 +68,10 @@ export function InviteSheet({
   onShare,
   onRename,
   onClose,
+  children,
 }: {
+  /** Extra content at the end: the host's own wishes, so starting a group is one sheet, not two. */
+  children?: React.ReactNode;
   code: string;
   link: string;
   nickname: string | null;
@@ -97,7 +100,7 @@ export function InviteSheet({
             Hunt together
           </h2>
           <p className="text-sm text-white/75">
-            Everyone swipes the same picks; it&apos;s a match when the group says go. {memberCount > 1 ? `${memberCount} here so far.` : "Bring your people in:"}
+            Everyone answers the same places: Love it, OK or Not for me. The result shows when everyone&apos;s done. {memberCount > 1 ? `${memberCount} here so far.` : "Bring your people in:"}
           </p>
         </div>
         <button type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-ink">
@@ -162,6 +165,7 @@ export function InviteSheet({
           </p>
         )}
       </div>
+      {children}
     </section>
   );
 }
@@ -186,9 +190,9 @@ function Avatars({ members, meId }: { members: PartyMember[]; meId: string }) {
 }
 
 /**
- * Who's here, the clock, and how the vote ends: at the first match, or with the most-voted
- * place when time's up. No vote counts: anyone can search and add places, so there's no
- * fixed list to finish. When time is short it offers "Reveal now" and a one-time "+5 min".
+ * Who's here, the clock, and how the vote ends: when enough people love the same place, or as
+ * soon as everyone has answered every place (else when time's up). "Wishes" and "+ Add" are
+ * always one tap away; when time is short it offers "Reveal now" and a one-time "+5 min".
  */
 export function PartyBar({
   code,
@@ -201,7 +205,19 @@ export function PartyBar({
   onReveal,
   onExtend,
   onRequest,
+  onWishes,
+  onAdd,
+  wishes,
+  done,
 }: {
+  /** How many people have answered every place (never what they answered). */
+  done?: number;
+  /** Set or change what would work for me. */
+  onWishes?: () => void;
+  /** Search for a place to add to the vote. */
+  onAdd?: () => void;
+  /** The group's wishes as one line ("$$ or less · ramen"), if anyone set some. */
+  wishes?: string;
   /** Ask the group for something different (only where a host can fetch new cards). */
   onRequest?: () => void;
   code: string;
@@ -243,11 +259,23 @@ export function PartyBar({
             "Invite friends to vote."
           ) : (
             <>
-              <span aria-hidden="true">🔒 </span>Secret votes · first match wins
+              <span aria-hidden="true">🔒 </span>
+              {done !== undefined ? `${done} of ${members.length} done` : "Reveals when all done"}
+              <span className="sr-only">. The result shows when everyone&apos;s done; answers stay secret until then.</span>
             </>
           )}
         </span>
-        {onRequest && !lowTime && (
+        {onWishes && !lowTime && (
+          <button type="button" onClick={onWishes} className="h-11 shrink-0 rounded-full bg-white/10 px-3.5 font-semibold text-white hover:bg-white/15">
+            Wishes
+          </button>
+        )}
+        {onAdd && !lowTime && (
+          <button type="button" onClick={onAdd} className="h-11 shrink-0 rounded-full bg-white/10 px-3.5 font-semibold text-white hover:bg-white/15">
+            + Add
+          </button>
+        )}
+        {onRequest && !onWishes && !lowTime && (
           <button type="button" onClick={onRequest} className="h-11 shrink-0 rounded-full bg-white/10 px-4 font-semibold text-white hover:bg-white/15">
             Request
           </button>
@@ -263,6 +291,11 @@ export function PartyBar({
           </button>
         )}
       </div>
+      {wishes && (
+        <p className="truncate pl-2 text-sm text-social-bright" aria-label={`The group's wishes: ${wishes}`}>
+          Group wishes: {wishes}
+        </p>
+      )}
     </div>
   );
 }
@@ -274,10 +307,10 @@ export function PartyBar({
 export function PartyEndOfList({ onSearch, onStartOver, onReveal }: { onSearch: () => void; onStartOver: () => void; onReveal: () => void }) {
   return (
     <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
-      <p className="font-display text-2xl font-bold">You&apos;ve seen every place so far.</p>
-      <p className="text-white/70">The vote ends at the first match, or with the most-voted place when time&apos;s up.</p>
+      <p className="font-display text-2xl font-bold">You&apos;ve answered every place.</p>
+      <p className="text-white/70">The result shows as soon as everyone&apos;s done (or when time&apos;s up). Add a place if nothing&apos;s quite right.</p>
       <button type="button" onClick={onSearch} className="mt-2 h-12 w-full rounded-full bg-social px-6 font-semibold text-white">
-        Search to add a place
+        + Add a place
       </button>
       <button type="button" onClick={onStartOver} className="h-12 w-full rounded-full bg-white/12 px-6 font-semibold text-white">
         Go back through them
@@ -325,12 +358,15 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
         <h1 id="result-title" className="font-display text-4xl leading-tight font-extrabold tracking-tight">
           {winner.card.name}
         </h1>
-        <p className="text-white/80">{winner.card.suggestion}</p>
+        <p className="text-white/80">{winner.card.guessed ? (winner.card.kind ?? "") : winner.card.suggestion}</p>
         {/* Now that the group has chosen, how to pay is worth knowing. */}
         <PaymentLine payment={winner.card.payment} />
         <p className="flex items-center gap-1.5 text-lg font-semibold">
           <HeartIcon size={20} className="text-paprika-bright" />
-          {winner.likers.length} of {voters} voted for it
+          {winner.loved > 0 ? `${winner.loved} love it` : ""}
+          {winner.loved > 0 && winner.likers.length > winner.loved ? " · " : ""}
+          {winner.likers.length > winner.loved ? `${winner.likers.length - winner.loved} OK` : ""}
+          <span className="font-normal text-white/60"> of {voters}</span>
         </p>
         {winner.likers.length > 0 && <p className="text-sm text-white/70">{winner.likers.join(", ")}</p>}
       </section>
@@ -343,9 +379,11 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
             {others.map((o) => (
               <li key={o.card.id} className="flex items-center justify-between gap-3 rounded-2xl bg-white/6 px-4 py-3">
                 <span className="min-w-0 truncate font-semibold">{o.card.name}</span>
-                <span className="flex shrink-0 items-center gap-1 text-sm text-white/75" aria-label={`${o.likers.length} in: ${o.likers.join(", ")}`}>
+                <span className="flex shrink-0 items-center gap-1 text-sm text-white/75" aria-label={`${o.loved} love it, ${o.likers.length - o.loved} OK: ${o.likers.join(", ")}`}>
                   <HeartIcon size={14} />
-                  {o.likers.length}
+                  {o.loved}
+                  <span aria-hidden="true" className="ml-1">👍</span>
+                  {o.likers.length - o.loved}
                 </span>
               </li>
             ))}

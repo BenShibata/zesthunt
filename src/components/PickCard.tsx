@@ -40,8 +40,12 @@ interface Props {
    */
   expanded?: boolean;
   onExpand?: () => void;
-  /** In a party: you voted for this card (others' votes stay secret). */
-  voted?: boolean;
+  /** In a group: your answer to this place (others' stay secret until the reveal). Null = not answered yet. */
+  answer?: "love" | "ok" | "no" | null;
+  /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
+  photoNow?: boolean;
+  /** In a group: the place suits the group's wishes (budget, distance, food words). */
+  fitsGroup?: boolean;
   /** In a party: remove this place for everyone (anonymously) because I can't eat there. */
   onCantEat?: () => void;
   /** In a party: a private heads-up for me only ("this looks meat-focused"). Never removes anything. */
@@ -71,7 +75,9 @@ export function PickCard({
   onTangent,
   expanded = true,
   onExpand,
-  voted,
+  answer,
+  fitsGroup,
+  photoNow,
   hint,
   onHinted,
   onCantEat,
@@ -116,7 +122,7 @@ export function PickCard({
   const gestures = useCardGestures({
     onNext,
     onBack,
-    onPull: voted || !onPull ? undefined : (aim) => onPull(aiming ? aimAt(aim, has) : "journey"),
+    onPull: !onPull ? undefined : (aim) => onPull(aiming ? aimAt(aim, has) : "journey"),
     onRelease: release,
     onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
     disabled,
@@ -223,7 +229,7 @@ export function PickCard({
         <PickPhoto
           key={`${pick.id}-${at}`}
           photo={photo}
-          instant={at > 0}
+          instant={at > 0 || photoNow}
           alt={`Photo ${gallery.length > 1 ? `${at + 1} of ${gallery.length} ` : ""}at ${pick.name}${gallery.length > 1 ? ". Tap for the next photo" : ""}`}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/70" />
@@ -234,9 +240,8 @@ export function PickCard({
             ))}
           </div>
         )}
-        {/* A quiet way back without swiping (Another, beside search, moves on). Always there:
-            on the first pick it says there's nothing back there. */}
-        {(
+        {/* A quiet way back without swiping (Another, beside search, moves on), once there's somewhere to go back to. */}
+        {hasBack && (
           <button
             type="button"
             onClick={onBack}
@@ -262,11 +267,15 @@ export function PickCard({
           NEXT
         </span>
 
-        {/* In a group: your own vote (others' stay secret). "Voted" beside search takes it back. */}
-        {voted && (
+        {/* In a group: your own answer (others' stay secret). Tap another answer below to change it. */}
+        {answer && (
           <div className="pointer-events-none absolute top-3 right-3">
-            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-social/90 px-3 text-sm font-semibold text-white backdrop-blur-md">
-              <span aria-hidden="true">♥</span> You voted
+            <span
+              className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-sm font-semibold text-white backdrop-blur-md ${
+                answer === "love" ? "bg-social/90" : answer === "ok" ? "bg-teal/90" : "bg-black/60"
+              }`}
+            >
+              {answer === "love" ? "♥ You love it" : answer === "ok" ? "👍 You said OK" : "✕ Not for you"}
             </span>
           </div>
         )}
@@ -277,7 +286,7 @@ export function PickCard({
             </span>
           </div>
         )}
-        {pick.secondLook && voted === undefined && !returning && (
+        {pick.secondLook && answer === undefined && !returning && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">Second look</span>
           </div>
@@ -319,37 +328,42 @@ export function PickCard({
       >
         <div className="min-w-0 flex-1">
           {expanded && <p className="mb-1 text-xs font-semibold tracking-wide text-white/60 uppercase">{mealFrame(now)}</p>}
+          {/* The place leads: it's what people decide on. The dish line shows only when it's
+              specific to the place; a guess from the place's type shows the type instead. */}
           <h1 id="pick-title" className="font-display text-[1.75rem] leading-[1.1] font-bold tracking-tight text-white">
-            {pick.suggestion}
+            {pick.name}
           </h1>
           <p id="pick-reason" className="mt-1 text-base text-white/80">
-            {pick.reason}
+            {pick.guessed ? (pick.kind ?? pick.reason) : pick.suggestion}
           </p>
-          <p className="mt-2 line-clamp-2 text-sm text-white/65">
-            <span className="font-medium text-white/90">{pick.name}</span>
-            {expanded && rating && (
+          {/* The decision-makers, up front: rating, price, and how long it's open. */}
+          <p className="mt-1.5 line-clamp-2 text-sm text-white/65">
+            {rating && (
               <>
-                <span aria-hidden="true"> · </span>
-                <span aria-hidden="true" className="text-white/85">
+                <span aria-hidden="true" className="text-white/90">
                   <span className="text-star">★</span> {rating.visual}
                 </span>
-                <span className="sr-only">, {rating.spoken}</span>
-              </>
-            )}
-            {expanded && (
-              <>
+                <span className="sr-only">{rating.spoken}, </span>
                 <span aria-hidden="true"> · </span>
-                <span aria-hidden="true">{price.visual}</span>
-                <span className="sr-only">, {price.spoken}</span>
               </>
             )}
-            {pick.closesAt && !closingSoon && (
+            {pick.priceLevel && (
               <>
+                <span aria-hidden="true" className="text-white/90">
+                  {price.visual}
+                </span>
+                <span className="sr-only">{price.spoken}, </span>
                 <span aria-hidden="true"> · </span>
-                <span className="whitespace-nowrap">Open till {formatClock(pick.closesAt)}</span>
               </>
             )}
+            {pick.closesAt && !closingSoon ? <span className="whitespace-nowrap">Open till {formatClock(pick.closesAt)}</span> : !pick.closesAt && <span>Open now</span>}
           </p>
+          {expanded && !pick.guessed && pick.reason && <p className="mt-1.5 text-sm text-white/70">{pick.reason}</p>}
+          {fitsGroup && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-social/20 px-2.5 py-1 text-sm font-semibold text-social-bright">
+              <span aria-hidden="true">✓</span> Fits the group&apos;s wishes
+            </p>
+          )}
           {/* A sponsor's own deal: paid for by the restaurant, clearly labeled, and only ever on its own card. */}
           {pick.sponsored && (
             <p className="mt-2 flex items-center gap-2 text-sm text-white/90">
@@ -393,7 +407,7 @@ export function PickCard({
           {expanded ? (
             <div className="animate-rise">
               {/* How to pay is a "getting there" detail: not shown while a group is voting. */}
-              {voted === undefined && <PaymentLine payment={pick.payment} />}
+              {answer === undefined && <PaymentLine payment={pick.payment} />}
               <TangentChips pick={pick} onTangent={onTangent} />
               <AboutPlace pick={pick} closesIn={closesIn} />
               {onCantEatHere && (
@@ -413,7 +427,7 @@ export function PickCard({
                 aria-expanded={false}
                 className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
               >
-                Details: rating, price, more like this
+                More about this place
                 <ChevronDownIcon size={15} />
               </button>
             )
