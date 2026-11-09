@@ -102,6 +102,9 @@ export function PickCard({
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
   const rating = ratingText(pick.rating, pick.ratingCount);
+  // Whether the open details are scrolled to their top: then a downward drag there pulls the card.
+  const [scroll, setScroll] = useState({ id: pick.id, top: true });
+  const detailsAtTop = scroll.id === pick.id ? scroll.top : true;
   // Tap the photo to flip through the place's photos (food-first); back to the first on a new pick.
   const [shot, setShot] = useState({ id: pick.id, i: 0 });
   const gallery = pick.photos && pick.photos.length > 1 ? pick.photos : [pick.photo];
@@ -132,6 +135,9 @@ export function PickCard({
     onPull: !onPull ? undefined : (aim) => onPull(aiming ? aimAt(aim, has) : "journey"),
     onRelease: release,
     onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
+    // The details pull like the photo while closed, or open and scrolled to the top; swiping up opens them.
+    panelFree: !expanded || detailsAtTop,
+    onSwipeUp: expanded ? undefined : onExpand,
     disabled,
   });
   const { dx, progress, pull, tension, armed, launching, aim, settle } = gestures;
@@ -139,7 +145,7 @@ export function PickCard({
   const symbol = foodSymbol(pick);
   const tint = { hue: placeHue(pick), symbol };
   const aimed = aimAt(aim, has);
-  const pulling = aiming && pull > 0;
+  const pulling = aiming && (pull > 0 || launching);
   const targets = aimTargets(has);
   // A small tick each time the aim moves to another target, so it can be felt, not just seen.
   const lastAim = useRef<AimKey | null>(null);
@@ -151,8 +157,8 @@ export function PickCard({
     if (lastAim.current && lastAim.current !== aimed) haptic(6);
     lastAim.current = aimed;
   }, [pulling, aimed]);
-  // The card's size, for drawing the arrow from the bow to the aimed target.
-  const cardRef = useRef<HTMLElement>(null);
+  // The card's size, for drawing the bow, the arrow and the targets.
+  const cardRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 390, h: 700, photoH: 480 });
   useEffect(() => {
     const el = cardRef.current;
@@ -164,83 +170,71 @@ export function PickCard({
     ro.observe(el);
     return () => ro.disconnect();
   }, [pick.id]);
-  const targetX = (key: AimKey) => 12 + (targets.indexOf(key) + 0.5) * ((box.w - 24) / targets.length);
-  const TARGET_Y = 64;
-  const bow = { x: box.w / 2 + aim * 0.25, y: Math.max(TARGET_Y + 120, box.photoH - 40) };
-  const tip = { x: targetX(aimed), y: TARGET_Y + 40 };
-  // The arrow grows from the bow toward the target as the pull tightens.
-  const reach = { x: bow.x + (tip.x - bow.x) * Math.max(0.15, tension), y: bow.y + (tip.y - bow.y) * Math.max(0.15, tension) };
-  // Sideways swipes move the whole card (photo and details); pulling moves only the photo, like a bowstring.
-  const photoTransform = launching
-    ? `translate(${aim * 0.6}px, -115%) scale(0.9)`
-    : pull
-      ? `translate(${aim * 0.25}px, ${pull}px) rotate(${aim / 60}deg) scale(${1 - tension * 0.04})`
-      : undefined;
+  // Targets sit in a gentle arc across the top (the middle highest), like a range to aim at.
+  const n = targets.length;
+  const targetPos = (key: AimKey) => {
+    const i = targets.indexOf(key);
+    const off = n > 1 ? (i - (n - 1) / 2) / ((n - 1) / 2) : 0;
+    return { x: 16 + (i + 0.5) * ((box.w - 32) / n), y: 60 + off * off * 26 };
+  };
+  const tip = targetPos(aimed);
+  // The bow sits near the bottom of the photo and follows the aim a little; its string draws back with the pull.
+  const bow = { x: box.w / 2 + aim * 0.3, y: Math.min(box.photoH - 30, Math.max(tip.y + 190, box.photoH * 0.72)) };
+  const nock = { x: bow.x, y: bow.y + 8 + tension * 30 };
+  const arrowEnd = { x: tip.x, y: tip.y + 40 };
+  // The arrow's flight path curves up toward the target.
+  const flight = `M ${nock.x} ${nock.y} Q ${(nock.x + arrowEnd.x) / 2} ${Math.min(nock.y, arrowEnd.y) - 40} ${arrowEnd.x} ${arrowEnd.y}`;
+  const RING = 2 * Math.PI * 35;
+  // The whole card (photo and details) moves with the pull, then flies at the target.
+  const cardTransform = launching
+    ? `translate(${(tip.x - box.w / 2) * 0.7}px, -95%) scale(0.55) rotate(${(tip.x - box.w / 2) / 40}deg)`
+    : dx
+      ? `translateX(${dx}px) rotate(${dx / 50}deg)`
+      : pull
+        ? `translate(${aim * 0.2}px, ${pull}px) rotate(${aim / 80}deg) scale(${1 - tension * 0.03})`
+        : undefined;
 
   return (
+    <div ref={cardRef} className="relative flex min-h-0 flex-1 flex-col">
+    <AimOverlay
+      show={pulling}
+      armed={armed}
+      launching={launching}
+      tension={tension}
+      box={box}
+      targets={targets.map((key) => ({ key, ...targetPos(key), ...TARGETS[key] }))}
+      aimed={aimed}
+      bow={bow}
+      nock={nock}
+      flight={flight}
+      ring={RING}
+      symbol={symbol}
+    />
     <article
       // A new place is a new card: it slides in from the side, so moving on never looks like the same card springing back.
       key={pick.id}
-      ref={cardRef}
       aria-labelledby="pick-title"
       aria-describedby="pick-reason"
       className={`relative flex min-h-0 flex-1 flex-col ${enterFrom === "left" ? "animate-enter-left" : "animate-enter-right"}`}
       style={{
-        transform: dx ? `translateX(${dx}px) rotate(${dx / 50}deg)` : undefined,
-        opacity: settle === "fly" ? 0.4 : undefined,
-        transition: settle === "fly" ? "transform 180ms ease-in, opacity 180ms ease-in" : settle === "spring" ? "transform 220ms ease-out" : "none",
+        transform: cardTransform,
+        opacity: settle === "fly" ? 0.4 : launching ? 0 : undefined,
+        transition: launching
+          ? "transform 360ms cubic-bezier(.5,-0.3,.7,.3), opacity 360ms ease-in"
+          : settle === "fly"
+            ? "transform 180ms ease-in, opacity 180ms ease-in"
+            : dx || pull
+              ? "none"
+              : "transform 320ms cubic-bezier(.2,1.5,.4,1)",
       }}
     >
-      {/* While pulling (solo): the bow and arrow. The card dims, the targets light up, and an arrow
-          grows from the pull toward whatever's aimed at, turning orange once letting go will fire it. */}
-      {pulling && (
-        <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-30">
-          <div className="absolute inset-0 bg-black/60" />
-          <svg className="absolute inset-0 size-full overflow-visible" viewBox={`0 0 ${box.w} ${box.h}`}>
-            <line x1={bow.x} y1={bow.y} x2={tip.x} y2={tip.y} stroke="white" strokeOpacity="0.25" strokeWidth="2" strokeDasharray="4 6" />
-            <line x1={bow.x} y1={bow.y} x2={reach.x} y2={reach.y} stroke={armed ? "var(--color-paprika-bright)" : "white"} strokeWidth="4" strokeLinecap="round" />
-            <circle cx={reach.x} cy={reach.y} r={armed ? 9 : 6} fill={armed ? "var(--color-paprika-bright)" : "white"} />
-            <circle cx={bow.x} cy={bow.y} r="14" fill="none" stroke="white" strokeOpacity="0.6" strokeWidth="2" />
-          </svg>
-          <div className="absolute inset-x-3 top-8 grid gap-1" style={{ gridTemplateColumns: `repeat(${targets.length}, minmax(0, 1fr))` }}>
-            {targets.map((key) => {
-              const on = key === aimed;
-              return (
-                <div key={key} className={`flex flex-col items-center gap-1.5 transition-all duration-150 ${on ? "scale-110" : "scale-90 opacity-55"}`}>
-                  <span
-                    className={`grid size-14 place-items-center rounded-full shadow-lg transition-colors ${
-                      on ? (armed ? "bg-paprika text-white ring-4 ring-paprika-bright/50" : "bg-white text-ink ring-4 ring-white/30") : "bg-white/15 text-white"
-                    }`}
-                  >
-                    {TARGETS[key].icon}
-                  </span>
-                  <span className={`text-center text-xs leading-tight font-semibold ${on ? "text-white" : "text-white/70"}`}>{TARGETS[key].label}</span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="absolute inset-x-0 top-40 text-center font-display text-2xl font-extrabold text-white drop-shadow-lg">
-            {armed ? (
-              <>
-                Let go: <span className="text-paprika-bright">{TARGETS[aimed].label}</span>
-              </>
-            ) : (
-              <span className="text-lg font-semibold text-white/80">Pull further · aim left or right</span>
-            )}
-          </p>
-        </div>
-      )}
       {/* Photo: swipe sideways for next / back, pull down and let go to launch, tap to flip. */}
       <div
         {...gestures.photoHandlers}
         data-photo
         className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx && !pull ? "animate-hint" : ""}`}
         onAnimationEnd={(e) => e.animationName === "hint" && onHinted?.()}
-        style={{
-          transform: photoTransform,
-          opacity: launching ? 0 : 1,
-          transition: launching ? "transform 260ms cubic-bezier(.55,-0.35,.75,.2), opacity 260ms ease-in" : pull ? "none" : "transform 260ms cubic-bezier(.2,1.6,.4,1)",
-        }}
+
       >
         <PickPhoto
           key={`${pick.id}-${at}`}
@@ -336,7 +330,14 @@ export function PickCard({
       <div
         key={pick.id}
         {...gestures.panelHandlers}
-        className={`animate-rise relative flex touch-pan-y items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-4 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
+        onScroll={(e) => {
+          const top = e.currentTarget.scrollTop <= 0;
+          if (top !== detailsAtTop) setScroll({ id: pick.id, top });
+        }}
+        // Closed: every drag is ours. Open at the top: the browser only scrolls the content down (finger
+        // moving up), so a downward drag is a pull. (Safari lacks pan-down and keeps pan-y there.)
+        style={{ touchAction: !expanded ? "none" : detailsAtTop ? "pan-down" : "pan-y" }}
+        className={`animate-rise relative flex select-none items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-4 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
         {...(expanded ? { tabIndex: 0, "aria-label": `Details about ${pick.name}` } : {})}
       >
         <div className="min-w-0 flex-1">
@@ -452,6 +453,127 @@ export function PickCard({
         {expanded && <PlateRing plate={pick.plate} />}
       </div>
     </article>
+    </div>
+  );
+}
+
+/**
+ * The bow and arrow, drawn over the card while it's pulled (the card moves; this stays put).
+ * Targets in an arc; a bow whose string draws back with the pull; an arrow curving toward the
+ * aimed target; a ring around that target filling as the pull tightens (orange when letting go
+ * will fire); and, on release, a little burst of the place's food at the target.
+ */
+function AimOverlay({
+  show,
+  armed,
+  launching,
+  tension,
+  box,
+  targets,
+  aimed,
+  bow,
+  nock,
+  flight,
+  ring,
+  symbol,
+}: {
+  show: boolean;
+  armed: boolean;
+  launching: boolean;
+  tension: number;
+  box: { w: number; h: number };
+  targets: { key: AimKey; x: number; y: number; label: string; icon: ReactNode }[];
+  aimed: AimKey;
+  bow: { x: number; y: number };
+  nock: { x: number; y: number };
+  flight: string;
+  ring: number;
+  symbol: string;
+}) {
+  if (!show) return null;
+  const hot = armed ? "var(--color-paprika-bright)" : "white";
+  const t = targets.find((x) => x.key === aimed)!;
+  return (
+    <div aria-hidden="true" className="animate-fade pointer-events-none absolute inset-0 z-30">
+      <div className="absolute inset-0 bg-ink/55" />
+      <svg className="absolute inset-0 size-full overflow-visible" viewBox={`0 0 ${box.w} ${box.h}`}>
+        <defs>
+          <marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" fill={hot} />
+          </marker>
+        </defs>
+        {/* The flight path, faint; the arrow itself grows along it with the pull. */}
+        {!launching && <path d={flight} fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="2" strokeDasharray="3 7" />}
+        <path
+          d={flight}
+          fill="none"
+          stroke={hot}
+          strokeWidth="4"
+          strokeLinecap="round"
+          pathLength={1}
+          strokeDasharray={`${Math.max(0.12, launching ? 1 : tension)} 1`}
+          markerEnd={armed || launching ? "url(#arrowhead)" : undefined}
+          className="transition-[stroke] duration-150"
+        />
+        {/* The bow: a curved limb, and a string drawn back to the nock. */}
+        {!launching && (
+          <g stroke="white" strokeLinecap="round" fill="none">
+            <path d={`M ${bow.x - 44} ${bow.y + 14} Q ${bow.x} ${bow.y - 22} ${bow.x + 44} ${bow.y + 14}`} strokeWidth="5" strokeOpacity="0.9" />
+            <path d={`M ${bow.x - 44} ${bow.y + 14} L ${nock.x} ${nock.y} L ${bow.x + 44} ${bow.y + 14}`} strokeWidth="1.5" strokeOpacity="0.7" />
+          </g>
+        )}
+        {/* How far to pull: the aimed target's ring fills, and turns orange when it's ready to fire. */}
+        <circle
+          cx={t.x}
+          cy={t.y}
+          r="35"
+          fill="none"
+          stroke={hot}
+          strokeWidth="3.5"
+          strokeLinecap="round"
+          strokeDasharray={`${ring * (launching ? 1 : tension)} ${ring}`}
+          transform={`rotate(-90 ${t.x} ${t.y})`}
+        />
+      </svg>
+      {targets.map((x) => {
+        const on = x.key === aimed;
+        return (
+          <div
+            key={x.key}
+            className={`absolute flex w-20 -translate-x-1/2 -translate-y-7 flex-col items-center gap-1.5 transition-all duration-150 ${on ? "scale-110" : "scale-90 opacity-50"} ${on && armed && !launching ? "animate-wiggle" : ""}`}
+            style={{ left: x.x, top: x.y }}
+          >
+            <span
+              className={`grid size-14 place-items-center rounded-full shadow-lg transition-colors ${
+                on ? (armed || launching ? "bg-paprika text-white" : "bg-white text-ink") : "bg-white/15 text-white"
+              }`}
+            >
+              {on && launching ? <span className="animate-pop text-2xl font-bold">✓</span> : x.icon}
+            </span>
+            <span className={`text-center text-xs leading-tight font-semibold ${on ? "text-white" : "text-white/70"}`}>{x.label}</span>
+          </div>
+        );
+      })}
+      {/* A little burst of the place's food at the target as it lands. */}
+      {launching &&
+        Array.from({ length: 10 }, (_, i) => {
+          const a = (i / 10) * Math.PI * 2;
+          return (
+            <span
+              key={i}
+              className="animate-burst absolute text-2xl"
+              style={{ left: t.x - 12, top: t.y - 16, "--bx": `${Math.cos(a) * 70}px`, "--by": `${Math.sin(a) * 70}px` } as React.CSSProperties}
+            >
+              {symbol}
+            </span>
+          );
+        })}
+      {armed && !launching && (
+        <p className="absolute inset-x-0 text-center" style={{ top: t.y + 64 }}>
+          <span className="inline-flex h-9 items-center rounded-full bg-paprika px-4 text-sm font-bold text-white shadow-lg">Let go: {t.label}</span>
+        </p>
+      )}
+    </div>
   );
 }
 

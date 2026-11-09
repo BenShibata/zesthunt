@@ -10,11 +10,12 @@ export const PULL_AT = 110;
 /** Movement before a gesture picks a direction; less than this and it's a tap. */
 const DECIDE_AT = 8;
 const TAP_MS = 350;
-const LAUNCH_MS = 260;
+/** Long enough for the card to fly at the target and the target to burst. */
+const LAUNCH_MS = 380;
 /** A committed swipe: the card flies off the side before the next one comes in. */
 const FLY_MS = 180;
 
-type Axis = "x" | "pull" | "none" | null;
+type Axis = "x" | "pull" | "up" | "none" | null;
 
 /**
  * The pick card's gestures, one direction per gesture:
@@ -32,6 +33,8 @@ export function useCardGestures({
   onPull,
   onRelease,
   onTap,
+  panelFree,
+  onSwipeUp,
   disabled,
 }: {
   onNext: () => void;
@@ -44,6 +47,10 @@ export function useCardGestures({
    */
   onRelease?: (aim: number) => void;
   onTap?: () => void;
+  /** The details panel can be pulled down too: it's closed, or open and scrolled to its top. */
+  panelFree?: boolean;
+  /** Swipe up on the details panel (while it's closed, to open it). */
+  onSwipeUp?: () => void;
   disabled?: boolean;
 }) {
   const [dx, setDx] = useState(0);
@@ -69,10 +76,11 @@ export function useCardGestures({
     s.dx = e.clientX - s.x;
     s.dy = e.clientY - s.y;
     if (!s.axis && Math.hypot(s.dx, s.dy) > DECIDE_AT) {
-      s.axis = Math.abs(s.dx) > Math.abs(s.dy) ? "x" : s.photo && s.dy > 0 && onPull ? "pull" : "none";
-      // The details hold on to the pointer only once it's clearly a sideways swipe, so taps
-      // and scrolling there stay native, and a swipe still ends if the finger leaves the panel.
-      if (s.axis === "x" && !s.photo) e.currentTarget.setPointerCapture(e.pointerId);
+      const canPullHere = s.photo || panelFree;
+      s.axis = Math.abs(s.dx) > Math.abs(s.dy) ? "x" : canPullHere && s.dy > 0 && onPull ? "pull" : !s.photo && onSwipeUp && s.dy < 0 ? "up" : "none";
+      // The details hold on to the pointer only once the gesture is clearly ours, so taps
+      // and (when open) scrolling there stay native, and the gesture ends even off the panel.
+      if (!s.photo && s.axis !== "none") e.currentTarget.setPointerCapture(e.pointerId);
     }
     if (s.axis === "x") setDx(s.dx);
     if (s.axis === "pull") {
@@ -91,8 +99,12 @@ export function useCardGestures({
     const s = g.current;
     if (!s) return;
     g.current = null;
-    setPullRaw(0);
-    setAim(0);
+    const launch = !cancelled && s.axis === "pull" && s.armed && Boolean(onPull);
+    // A launch keeps its pull and aim until it lands, so the arrow and target stay put while the card flies.
+    if (!launch) {
+      setPullRaw(0);
+      setAim(0);
+    }
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (!cancelled && s.axis === "x" && Math.abs(s.dx) > SWIPE_AT) {
       // Committed: the card leaves the way it was thrown, then the next one comes in.
@@ -115,7 +127,7 @@ export function useCardGestures({
     if (cancelled) return;
     if (s.axis === "x") {
       // Not far enough: springs back.
-    } else if (s.axis === "pull" && s.armed && onPull) {
+    } else if (launch) {
       const aimed = s.dx;
       haptic(18);
       onRelease?.(aimed);
@@ -123,10 +135,14 @@ export function useCardGestures({
       setTimeout(
         () => {
           setLaunching(false);
-          onPull(aimed);
+          setPullRaw(0);
+          setAim(0);
+          onPull?.(aimed);
         },
         still ? 0 : LAUNCH_MS,
       );
+    } else if (s.axis === "up" && s.dy < -48) {
+      onSwipeUp?.();
     } else if (!s.axis && s.photo && Date.now() - s.t < TAP_MS) {
       onTap?.();
     }

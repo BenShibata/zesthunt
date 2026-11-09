@@ -6,7 +6,7 @@ import type { PickPhoto as Photo } from "@/lib/types";
  * Each Places photo is a paid call, so it loads only once a card has been on screen this
  * long: quick skips cost nothing. The card shows a soft gradient until then.
  */
-const PHOTO_DELAY_MS = 900;
+const PHOTO_DELAY_MS = 400;
 
 /** While a photo loads: the place's own color and a symbol for its food, so no two picks look alike. */
 export interface PhotoTint {
@@ -32,15 +32,28 @@ function Placeholder({ alt, tint }: { alt: string; tint?: PhotoTint }) {
 
 function RemotePhoto({ url, alt, instant, tint }: { url: string; alt: string; instant?: boolean; tint?: PhotoTint }) {
   const [ready, setReady] = useState(Boolean(instant));
+  // The place's color and symbol stay up until the photo has actually arrived, then it fades in quickly.
+  const [loaded, setLoaded] = useState(false);
   useEffect(() => {
     if (instant) return;
     const t = setTimeout(() => setReady(true), PHOTO_DELAY_MS);
     return () => clearTimeout(t);
   }, [url, instant]);
   if (!ready) return <Placeholder alt={alt} tint={tint} />;
-  // Not draggable: the browser's own image drag would cancel a swipe or pull mid-gesture.
   return (
-    <img src={url} alt={alt} referrerPolicy="no-referrer" draggable={false} className="animate-develop pointer-events-none absolute inset-0 size-full object-cover select-none" />
+    <>
+      {!loaded && <Placeholder alt={alt} tint={tint} />}
+      <img
+        src={url}
+        alt={alt}
+        referrerPolicy="no-referrer"
+        // Not draggable: the browser's own image drag would cancel a swipe or pull mid-gesture.
+        draggable={false}
+        decoding="async"
+        onLoad={() => setLoaded(true)}
+        className={`pointer-events-none absolute inset-0 size-full object-cover select-none ${loaded ? "animate-develop" : "opacity-0"}`}
+      />
+    </>
   );
 }
 
