@@ -11,6 +11,7 @@ import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, M
 import { useCardGestures } from "@/hooks/useCardGestures";
 import { directionsUrl, orderAhead } from "@/lib/links";
 import { aimAt, aimTargets, type AimKey } from "@/lib/aim";
+import { foodSymbol, placeHue } from "@/lib/look";
 
 interface Props {
   pick: Pick;
@@ -42,6 +43,8 @@ interface Props {
   onExpand?: () => void;
   /** In a group: your answer to this place (others' stay secret until the reveal). Null = not answered yet. */
   answer?: "love" | "ok" | "no" | null;
+  /** Which side the card comes in from: right when moving on, left when going back. */
+  enterFrom?: "right" | "left";
   /** Solo: this pick is on the Maybes list. */
   isMaybe?: boolean;
   /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
@@ -81,6 +84,7 @@ export function PickCard({
   fitsGroup,
   photoNow,
   isMaybe,
+  enterFrom = "right",
   hint,
   onHinted,
   onCantEat,
@@ -130,7 +134,10 @@ export function PickCard({
     onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
     disabled,
   });
-  const { dx, progress, pull, tension, armed, launching, aim } = gestures;
+  const { dx, progress, pull, tension, armed, launching, aim, settle } = gestures;
+  // Each place looks different even before its photo arrives: its own color, and a symbol for its food.
+  const symbol = foodSymbol(pick);
+  const tint = { hue: placeHue(pick), symbol };
   const aimed = aimAt(aim, has);
   const pulling = aiming && pull > 0;
   const targets = aimTargets(has);
@@ -156,7 +163,7 @@ export function PickCard({
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [pick.id]);
   const targetX = (key: AimKey) => 12 + (targets.indexOf(key) + 0.5) * ((box.w - 24) / targets.length);
   const TARGET_Y = 64;
   const bow = { x: box.w / 2 + aim * 0.25, y: Math.max(TARGET_Y + 120, box.photoH - 40) };
@@ -172,11 +179,17 @@ export function PickCard({
 
   return (
     <article
+      // A new place is a new card: it slides in from the side, so moving on never looks like the same card springing back.
+      key={pick.id}
       ref={cardRef}
       aria-labelledby="pick-title"
       aria-describedby="pick-reason"
-      className="relative flex min-h-0 flex-1 flex-col"
-      style={{ transform: dx ? `translateX(${dx}px) rotate(${dx / 50}deg)` : undefined, transition: dx ? "none" : "transform 220ms ease-out" }}
+      className={`relative flex min-h-0 flex-1 flex-col ${enterFrom === "left" ? "animate-enter-left" : "animate-enter-right"}`}
+      style={{
+        transform: dx ? `translateX(${dx}px) rotate(${dx / 50}deg)` : undefined,
+        opacity: settle === "fly" ? 0.4 : undefined,
+        transition: settle === "fly" ? "transform 180ms ease-in, opacity 180ms ease-in" : settle === "spring" ? "transform 220ms ease-out" : "none",
+      }}
     >
       {/* While pulling (solo): the bow and arrow. The card dims, the targets light up, and an arrow
           grows from the pull toward whatever's aimed at, turning orange once letting go will fire it. */}
@@ -232,6 +245,7 @@ export function PickCard({
         <PickPhoto
           key={`${pick.id}-${at}`}
           photo={photo}
+          tint={tint}
           instant={at > 0 || photoNow}
           alt={`Photo ${gallery.length > 1 ? `${at + 1} of ${gallery.length} ` : ""}at ${pick.name}${gallery.length > 1 ? ". Tap for the next photo" : ""}`}
         />
@@ -333,6 +347,9 @@ export function PickCard({
             {pick.name}
           </h1>
           <p id="pick-reason" className="mt-1 text-base text-white/80">
+            <span aria-hidden="true" className="mr-1.5">
+              {symbol}
+            </span>
             {pick.guessed ? (pick.kind ?? pick.reason) : pick.suggestion}
           </p>
           {/* The decision-makers, up front: rating, price, and how long it's open. */}

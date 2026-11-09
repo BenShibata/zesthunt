@@ -11,6 +11,8 @@ export const PULL_AT = 110;
 const DECIDE_AT = 8;
 const TAP_MS = 350;
 const LAUNCH_MS = 260;
+/** A committed swipe: the card flies off the side before the next one comes in. */
+const FLY_MS = 180;
 
 type Axis = "x" | "pull" | "none" | null;
 
@@ -48,12 +50,15 @@ export function useCardGestures({
   const [pullRaw, setPullRaw] = useState(0);
   const [aim, setAim] = useState(0);
   const [launching, setLaunching] = useState(false);
+  /** How the card moves back to rest: flying off after a committed swipe, springing back otherwise, or not animating. */
+  const [settle, setSettle] = useState<"none" | "spring" | "fly">("none");
   const g = useRef<{ x: number; y: number; t: number; axis: Axis; photo: boolean; dx: number; dy: number; armed: boolean } | null>(null);
 
   function begin(e: PointerEvent<HTMLElement>, photo: boolean) {
     if (disabled || launching || e.button !== 0) return;
     if ((e.target as HTMLElement).closest("button, a, input, label, [role=switch]")) return;
     g.current = { x: e.clientX, y: e.clientY, t: Date.now(), axis: null, photo, dx: 0, dy: 0, armed: false };
+    setSettle("none");
     // Only the photo holds on to the pointer: the details must keep native scrolling and clicks.
     if (photo) e.currentTarget.setPointerCapture(e.pointerId);
   }
@@ -86,15 +91,31 @@ export function useCardGestures({
     const s = g.current;
     if (!s) return;
     g.current = null;
-    setDx(0);
     setPullRaw(0);
     setAim(0);
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!cancelled && s.axis === "x" && Math.abs(s.dx) > SWIPE_AT) {
+      // Committed: the card leaves the way it was thrown, then the next one comes in.
+      const dir = s.dx < 0 ? -1 : 1;
+      setSettle("fly");
+      setDx(dir * (window.innerWidth + 120));
+      setTimeout(
+        () => {
+          setSettle("none");
+          setDx(0);
+          if (dir < 0) onNext();
+          else onBack();
+        },
+        still ? 0 : FLY_MS,
+      );
+      return;
+    }
+    setSettle("spring");
+    setDx(0);
     if (cancelled) return;
     if (s.axis === "x") {
-      if (s.dx < -SWIPE_AT) onNext();
-      else if (s.dx > SWIPE_AT) onBack();
+      // Not far enough: springs back.
     } else if (s.axis === "pull" && s.armed && onPull) {
-      const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const aimed = s.dx;
       haptic(18);
       onRelease?.(aimed);
@@ -123,6 +144,7 @@ export function useCardGestures({
     /** Sideways offset while pulling: negative aims left, positive aims right. */
     aim,
     launching,
+    settle,
     photoHandlers: {
       onPointerDown: (e: PointerEvent<HTMLElement>) => begin(e, true),
       onPointerMove: (e: PointerEvent<HTMLElement>) => move(e),
