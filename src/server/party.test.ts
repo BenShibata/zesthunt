@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PartyCard } from "@/lib/types";
 import { resetUpstashForTests } from "./upstash";
 import { resetRoomStoreForTests } from "./partyStore";
-import { addPlace, createOpenParty, createParty, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
+import { addPlace, bestPlace, createOpenParty, createParty, setWishes, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
 
 const card = (id: string) => ({ id, placeId: id, name: id }) as PartyCard;
 
@@ -176,6 +176,60 @@ describe("hunt party", () => {
     await recordSwipe(host.code, host.memberId, host.key, "x", "go");
     await recordSwipe(host.code, host.memberId, host.key, "x", "skip");
     expect((await partyState(host.code, host.memberId, host.key, 0)).myVotes).toEqual([]);
+  });
+
+  it("matches instantly when enough people love the same place, but not on OK alone", async () => {
+    const host = await createParty("Ana", [card("x"), card("y"), card("z")]);
+    const friend = await joinParty(host.code, "Ben");
+    await recordSwipe(host.code, host.memberId, host.key, "x", "ok");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "ok");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBeNull();
+    await recordSwipe(host.code, host.memberId, host.key, "y", "love");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "y", "love");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBe("y");
+  });
+
+  it("reveals as soon as everyone has answered every place: most points win (love 2, OK 1)", async () => {
+    const host = await createParty("Ana", [card("x"), card("y")]);
+    const friend = await joinParty(host.code, "Ben");
+    await recordSwipe(host.code, host.memberId, host.key, "x", "love");
+    await recordSwipe(host.code, host.memberId, host.key, "y", "ok");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "no");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBeNull(); // Ben hasn't answered y yet
+    await recordSwipe(friend.code, friend.memberId, friend.key, "y", "ok");
+    const s = await partyState(friend.code, friend.memberId, friend.key, 0);
+    // x: 2 points but one "Not for me"; y: 2 points and none. Fewer noes breaks the tie.
+    expect(s.match).toBe("y");
+    expect(s.likes.y.sort()).toEqual([friend.memberId, host.memberId].sort());
+    expect(s.loves.x).toEqual([host.memberId]);
+  });
+
+  it("lets people change an answer, and shows each person only their own until the reveal", async () => {
+    const host = await createParty("Ana", [card("x"), card("y")]);
+    const friend = await joinParty(host.code, "Ben");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "love");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "ok");
+    const mine = await partyState(friend.code, friend.memberId, friend.key, 0);
+    expect(mine.myAnswers).toEqual({ x: "ok" });
+    const theirs = await partyState(host.code, host.memberId, host.key, 0);
+    expect(theirs.myAnswers).toEqual({});
+    expect(theirs.likes).toEqual({});
+    expect(theirs.loves).toEqual({});
+  });
+
+  it("keeps wishes anonymous: only a summary, and only food words from the fixed list", async () => {
+    const host = await createParty("Ana", [card("x")]);
+    const friend = await joinParty(host.code, "Ben");
+    await setWishes(host.code, host.memberId, host.key, { price: 3, reach: "drive", crave: ["ramen"] });
+    await setWishes(friend.code, friend.memberId, friend.key, { price: 2, reach: "walk", crave: ["ramen", "tacos"] });
+    const s = await partyState(host.code, host.memberId, host.key, 0);
+    expect(s.wishes).toEqual({ count: 2, price: 2, reach: "walk", crave: ["ramen", "tacos"] });
+    expect(JSON.stringify(s)).not.toContain('"price":3');
+  });
+
+  it("picks the best place by points, then fewer noes, then list order", () => {
+    expect(bestPlace({ a: { love: ["1"], ok: [], no: [] }, b: { love: [], ok: ["1", "2"], no: [] } }, ["a", "b"])).toBe("a");
+    expect(bestPlace({ a: { love: [], ok: [], no: ["1"] } }, ["a"])).toBeNull();
   });
 });
 

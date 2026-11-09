@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { ArrowRightIcon, MicIcon, SearchIcon } from "./Icons";
+import { ArrowRightIcon, HeartIcon, MicIcon, SearchIcon, XIcon } from "./Icons";
 
 /**
  * The bottom bar, beside the gestures rather than instead of them: a "move on" button on the
@@ -14,6 +14,11 @@ interface Props {
   /** Right: the main action for the pick on screen. */
   primary?: { label: string; aria: string; onClick: () => void; tone: "go" | "vote" | "voted" | "add"; icon?: ReactNode };
   disabled?: boolean;
+  /**
+   * In a group: three answers for the place on screen, always visible. The current answer
+   * stays highlighted; tapping another changes it.
+   */
+  answer?: { value: "love" | "ok" | "no" | null; onAnswer: (a: "love" | "ok" | "no") => void; place: string };
   /** Searching: the side buttons fade away, leaving just search. */
   searching?: boolean;
   listening: boolean;
@@ -38,6 +43,40 @@ export function Controls(p: Props) {
   const pill =
     "flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-2 text-base font-semibold whitespace-nowrap text-white shadow-lg transition active:scale-95 disabled:opacity-40";
   const pillIcon = "hidden shrink-0 min-[360px]:block";
+  if (p.answer) {
+    const a = p.answer;
+    const opt = (key: "no" | "ok" | "love", label: string, icon: ReactNode, on: string) => {
+      const chosen = a.value === key;
+      return (
+        <button
+          type="button"
+          aria-pressed={chosen}
+          aria-label={`${label}: ${a.place}`}
+          onClick={() => a.onAnswer(key)}
+          disabled={p.disabled}
+          className={`flex h-14 min-w-0 flex-1 flex-col items-center justify-center rounded-2xl text-sm leading-tight font-semibold transition active:scale-95 disabled:opacity-40 ${
+            chosen ? `${on} ring-2 ring-white` : a.value ? "bg-white/8 text-white/60" : "bg-white/12 text-white hover:bg-white/18"
+          }`}
+        >
+          {icon}
+          {label}
+        </button>
+      );
+    };
+    return (
+      <div className="relative z-30 px-4 pt-2 pb-1" role="group" aria-label="Your answer for this place">
+        <div className="flex gap-2">
+          {opt("no", "Not for me", <XIcon size={18} />, "bg-white/25 text-white")}
+          {opt("ok", "OK", <span aria-hidden="true" className="text-base">👍</span>, "bg-teal text-white")}
+          {opt("love", "Love it", <HeartIcon size={18} />, "bg-social text-white")}
+        </div>
+        <p className="pt-1.5 text-center text-xs text-white/55" aria-live="polite">
+          {a.value ? "Tap another to change your answer." : "Answers stay secret until the reveal."}
+        </p>
+      </div>
+    );
+  }
+
   const tones = { go: "bg-paprika hover:bg-paprika-deep", vote: "bg-social hover:brightness-110", voted: "bg-social/30 ring-2 ring-social", add: "bg-social hover:brightness-110" };
   const urgent = p.timeLeft < 0.1;
 

@@ -6,8 +6,9 @@ import type { PartySteer } from "@/lib/types";
  * Party rooms: the only server-side state in Zesthunt.
  *
  * A room holds exactly: its code, member nicknames (with a hashed join key), the
- * shared deck of restaurant cards, swipes, and the match. Never location, prompts
- * or cravings. Every key expires at the same absolute time, 10 minutes after the
+ * shared deck of restaurant cards, answers, each member's wishes (budget, distance and food
+ * words from a fixed list; only a nameless summary ever leaves the server), and the match.
+ * Never location, prompts or typed text. Every key expires at the same absolute time, 10 minutes after the
  * room was created (a hard TTL that activity does not extend).
  *
  * Backends: Upstash Redis over REST when UPSTASH_REDIS_REST_URL/TOKEN are set
@@ -16,6 +17,9 @@ import type { PartySteer } from "@/lib/types";
  */
 
 export const ROOM_TTL_MS = 10 * 60_000;
+
+/** A member's answer to a place. "go" and "skip" are the older yes/no, still accepted. */
+export type Answer = "love" | "ok" | "no" | "go" | "skip";
 export const MAX_MEMBERS = 8;
 export const MAX_DECK = 40;
 
@@ -45,8 +49,11 @@ export interface RoomStore {
   members(code: string): Promise<StoredMember[]>;
   appendDeck(code: string, cardsJson: string[], expiresAt: number): Promise<number>;
   deck(code: string, since: number): Promise<{ cards: string[]; size: number }>;
-  swipe(code: string, memberId: string, pickId: string, dir: "go" | "skip", expiresAt: number): Promise<void>;
-  swipes(code: string): Promise<Record<string, "go" | "skip">>;
+  swipe(code: string, memberId: string, pickId: string, dir: Answer, expiresAt: number): Promise<void>;
+  swipes(code: string): Promise<Record<string, Answer>>;
+  /** One member's wishes, as JSON. */
+  setWish(code: string, memberId: string, json: string, expiresAt: number): Promise<void>;
+  wishes(code: string): Promise<Record<string, string>>;
   /** Cards that don't fit someone in the room (no who, no why). */
   addUnfit(code: string, pickIds: string[], expiresAt: number): Promise<void>;
   unfit(code: string): Promise<string[]>;
@@ -64,7 +71,8 @@ interface MemRoom {
   meta: RoomMeta;
   members: Map<string, StoredMember>;
   deck: string[];
-  swipes: Map<string, "go" | "skip">;
+  swipes: Map<string, Answer>;
+  wishes: Map<string, string>;
   match: string | null;
 }
 
@@ -88,7 +96,7 @@ class MemoryStore implements RoomStore {
   async create(code: string, meta: RoomMeta, host: StoredMember | null) {
     this.sweep();
     if (this.get(code)) return false;
-    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), match: null, unfit: new Set() });
+    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), wishes: new Map(), match: null, unfit: new Set() });
     return true;
   }
   async meta(code: string) {
@@ -114,11 +122,17 @@ class MemoryStore implements RoomStore {
     const deck = this.get(code)?.deck ?? [];
     return { cards: deck.slice(since), size: deck.length };
   }
-  async swipe(code: string, memberId: string, pickId: string, dir: "go" | "skip") {
+  async swipe(code: string, memberId: string, pickId: string, dir: Answer) {
     this.get(code)?.swipes.set(`${memberId}|${pickId}`, dir);
   }
   async swipes(code: string) {
     return Object.fromEntries(this.get(code)?.swipes ?? []);
+  }
+  async setWish(code: string, memberId: string, json: string) {
+    this.get(code)?.wishes.set(memberId, json);
+  }
+  async wishes(code: string) {
+    return Object.fromEntries(this.get(code)?.wishes ?? []);
   }
   async addUnfit(code: string, pickIds: string[]) {
     const room = this.get(code);
@@ -167,7 +181,7 @@ class UpstashStore implements RoomStore {
     const ttl = Math.max(1, Math.ceil((meta.expiresAt - Date.now()) / 1000));
     await this.run([
       ["SET", this.k(code, "meta"), JSON.stringify(meta), "XX", "EX", ttl],
-      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "match", "unfit"),
+      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "wishes", "match", "unfit"),
     ]);
   }
   async addMember(code: string, m: StoredMember, expiresAt: number) {
@@ -189,14 +203,24 @@ class UpstashStore implements RoomStore {
     ]);
     return { cards: (cards as string[] | null) ?? [], size: Number(size ?? 0) };
   }
-  async swipe(code: string, memberId: string, pickId: string, dir: "go" | "skip", expiresAt: number) {
+  async swipe(code: string, memberId: string, pickId: string, dir: Answer, expiresAt: number) {
     await this.run([["HSET", this.k(code, "swipes"), `${memberId}|${pickId}`, dir], ...this.expire(code, expiresAt, "swipes")]);
   }
   async swipes(code: string) {
     const [raw] = await this.run([["HGETALL", this.k(code, "swipes")]]);
     const flat = (raw as string[] | null) ?? [];
-    const out: Record<string, "go" | "skip"> = {};
-    for (let i = 0; i < flat.length; i += 2) out[flat[i]] = flat[i + 1] as "go" | "skip";
+    const out: Record<string, Answer> = {};
+    for (let i = 0; i < flat.length; i += 2) out[flat[i]] = flat[i + 1] as Answer;
+    return out;
+  }
+  async setWish(code: string, memberId: string, json: string, expiresAt: number) {
+    await this.run([["HSET", this.k(code, "wishes"), memberId, json], ...this.expire(code, expiresAt, "wishes")]);
+  }
+  async wishes(code: string) {
+    const [raw] = await this.run([["HGETALL", this.k(code, "wishes")]]);
+    const flat = (raw as string[] | null) ?? [];
+    const out: Record<string, string> = {};
+    for (let i = 0; i < flat.length; i += 2) out[flat[i]] = flat[i + 1];
     return out;
   }
   async addUnfit(code: string, pickIds: string[], expiresAt: number) {

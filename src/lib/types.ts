@@ -158,8 +158,14 @@ export interface PartyState {
    * are a secret ballot, so nobody's pick sways anyone else's.
    */
   likes: Record<string, string[]>;
-  /** The cards this member said "I'm in" to (their own votes are never secret from them). */
+  /** Who loved each card, by member id. Empty until the reveal, like `likes` (which counts love and OK). */
+  loves: Record<string, string[]>;
+  /** The cards this member is in on (Love it or OK); their own answers are never secret from them. */
   myVotes: string[];
+  /** This member's answer to each card they've answered. */
+  myAnswers: Record<string, "love" | "ok" | "no">;
+  /** The group's wishes, as a nameless summary. */
+  wishes: import("./wishes").WishSummary;
   /** "Go"s a card needs to be a match: everyone in groups of up to 3, all but one in bigger groups. */
   needed: number;
   /** The one-time "+5 minutes" has been used. */

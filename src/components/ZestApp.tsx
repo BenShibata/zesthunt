@@ -16,6 +16,8 @@ import { TopBar, type MenuItem } from "./TopBar";
 import { NUDGE_LABEL, NotQuite } from "./NotQuite";
 import { PickCard, PickSkeleton } from "./PickCard";
 import { GoMenu } from "./GoMenu";
+import { WishesSheet } from "./WishesSheet";
+import { fitsWishes, wishLine, type Wish } from "@/lib/wishes";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
 import { EmptyState, ErrorState, LocationPrompt, type EmptyActions } from "./FeedStates";
@@ -59,7 +61,7 @@ const WASH: Record<Mood, string> = {
   cheap: "var(--color-teal-bright)",
   treat: "var(--color-social-bright)",
 };
-const PARTY_COACH = "Vote for the places you'd go, or Pass. Votes stay secret until the reveal.";
+const PARTY_COACH = "Answer each place: Love it, OK or Not for me. Answers stay secret until the reveal.";
 /** Ask for more when this many unseen picks remain, so skips never wait on the network. */
 const REFILL_AT = 3;
 
@@ -673,17 +675,33 @@ export function ZestApp() {
     setPIndex(pAt + 1);
     setSwipes((n) => n + 1);
   };
-  const partyVote = () => {
+  /** Love it / OK / Not for me: answers (or changes the answer to) the place on screen, then moves on. */
+  const partyAnswer = (a: "love" | "ok" | "no") => {
     if (!partyCurrent) return;
-    party.vote(partyCurrent.id, true);
-    haptic(12);
-    setNotice(party.members.length > 1 ? "Voted. Votes stay secret until the reveal." : "Voted. Invite friends to vote too.");
+    const before = party.myAnswers[partyCurrent.id];
+    party.answer(partyCurrent.id, a);
+    haptic(a === "love" ? 14 : 8);
+    if (before && before !== a) setNotice(`Changed to ${a === "love" ? "Love it" : a === "ok" ? "OK" : "Not for me"}.`);
+    else if (party.members.length < 2 && Object.keys(party.myAnswers).length === 0) setNotice("Answered. Invite friends to vote too.");
     partyNext();
   };
-  const partyUnvote = () => {
-    if (!partyCurrent) return;
-    party.vote(partyCurrent.id, false);
-    setNotice("Vote taken back.");
+
+  // Wishes: asked once when you join or start a group, and any time from the bar.
+  const [wishesOpen, setWishesOpen] = useState(false);
+  const [myWish, setMyWish] = useState<Wish | null>(null);
+  const wishesAsked = useRef(false);
+  const askWishes = () => {
+    if (wishesAsked.current) return;
+    wishesAsked.current = true;
+    setWishesOpen(true);
+  };
+  const saveWishes = (w: Wish) => {
+    setWishesOpen(false);
+    setMyWish(w);
+    void party
+      .setWishes(w)
+      .then(() => setNotice("Got it. Places that fit everyone's wishes get added to the list."))
+      .catch(() => setNotice("Couldn't reach the group. Try again."));
   };
 
   // Searching in a group: browse what turns up like solo picks, and pull one down to add it.
@@ -788,6 +806,41 @@ export function ZestApp() {
     hostRefill();
   }, [party.active, party.isHost, votableCount, party.deck.length, hostRefill]);
 
+  // The group's wishes changed: the host's phone (the one with a location) adds a few places
+  // that fit them all to the end of everyone's list. Wishes reach the room only as a summary.
+  const wishKey = JSON.stringify(party.wishes);
+  const lastWishFetch = useRef("");
+  useEffect(() => {
+    if (!party.active || !party.isHost || party.wishes.count === 0 || lastWishFetch.current === wishKey) return;
+    lastWishFetch.current = wishKey;
+    const w = party.wishes;
+    const queries: (string | null)[] = w.crave.length > 0 ? w.crave.slice(0, 2) : [null];
+    const have = new Set(party.deck.map((c) => c.placeId));
+    void Promise.all(
+      queries.map((q) => {
+        const got: Pick[] = [];
+        return streamPicks(
+          { ...baseQuery(mood, signals), craving: q, widen: w.reach !== "walk", exclude: [...have] },
+          (e) => {
+            if (e.type === "pick") got.push(e.pick);
+          },
+          new AbortController().signal,
+        )
+          .then(() => got.filter((p) => !have.has(p.placeId) && fitsWishes(p, w) && worksForMe(p)).slice(0, 4))
+          .catch(() => [] as Pick[]);
+      }),
+    ).then((lists) => {
+      const fresh = [...new Map(lists.flat().map((p) => [p.placeId, p])).values()].slice(0, 6);
+      if (fresh.length === 0) return;
+      setHostExtra((x) => [...x, ...fresh]);
+      void party
+        .addCards(fresh.map(toPartyCard))
+        .then(() => setNotice(`Added ${fresh.length} place${fresh.length === 1 ? "" : "s"} that fit the group's wishes.`))
+        .catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once per change in the group's wishes
+  }, [wishKey, party.active, party.isHost]);
+
   /** "Can't eat this" on a party card: removed for everyone, anonymously. */
   const cantEatInParty = (id: string) => {
     reportedUnfit.current.add(id);
@@ -829,6 +882,7 @@ export function ZestApp() {
       setPHistory([]);
       setNow(new Date());
       setNotice(PARTY_COACH);
+      askWishes();
     } catch (e) {
       setPartyError(e instanceof Error ? e.message : "Couldn't join.");
     } finally {
@@ -908,7 +962,7 @@ export function ZestApp() {
   // The same three moves everywhere: next, back, and pull down (go / vote / add).
   const next = adding ? () => setAdding((a) => a && { ...a, at: a.at + 1 }) : inParty ? partyNext : soloSkip;
   const back = adding ? () => setAdding((a) => (a && a.at > 0 ? { ...a, at: a.at - 1 } : a)) : inParty ? partyRewind : soloRewind;
-  const pullGo = adding ? () => void addToVote() : inParty ? partyVote : soloGo;
+  const pullGo = adding ? () => void addToVote() : inParty ? () => partyAnswer("love") : soloGo;
   const shown = inParty ? partyCurrent : current;
   const canGoBack = adding ? adding.at > 0 : inParty ? pHistory.length > 0 : history.length > 0;
   // Back is always offered; on the first pick it says so instead of doing nothing.
@@ -919,16 +973,17 @@ export function ZestApp() {
   const timer = useInactivityTimer(IDLE_MS, onIdle, Boolean(locked) || inParty || Boolean(party.matchedCard));
 
   // Keyboard: → next, ← or Backspace back, ↓ go (or vote, or add), solo or in a group.
-  const keyActions = useRef({ next, back: goBack, pullGo });
+  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void }>({ next, back: goBack, pullGo });
   useEffect(() => {
-    keyActions.current = { next, back: goBack, pullGo };
+    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined };
   });
   useEffect(() => {
     if (locked || composing || receiptOpen) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest("input, textarea, [role=tablist]")) return;
-      if (e.key === "ArrowRight") keyActions.current.next();
+      if (keyActions.current.answer && ["1", "2", "3"].includes(e.key)) keyActions.current.answer(e.key === "1" ? "no" : e.key === "2" ? "ok" : "love");
+      else if (e.key === "ArrowRight") keyActions.current.next();
       else if (e.key === "ArrowLeft" || e.key === "Backspace") keyActions.current.back();
       else if (e.key === "ArrowDown") {
         e.preventDefault();
@@ -1175,9 +1230,13 @@ export function ZestApp() {
             onClose={() => {
               setInviteOpen(false);
               if (party.members.length <= 1 && pIndex === 0) setNotice(PARTY_COACH);
+              askWishes();
             }}
           />
         </div>
+      )}
+      {wishesOpen && inParty && now && (
+        <WishesSheet cravings={cravingShortcuts(mealFrame(now), dietary.diets)} initial={myWish} onSave={saveWishes} onSkip={() => setWishesOpen(false)} />
       )}
       {inParty && party.code && party.memberId ? (
         <PartyBar
@@ -1190,6 +1249,9 @@ export function ZestApp() {
           onLeave={leaveParty}
           onReveal={reveal}
           onRequest={party.hasHost ? () => setTuneOpen((o) => !o) : undefined}
+          onWishes={() => setWishesOpen(true)}
+          onAdd={() => setComposing(true)}
+          wishes={party.wishes.count > 0 ? wishLine(party.wishes) : undefined}
           onExtend={() => void party.extend().then(() => setNotice("5 more minutes for everyone.")).catch(() => setNotice("Couldn't add time."))}
         />
       ) : (
@@ -1323,7 +1385,8 @@ export function ZestApp() {
             pick={partyCurrent}
             now={now}
             quietBadge={Boolean(shownNotice)}
-            voted={party.myVotes.includes(partyCurrent.id)}
+            answer={party.myAnswers[partyCurrent.id] ?? null}
+            fitsGroup={fitsWishes(partyCurrent, party.wishes)}
             onNext={next}
             onBack={goBack}
                 hasBack={canGoBack}
@@ -1460,17 +1523,16 @@ export function ZestApp() {
         searching={composing}
         disabled={!(adding ? addingCurrent : shown) || receiptOpen}
         next={(adding ? addingCurrent : shown) ? { label: inParty ? "Next" : "Another", onClick: next } : undefined}
+        answer={
+          inParty && !adding && partyCurrent ? { value: party.myAnswers[partyCurrent.id] ?? null, onAnswer: partyAnswer, place: partyCurrent.name } : undefined
+        }
         primary={
           adding
             ? addingCurrent
               ? { label: "Add", aria: `Add ${addingCurrent.name} to the group's vote`, onClick: () => void addToVote(), tone: "add", icon: <HeartIcon size={20} /> }
               : undefined
             : inParty
-              ? partyCurrent
-                ? party.myVotes.includes(partyCurrent.id)
-                  ? { label: "Voted", aria: `You voted for ${partyCurrent.name}. Take your vote back`, onClick: partyUnvote, tone: "voted", icon: <HeartIcon size={20} /> }
-                  : { label: "Vote", aria: `Vote for ${partyCurrent.name}`, onClick: partyVote, tone: "vote", icon: <HeartIcon size={20} /> }
-                : undefined
+              ? undefined
               : current
                 ? {
                     label: "Let's go",

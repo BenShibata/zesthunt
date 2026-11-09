@@ -40,8 +40,10 @@ interface Props {
    */
   expanded?: boolean;
   onExpand?: () => void;
-  /** In a party: you voted for this card (others' votes stay secret). */
-  voted?: boolean;
+  /** In a group: your answer to this place (others' stay secret until the reveal). Null = not answered yet. */
+  answer?: "love" | "ok" | "no" | null;
+  /** In a group: the place suits the group's wishes (budget, distance, food words). */
+  fitsGroup?: boolean;
   /** In a party: remove this place for everyone (anonymously) because I can't eat there. */
   onCantEat?: () => void;
   /** In a party: a private heads-up for me only ("this looks meat-focused"). Never removes anything. */
@@ -71,7 +73,8 @@ export function PickCard({
   onTangent,
   expanded = true,
   onExpand,
-  voted,
+  answer,
+  fitsGroup,
   hint,
   onHinted,
   onCantEat,
@@ -116,7 +119,7 @@ export function PickCard({
   const gestures = useCardGestures({
     onNext,
     onBack,
-    onPull: voted || !onPull ? undefined : (aim) => onPull(aiming ? aimAt(aim, has) : "journey"),
+    onPull: !onPull ? undefined : (aim) => onPull(aiming ? aimAt(aim, has) : "journey"),
     onRelease: release,
     onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
     disabled,
@@ -262,11 +265,15 @@ export function PickCard({
           NEXT
         </span>
 
-        {/* In a group: your own vote (others' stay secret). "Voted" beside search takes it back. */}
-        {voted && (
+        {/* In a group: your own answer (others' stay secret). Tap another answer below to change it. */}
+        {answer && (
           <div className="pointer-events-none absolute top-3 right-3">
-            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-social/90 px-3 text-sm font-semibold text-white backdrop-blur-md">
-              <span aria-hidden="true">♥</span> You voted
+            <span
+              className={`inline-flex h-8 items-center gap-1 rounded-full px-3 text-sm font-semibold text-white backdrop-blur-md ${
+                answer === "love" ? "bg-social/90" : answer === "ok" ? "bg-teal/90" : "bg-black/60"
+              }`}
+            >
+              {answer === "love" ? "♥ You love it" : answer === "ok" ? "👍 You said OK" : "✕ Not for you"}
             </span>
           </div>
         )}
@@ -277,7 +284,7 @@ export function PickCard({
             </span>
           </div>
         )}
-        {pick.secondLook && voted === undefined && !returning && (
+        {pick.secondLook && answer === undefined && !returning && (
           <div className={`pointer-events-none absolute right-3 top-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center rounded-full bg-black/55 px-3 text-sm font-medium text-white backdrop-blur-md">Second look</span>
           </div>
@@ -350,6 +357,11 @@ export function PickCard({
               </>
             )}
           </p>
+          {fitsGroup && (
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-social/20 px-2.5 py-1 text-sm font-semibold text-social-bright">
+              <span aria-hidden="true">✓</span> Fits the group&apos;s wishes
+            </p>
+          )}
           {/* A sponsor's own deal: paid for by the restaurant, clearly labeled, and only ever on its own card. */}
           {pick.sponsored && (
             <p className="mt-2 flex items-center gap-2 text-sm text-white/90">
@@ -393,7 +405,7 @@ export function PickCard({
           {expanded ? (
             <div className="animate-rise">
               {/* How to pay is a "getting there" detail: not shown while a group is voting. */}
-              {voted === undefined && <PaymentLine payment={pick.payment} />}
+              {answer === undefined && <PaymentLine payment={pick.payment} />}
               <TangentChips pick={pick} onTangent={onTangent} />
               <AboutPlace pick={pick} closesIn={closesIn} />
               {onCantEatHere && (
