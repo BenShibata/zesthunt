@@ -7,7 +7,7 @@ import { CLOSING_SOON_MINUTES, formatClock, minutesUntil, priceText } from "@/li
 import { bookTableUrl, directionsUrl, inviteMessage, orderAhead, referralsOn } from "@/lib/links";
 import { forgetWin, readWins, rememberWin } from "@/lib/wins";
 import { SplitCard } from "./SplitCard";
-import { RouteMap } from "./RouteMap";
+import { PickPhoto } from "./PickPhoto";
 import { SheetPaymentChips } from "./PaymentChips";
 import { BagIcon, CarIcon, ClockIcon, CloseIcon, ExternalIcon, LeafIcon, PartyIcon, PhoneIcon, SendIcon, TagIcon, WalkIcon } from "./Icons";
 
@@ -71,8 +71,12 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
 
   return (
     <main className="flex h-dvh flex-col bg-sheet text-sheet-ink dark:bg-[#1b1916] dark:text-white">
-      <div className="relative h-[32dvh] shrink-0">
-        <RouteMap walkMinutes={pick.walkMinutes} name={pick.name} />
+      <div className="relative h-[26dvh] shrink-0">
+        {/* The place itself (the storefront when we have it, so it's easy to spot on arrival). */}
+        <div className="absolute inset-0 overflow-hidden bg-ink">
+          <PickPhoto photo={pick.storefront ?? pick.photo} alt={`${pick.name}${pick.storefront ? ", from outside" : ""}`} instant />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-black/40" />
+        </div>
         {partyMatch && <Confetti />}
         <button
           type="button"
@@ -108,7 +112,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
         <h1 id="locked-title" ref={heading} tabIndex={-1} className="mt-0.5 font-display text-3xl leading-tight font-bold tracking-tight outline-none">
           {pick.name}
         </h1>
-        <p className="mt-1 text-base text-sheet-muted dark:text-white/70">{pick.suggestion}</p>
+        <p className="mt-1 text-base text-sheet-muted dark:text-white/70">{pick.guessed ? (pick.kind ?? "") : pick.suggestion}</p>
 
         <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
           <div className="rounded-2xl bg-sheet-2 px-2 py-3 dark:bg-white/5">
@@ -146,107 +150,8 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           </div>
         </dl>
 
-        <div className="mt-3">
-          <SheetPaymentChips payment={pick.payment} hasOnlineOrdering={Boolean(pick.orderUrl)} />
-        </div>
-
-        {!partyMatch && (
-          <div className="mt-3 grid gap-2">
-            {/* Lighter than a party: send this one place to a friend. */}
-            <button type="button" onClick={() => void sendInvite()} className={`${secondaryBtn} w-full`}>
-              <SendIcon size={18} />
-              Want to come? Send to a friend
-            </button>
-            {inviteNote && (
-              <p className="text-center text-sm text-sheet-muted dark:text-white/70" role="status">
-                {inviteNote}
-              </p>
-            )}
-            {onDecideTogether && (
-              <button type="button" onClick={onDecideTogether} className={`${secondaryBtn} w-full`}>
-                <PartyIcon size={18} />
-                Still deciding with others? Vote together
-              </button>
-            )}
-          </div>
-        )}
-
-        {pick.upgradeTip && (
-          <p className="mt-3 flex items-start gap-2 rounded-2xl bg-teal/10 px-4 py-3 text-sm text-teal-deep dark:bg-teal/20 dark:text-teal-bright">
-            <LeafIcon size={18} className="mt-0.5 shrink-0" />
-            <span>
-              <span className="font-semibold">Easy upgrade: </span>
-              {pick.upgradeTip}
-            </span>
-          </p>
-        )}
-
-        {allergyNote && (
-          <p className="mt-3 rounded-2xl border border-sheet-ink/15 px-4 py-3 text-sm font-semibold dark:border-white/15" role="note">
-            Check allergens with the restaurant.
-          </p>
-        )}
-
-        {askAllergies && onAllergiesChange && !partyMatch && (
-          <section aria-labelledby="allergy-ask" className="mt-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
-            <h2 id="allergy-ask" className="text-base font-semibold">
-              Anything to keep away from?
-            </h2>
-            <p className="text-sm text-sheet-muted dark:text-white/65">Optional. We&apos;ll remind you to check with the restaurant.</p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {ALLERGIES.map((a) => {
-                const on = allergies.includes(a);
-                return (
-                  <button
-                    key={a}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => onAllergiesChange(on ? allergies.filter((x) => x !== a) : [...allergies, a])}
-                    className={`h-11 rounded-full px-3.5 text-sm font-semibold transition ${
-                      on ? "bg-teal text-white" : "border border-sheet-ink/20 hover:bg-sheet dark:border-white/20 dark:hover:bg-white/5"
-                    }`}
-                  >
-                    {a}
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              type="button"
-              onClick={() => setAskAllergies(false)}
-              className="mt-2 h-11 rounded-full px-1 text-sm font-semibold text-teal underline-offset-4 hover:underline dark:text-teal-bright"
-            >
-              {allergies.length > 0 ? "Done" : "Nothing, thanks"}
-            </button>
-          </section>
-        )}
-
-
-        {!partyMatch && (
-          <label className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
-            <span className="text-sm">
-              <span className="font-semibold">Remember {pick.name} for next time</span>
-              <span className="block text-sheet-muted dark:text-white/65">Saved only on this phone. If it&apos;s open nearby next time, it comes first.</span>
-            </span>
-            <input
-              type="checkbox"
-              role="switch"
-              checked={remembered}
-              onChange={(e) => {
-                if (e.target.checked) rememberWin(pick);
-                else forgetWin(pick.placeId);
-                setRemembered(e.target.checked);
-                onRememberChange?.();
-              }}
-              className="size-6 shrink-0 accent-teal"
-            />
-          </label>
-        )}
-
-        <SplitCard placeName={pick.name} defaultPeople={partySize ?? 2} startOpen={Boolean(partyMatch)} />
-
-        {/* The journey, three ways: head there, order to go, or call to reserve. Pinned in thumb reach. */}
-        <div className="sticky bottom-0 -mx-5 mt-auto flex flex-col gap-2 bg-sheet px-5 pt-4 dark:bg-[#1b1916]">
+        {/* The journey, three ways: head there, order to go, or call. First, where the thumb is. */}
+        <div className="mt-4 flex flex-col gap-2">
           <a
             href={directionsUrl(pick)}
             target="_blank"
@@ -311,6 +216,115 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
               )}
             </p>
           )}
+        </div>
+
+        {allergyNote && (
+          <p className="mt-3 rounded-2xl border border-sheet-ink/15 px-4 py-3 text-sm font-semibold dark:border-white/15" role="note">
+            Check allergens with the restaurant.
+          </p>
+        )}
+
+        {askAllergies && onAllergiesChange && !partyMatch && (
+          <section aria-labelledby="allergy-ask" className="mt-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
+            <h2 id="allergy-ask" className="text-base font-semibold">
+              Anything to keep away from?
+            </h2>
+            <p className="text-sm text-sheet-muted dark:text-white/65">Optional. We&apos;ll remind you to check with the restaurant.</p>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {ALLERGIES.map((a) => {
+                const on = allergies.includes(a);
+                return (
+                  <button
+                    key={a}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => onAllergiesChange(on ? allergies.filter((x) => x !== a) : [...allergies, a])}
+                    className={`h-11 rounded-full px-3.5 text-sm font-semibold transition ${
+                      on ? "bg-teal text-white" : "border border-sheet-ink/20 hover:bg-sheet dark:border-white/20 dark:hover:bg-white/5"
+                    }`}
+                  >
+                    {a}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => setAskAllergies(false)}
+              className="mt-2 h-11 rounded-full px-1 text-sm font-semibold text-teal underline-offset-4 hover:underline dark:text-teal-bright"
+            >
+              {allergies.length > 0 ? "Done" : "Nothing, thanks"}
+            </button>
+          </section>
+        )}
+
+        {/* Everything else, one tap away: how to pay, sending it to a friend, splitting the bill, remembering it. */}
+        <details className="group mt-3 rounded-2xl bg-sheet-2 px-4 py-1 dark:bg-white/5" open={Boolean(partyMatch)}>
+          <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between font-semibold">
+            More: pay, share, split the bill
+            <span aria-hidden="true" className="transition group-open:rotate-180">⌄</span>
+          </summary>
+          <div className="pb-3">
+        <div className="mt-3">
+          <SheetPaymentChips payment={pick.payment} hasOnlineOrdering={Boolean(pick.orderUrl)} />
+        </div>
+
+        {!partyMatch && (
+          <div className="mt-3 grid gap-2">
+            {/* Lighter than a party: send this one place to a friend. */}
+            <button type="button" onClick={() => void sendInvite()} className={`${secondaryBtn} w-full`}>
+              <SendIcon size={18} />
+              Want to come? Send to a friend
+            </button>
+            {inviteNote && (
+              <p className="text-center text-sm text-sheet-muted dark:text-white/70" role="status">
+                {inviteNote}
+              </p>
+            )}
+            {onDecideTogether && (
+              <button type="button" onClick={onDecideTogether} className={`${secondaryBtn} w-full`}>
+                <PartyIcon size={18} />
+                Still deciding with others? Vote together
+              </button>
+            )}
+          </div>
+        )}
+
+        {pick.upgradeTip && (
+          <p className="mt-3 flex items-start gap-2 rounded-2xl bg-teal/10 px-4 py-3 text-sm text-teal-deep dark:bg-teal/20 dark:text-teal-bright">
+            <LeafIcon size={18} className="mt-0.5 shrink-0" />
+            <span>
+              <span className="font-semibold">Easy upgrade: </span>
+              {pick.upgradeTip}
+            </span>
+          </p>
+        )}
+
+        {!partyMatch && (
+          <label className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
+            <span className="text-sm">
+              <span className="font-semibold">Remember {pick.name} for next time</span>
+              <span className="block text-sheet-muted dark:text-white/65">Saved only on this phone. If it&apos;s open nearby next time, it comes first.</span>
+            </span>
+            <input
+              type="checkbox"
+              role="switch"
+              checked={remembered}
+              onChange={(e) => {
+                if (e.target.checked) rememberWin(pick);
+                else forgetWin(pick.placeId);
+                setRemembered(e.target.checked);
+                onRememberChange?.();
+              }}
+              className="size-6 shrink-0 accent-teal"
+            />
+          </label>
+        )}
+          <SplitCard placeName={pick.name} defaultPeople={partySize ?? 2} startOpen={Boolean(partyMatch)} />
+          </div>
+        </details>
+
+        <div className="mt-3 flex flex-col gap-2 pb-2">
           {pick.mapsUrl && (
             <a href={pick.mapsUrl} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
               Menu, photos and reviews

@@ -16,7 +16,7 @@ import { TopBar, type MenuItem } from "./TopBar";
 import { NUDGE_LABEL, NotQuite } from "./NotQuite";
 import { PickCard, PickSkeleton } from "./PickCard";
 import { GoMenu } from "./GoMenu";
-import { WishesSheet } from "./WishesSheet";
+import { EMPTY_WISH, WishesForm, WishesSheet } from "./WishesSheet";
 import { fitsWishes, wishLine, type Wish } from "@/lib/wishes";
 import { Controls } from "./Controls";
 import { LockedIn } from "./LockedIn";
@@ -166,6 +166,11 @@ export function ZestApp() {
   const [pIndex, setPIndex] = useState(0);
   const [pHistory, setPHistory] = useState<number[]>([]);
   const [hostExtra, setHostExtra] = useState<Pick[]>([]);
+  const [wishesOpen, setWishesOpen] = useState(false);
+  const [myWish, setMyWish] = useState<Wish | null>(null);
+  // Asked once per group: guests get the sheet when they join; the host sets them in the invite sheet.
+  const [askedWishes, setAskedWishes] = useState(false);
+  const [hostWish, setHostWish] = useState<Wish>(EMPTY_WISH);
   /** In a group: browsing search results to add one to the vote. */
   const [adding, setAdding] = useState<{ query: string; picks: Pick[]; at: number; loading: boolean } | null>(null);
   const addingCtrl = useRef<AbortController | null>(null);
@@ -550,7 +555,7 @@ export function ZestApp() {
     load(mood);
   };
 
-  const useMyLocation = async () => {
+  const shareMyLocation = async () => {
     setAreaOpen(false);
     setFeed({ status: "loading" });
     const pos = await requestPreciseLocation();
@@ -687,14 +692,6 @@ export function ZestApp() {
   };
 
   // Wishes: asked once when you join or start a group, and any time from the bar.
-  const [wishesOpen, setWishesOpen] = useState(false);
-  const [myWish, setMyWish] = useState<Wish | null>(null);
-  const wishesAsked = useRef(false);
-  const askWishes = () => {
-    if (wishesAsked.current) return;
-    wishesAsked.current = true;
-    setWishesOpen(true);
-  };
   const saveWishes = (w: Wish) => {
     setWishesOpen(false);
     setMyWish(w);
@@ -882,7 +879,9 @@ export function ZestApp() {
       setPHistory([]);
       setNow(new Date());
       setNotice(PARTY_COACH);
-      askWishes();
+      // Guests are asked their wishes as they arrive (the host sets them in the invite sheet).
+      setAskedWishes(true);
+      setWishesOpen(true);
     } catch (e) {
       setPartyError(e instanceof Error ? e.message : "Couldn't join.");
     } finally {
@@ -924,6 +923,8 @@ export function ZestApp() {
 
   const leaveParty = () => {
     party.leave();
+    setAskedWishes(false);
+    setHostWish(EMPTY_WISH);
     clearHash();
     setPIndex(0);
     setPHistory([]);
@@ -966,7 +967,13 @@ export function ZestApp() {
   const shown = inParty ? partyCurrent : current;
   const canGoBack = adding ? adding.at > 0 : inParty ? pHistory.length > 0 : history.length > 0;
   // Back is always offered; on the first pick it says so instead of doing nothing.
-  const goBack = () => (canGoBack ? back() : setNotice("Nothing back here. Swipe left for more."));
+  const goBack = () => {
+    if (canGoBack) back();
+  };
+  // First-pick tips: how the card works, until the first swipe or "Got it". Kept in memory only
+  // (nothing is saved), so they're back on the next visit until you swipe once.
+  const [tipsDismissed, setTipsDismissed] = useState(false);
+  const showTips = !tipsDismissed && !inParty && !adding && swipes === 0 && Boolean(current) && !composing && !goMenu && !locked;
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 10-minute clock, so the idle timer pauses in a party too.
@@ -1201,7 +1208,7 @@ export function ZestApp() {
       />
       {dietOpen && (
         // A sheet over the content (not pushing it) so the card never squeezes into the buttons.
-        <div className="relative z-30 h-0">
+        <div className="relative z-40 h-0">
           <button type="button" aria-label="Close what you eat" tabIndex={-1} onClick={closeDiet} className="fixed inset-0 -z-10 cursor-default bg-black/55" />
         <DietPanel
           suggested={dietSuggest ?? undefined}
@@ -1218,7 +1225,7 @@ export function ZestApp() {
         </div>
       )}
       {inviteOpen && inParty && party.code && (
-        <div className="relative z-30 h-0">
+        <div className="relative z-40 h-0">
           <button type="button" aria-label="Close invite" tabIndex={-1} onClick={() => setInviteOpen(false)} className="fixed inset-0 -z-10 cursor-default bg-black/55" />
           <InviteSheet
             code={party.code}
@@ -1230,9 +1237,20 @@ export function ZestApp() {
             onClose={() => {
               setInviteOpen(false);
               if (party.members.length <= 1 && pIndex === 0) setNotice(PARTY_COACH);
-              askWishes();
+              if (party.isHost && !askedWishes) {
+                setAskedWishes(true);
+                if (hostWish.price !== null || hostWish.reach !== null || hostWish.crave.length > 0) saveWishes(hostWish);
+              }
             }}
-          />
+          >
+            {/* Starting a group is one sheet: the host's own wishes go right here. */}
+            {party.isHost && !askedWishes && now && (
+              <div className="border-t border-white/10 pt-3">
+                <p className="mb-2 text-sm font-semibold">What would work for you? <span className="font-normal text-white/60">Optional, and nobody sees whose.</span></p>
+                <WishesForm value={hostWish} onChange={setHostWish} cravings={cravingShortcuts(mealFrame(now), dietary.diets)} compact />
+              </div>
+            )}
+          </InviteSheet>
         </div>
       )}
       {wishesOpen && inParty && now && (
@@ -1252,11 +1270,12 @@ export function ZestApp() {
           onWishes={() => setWishesOpen(true)}
           onAdd={() => setComposing(true)}
           wishes={party.wishes.count > 0 ? wishLine(party.wishes) : undefined}
+          done={votableCount > 0 ? party.members.filter((m) => (party.progress[m.id] ?? 0) >= votableCount).length : undefined}
           onExtend={() => void party.extend().then(() => setNotice("5 more minutes for everyone.")).catch(() => setNotice("Couldn't add time."))}
         />
       ) : (
         <>
-          <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} />
+          <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} onUseLocation={() => void shareMyLocation()} />
         </>
       )}
 
@@ -1316,6 +1335,24 @@ export function ZestApp() {
               )}
             </div>
           </div>
+          {showTips && (
+            <div className="animate-rise pointer-events-auto self-center rounded-2xl bg-black/70 px-4 py-3 text-sm text-white shadow-lg backdrop-blur-md" role="note" aria-label="How it works">
+              <ul className="space-y-1.5">
+                <li className="flex items-center gap-2.5">
+                  <span aria-hidden="true" className="w-5 text-center text-base">←</span>Swipe for another pick
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the photo down to go, or tap Let&apos;s go
+                </li>
+                <li className="flex items-center gap-2.5">
+                  <span aria-hidden="true" className="w-5 text-center text-base">◉</span>Tap the photo for more photos
+                </li>
+              </ul>
+              <button type="button" onClick={() => setTipsDismissed(true)} className="mt-2 h-9 w-full rounded-full bg-white/15 font-semibold hover:bg-white/25">
+                Got it
+              </button>
+            </div>
+          )}
           {/* One guess, small and out of the way; never while someone is reading the details. */}
           {steerHint && !steering && !inParty && current && expandedId !== current.id && (
             <div className="animate-rise pointer-events-auto inline-flex h-11 items-center self-start rounded-full bg-black/60 text-sm font-semibold text-white shadow-lg backdrop-blur-md">
@@ -1409,11 +1446,11 @@ export function ZestApp() {
         )
       ) : (
         areaOpen ? (
-          <LocationPrompt onSubmit={submitArea} onUseLocation={useMyLocation} onCancel={() => setAreaOpen(false)} />
+          <LocationPrompt onSubmit={submitArea} onUseLocation={shareMyLocation} onCancel={() => setAreaOpen(false)} />
         ) : (
         <>
       {(feed.status === "loading" || (feed.status === "ready" && !current && refilling)) && <PickSkeleton />}
-      {feed.status === "need_location" && <LocationPrompt onSubmit={submitArea} onUseLocation={useMyLocation} />}
+      {feed.status === "need_location" && <LocationPrompt onSubmit={submitArea} onUseLocation={shareMyLocation} />}
       {feed.status === "error" && <ErrorState message={feed.message} onRetry={() => load(mood)} />}
       {feed.status === "empty" && (
         <EmptyState message={feed.message} suggestion={feed.suggestion} onRetry={() => load(mood)} actions={emptyActions} />
@@ -1440,6 +1477,7 @@ export function ZestApp() {
                 hasBack={canGoBack}
           onPull={pullGo}
           pullAction="go"
+          photoNow={swipes === 0}
           onTangent={submitCraving}
           expanded={expandedId === current.id}
           onExpand={() => setExpandedId(current.id)}

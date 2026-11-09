@@ -68,7 +68,10 @@ export function InviteSheet({
   onShare,
   onRename,
   onClose,
+  children,
 }: {
+  /** Extra content at the end: the host's own wishes, so starting a group is one sheet, not two. */
+  children?: React.ReactNode;
   code: string;
   link: string;
   nickname: string | null;
@@ -97,7 +100,7 @@ export function InviteSheet({
             Hunt together
           </h2>
           <p className="text-sm text-white/75">
-            Everyone swipes the same picks; it&apos;s a match when the group says go. {memberCount > 1 ? `${memberCount} here so far.` : "Bring your people in:"}
+            Everyone answers the same places: Love it, OK or Not for me. The result shows when everyone&apos;s done. {memberCount > 1 ? `${memberCount} here so far.` : "Bring your people in:"}
           </p>
         </div>
         <button type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-ink">
@@ -162,6 +165,7 @@ export function InviteSheet({
           </p>
         )}
       </div>
+      {children}
     </section>
   );
 }
@@ -204,7 +208,10 @@ export function PartyBar({
   onWishes,
   onAdd,
   wishes,
+  done,
 }: {
+  /** How many people have answered every place (never what they answered). */
+  done?: number;
   /** Set or change what would work for me. */
   onWishes?: () => void;
   /** Search for a place to add to the vote. */
@@ -252,7 +259,9 @@ export function PartyBar({
             "Invite friends to vote."
           ) : (
             <>
-              <span aria-hidden="true">🔒 </span>Reveals when all done
+              <span aria-hidden="true">🔒 </span>
+              {done !== undefined ? `${done} of ${members.length} done` : "Reveals when all done"}
+              <span className="sr-only">. The result shows when everyone&apos;s done; answers stay secret until then.</span>
             </>
           )}
         </span>
@@ -349,7 +358,7 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
         <h1 id="result-title" className="font-display text-4xl leading-tight font-extrabold tracking-tight">
           {winner.card.name}
         </h1>
-        <p className="text-white/80">{winner.card.suggestion}</p>
+        <p className="text-white/80">{winner.card.guessed ? (winner.card.kind ?? "") : winner.card.suggestion}</p>
         {/* Now that the group has chosen, how to pay is worth knowing. */}
         <PaymentLine payment={winner.card.payment} />
         <p className="flex items-center gap-1.5 text-lg font-semibold">

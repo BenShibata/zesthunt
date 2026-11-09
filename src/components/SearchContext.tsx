@@ -10,7 +10,10 @@ export function SearchContext({
   craving,
   onChangeArea,
   onClearCraving,
+  onUseLocation,
 }: {
+  /** One tap to precise picks when the area is only a rough guess. */
+  onUseLocation?: () => void;
   /** `farther`: the ring being searched when it's beyond a walk ("a short drive"). */
   area: { label: string; approx: boolean; farther: string | null } | null;
   craving: string | null;
@@ -34,7 +37,17 @@ export function SearchContext({
             {area.approx && <span className="text-white/55"> (approx.)</span>}
             {area.farther && <span className="text-white/55"> · {area.farther.replace(/^a /, "")}</span>}
           </span>
-          <span className="shrink-0 font-semibold text-teal-bright">Change</span>
+          {!(area.approx && onUseLocation) && <span className="shrink-0 font-semibold text-teal-bright">Change</span>}
+        </button>
+      )}
+      {showArea && area.approx && onUseLocation && (
+        <button
+          type="button"
+          onClick={onUseLocation}
+          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-teal/25 px-3 font-semibold text-teal-bright hover:bg-teal/35"
+        >
+          <PinIcon size={13} />
+          Use my location
         </button>
       )}
       {craving && (

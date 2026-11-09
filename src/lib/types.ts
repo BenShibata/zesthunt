@@ -83,6 +83,13 @@ export interface Pick {
   phone?: string;
   phoneDial?: string;
   reservable?: boolean | null;
+  /**
+   * The dish line is our guess from the place's type (no AI ranking ran), so the card leads
+   * with the place and its type instead of presenting the guess as fact.
+   */
+  guessed?: boolean;
+  /** The place's type in words ("Indian restaurant"), when Google gives one. */
+  kind?: string;
   /** A deal the restaurant pays to show on its own card, labeled "Sponsored". Never affects ranking. */
   sponsored?: { deal: string; url?: string };
   /** In a party: someone added this place from a search (never says who). */

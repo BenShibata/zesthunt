@@ -92,5 +92,5 @@ export function inviteMessage(pick: Pick): { title: string; text: string; url: s
   const closes = pick.closesAt
     ? ` Open till ${new Date(pick.closesAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}.`
     : "";
-  return { title: `Want to come to ${pick.name}?`, text: `Want to come? ${pick.name}: ${pick.suggestion.replace(/^Try /, "")}.${closes}`, url };
+  return { title: `Want to come to ${pick.name}?`, text: pick.guessed ? `Want to come? ${pick.name}.${closes}` : `Want to come? ${pick.name}: ${pick.suggestion.replace(/^Try /, "")}.${closes}`, url };
 }

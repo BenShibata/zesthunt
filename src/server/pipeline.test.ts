@@ -326,3 +326,19 @@ describe("runPipeline: sponsored deals", () => {
     vi.unstubAllEnvs();
   });
 });
+
+describe("runPipeline: honest headlines", () => {
+  it("marks a type-based dish guess as guessed and names the place's type", async () => {
+    ranked.fail = true;
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    places.list = [place("a", { primaryType: "indian_restaurant", types: ["indian_restaurant", "restaurant"] }), ...places.list.slice(1)];
+    const { picks } = await run();
+    expect(picks.find((p) => p.id === "a")).toMatchObject({ guessed: true, kind: "Indian restaurant" });
+  });
+
+  it("doesn't mark a ranked, place-specific dish as a guess", async () => {
+    ranked.picks = [rankedPick("p1", { suggestion: "Try the tonkotsu ramen" })];
+    const { picks } = await run();
+    expect(picks.find((p) => p.id === "a")).toMatchObject({ guessed: false, suggestion: "Try the tonkotsu ramen" });
+  });
+});

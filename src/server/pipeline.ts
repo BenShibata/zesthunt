@@ -335,6 +335,8 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     placeId: place.id,
     name: place.name,
     suggestion,
+    guessed: suggestion === prof.suggestion,
+    kind: kindOf(place.primaryType),
     reason,
     moods: ranked?.moods.length ? ranked.moods : prof.moods,
     category: dishCategory(suggestion, [place.primaryType, ...place.types]),
@@ -374,6 +376,13 @@ function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?
     vegetarianOptions: place.servesVegetarianFood,
     placeTypes: [place.primaryType, ...place.types].filter((t): t is string => Boolean(t)).slice(0, 8),
   };
+}
+
+/** "indian_restaurant" → "Indian restaurant"; generic types say nothing, so they're left out. */
+export function kindOf(type: string | null): string | undefined {
+  if (!type || ["restaurant", "food", "point_of_interest", "establishment", "store"].includes(type)) return undefined;
+  const words = type.replace(/_/g, " ");
+  return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
 function photoOf(p: PlacePhoto): PickPhoto {
