@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
 import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
-import { applySignals, cantEatHints, skipSignals } from "@/lib/categories";
+import { applyMaybes, applySignals, cantEatHints, maybeSignals, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
 import { cravingShortcuts } from "@/lib/cravings";
 import { fitNote, tooLate } from "@/lib/partyFit";
@@ -16,6 +16,8 @@ import { TopBar, type MenuItem } from "./TopBar";
 import { NUDGE_LABEL, NotQuite } from "./NotQuite";
 import { PickCard, PickSkeleton } from "./PickCard";
 import { GoMenu } from "./GoMenu";
+import { NavRow, navPill } from "./NavRow";
+import { MaybesSheet } from "./MaybesSheet";
 import { EMPTY_WISH, WishesForm, WishesSheet } from "./WishesSheet";
 import { fitsWishes, wishLine, type Wish } from "@/lib/wishes";
 import { Controls } from "./Controls";
@@ -151,6 +153,10 @@ export function ZestApp() {
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
+  /** Solo "Maybe": a shortlist for this visit only (memory, never saved). Searches lean toward it. */
+  const [maybes, setMaybes] = useState<Pick[]>([]);
+  const maybesRef = useRef<Pick[]>([]);
+  const [maybesOpen, setMaybesOpen] = useState(false);
   const exhausted = useRef(new Set<Mood>());
   const motionAsked = useRef(false);
   const voiceNoticeShown = useRef(new Set<VoiceFallback>());
@@ -190,6 +196,7 @@ export function ZestApp() {
       areaQuery: areaQuery.current,
       firstOfSession: firstOfSession.current,
       skipSignals: sig,
+      ...(maybesRef.current.length > 0 ? { likeSignals: maybeSignals(maybesRef.current) } : {}),
       dietary: hasDietary(dietRef.current) ? dietRef.current : null,
       craving: cravingRef.current,
       ...(widenRef.current ? { widen: true } : {}),
@@ -208,7 +215,8 @@ export function ZestApp() {
    * places they passed, rather than a dead end. Returns false if there's nothing to show.
    */
   const appendSecondLook = useCallback((from: number) => {
-    const round = secondLookRound(skipped.current, queueRef.current.slice(from), Date.now());
+    // Maybes come back first: they're the ones the person was nearly sold on.
+    const round = secondLookRound([...maybesRef.current, ...skipped.current], queueRef.current.slice(from), Date.now());
     if (round.length === 0) return false;
     secondLooks.current += 1;
     setQueue((q) => [...q, ...round]);
@@ -371,12 +379,13 @@ export function ZestApp() {
 
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
 
-  const soloSkip = useCallback(() => {
+  const soloSkip = useCallback((asMaybe = false) => {
     if (!current) return;
-    skipped.current = [...skipped.current, current];
+    // A maybe isn't a "no": it doesn't count toward skip hints.
+    if (!asMaybe) skipped.current = [...skipped.current, current];
     const next = skipSignals(skipped.current);
     const fresh = next.filter((s) => !signals.includes(s));
-    if (fresh.length > 0) {
+    if (fresh.length > 0 && !asMaybe) {
       // Reorder what's left right away so the signal feels instant; the next refill sends it to the ranker.
       setQueue((q) => [...q.slice(0, index + 1), ...applySignals(q.slice(index + 1), next)]);
       setSignals(next);
@@ -385,15 +394,15 @@ export function ZestApp() {
     setHistory((h) => [...h, index]);
     setIndex((i) => i + 1);
     setSwipes((s) => s + 1);
-    skipsSinceNudge.current += 1;
-    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE && !tuneOpen) setSteerHint(steerGuess(skipped.current, mood));
+    if (!asMaybe) skipsSinceNudge.current += 1;
+    if (skipsSinceNudge.current >= SKIPS_BEFORE_NUDGE && !tuneOpen && !asMaybe) setSteerHint(steerGuess(skipped.current, mood));
 
     // Refill quietly in the background when the queue runs low, carrying this session's signals.
     // Once every ring has been searched, the end of the queue starts a second look instead.
     const left = queue.length - (index + 1);
     if (left <= REFILL_AT && !refilling && !exhausted.current.has(mood)) {
       setRefilling(true);
-      fetchQueue(mood, next, { append: true, extra: { exclude: seenIds([queue, skipped.current]) } });
+      fetchQueue(mood, next, { append: true, extra: { exclude: seenIds([queue, skipped.current, maybesRef.current]) } });
     } else if (left === 0 && exhausted.current.has(mood)) {
       appendSecondLook(index + 1);
     }
@@ -586,6 +595,8 @@ export function ZestApp() {
     setComposing(false);
     voice.cancel();
     skipped.current = [];
+    maybesRef.current = [];
+    setMaybes([]);
     setSignals([]);
     applyCraving(null);
     widenRef.current = false;
@@ -961,7 +972,41 @@ export function ZestApp() {
 
   const inParty = party.active;
   // The same three moves everywhere: next, back, and pull down (go / vote / add).
-  const next = adding ? () => setAdding((a) => a && { ...a, at: a.at + 1 }) : inParty ? partyNext : soloSkip;
+  const next = adding ? () => setAdding((a) => a && { ...a, at: a.at + 1 }) : inParty ? partyNext : () => soloSkip();
+  /** Maybe: save this pick to the shortlist (or take it off) and move on. What's coming leans toward it. */
+  const toggleMaybe = () => {
+    if (!current) return;
+    if (maybes.some((m) => m.placeId === current.placeId)) {
+      const rest = maybes.filter((m) => m.placeId !== current.placeId);
+      maybesRef.current = rest;
+      setMaybes(rest);
+      setNotice("Taken off your maybes.");
+      return;
+    }
+    const saved = [...maybes, current];
+    maybesRef.current = saved;
+    setMaybes(saved);
+    haptic(10);
+    const lean = maybeSignals(saved);
+    setQueue((q) => [...q.slice(0, index + 1), ...applyMaybes(q.slice(index + 1), lean)]);
+    setNotice(saved.length === 1 ? "Saved as a maybe. Picks will lean this way." : `Saved. ${saved.length} maybes so far.`);
+    soloSkip(true);
+  };
+  const isMaybe = Boolean(current && maybes.some((m) => m.placeId === current.placeId));
+  /** From the Maybes list: jump back to one (it's still in the queue), ready to go. */
+  const openMaybe = (p: Pick) => {
+    setMaybesOpen(false);
+    const at = queue.findIndex((q) => q.placeId === p.placeId);
+    if (at < 0 || at === index) return;
+    setHistory((h) => [...h, index]);
+    setIndex(at);
+  };
+  const removeMaybe = (p: Pick) => {
+    const rest = maybes.filter((m) => m.placeId !== p.placeId);
+    maybesRef.current = rest;
+    setMaybes(rest);
+    if (rest.length === 0) setMaybesOpen(false);
+  };
   const back = adding ? () => setAdding((a) => (a && a.at > 0 ? { ...a, at: a.at - 1 } : a)) : inParty ? partyRewind : soloRewind;
   const pullGo = adding ? () => void addToVote() : inParty ? () => partyAnswer("love") : soloGo;
   const shown = inParty ? partyCurrent : current;
@@ -980,16 +1025,17 @@ export function ZestApp() {
   const timer = useInactivityTimer(IDLE_MS, onIdle, Boolean(locked) || inParty || Boolean(party.matchedCard));
 
   // Keyboard: → next, ← or Backspace back, ↓ go (or vote, or add), solo or in a group.
-  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void }>({ next, back: goBack, pullGo });
+  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void; maybe?: () => void }>({ next, back: goBack, pullGo });
   useEffect(() => {
-    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined };
+    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined, maybe: !inParty && !adding ? toggleMaybe : undefined };
   });
   useEffect(() => {
     if (locked || composing || receiptOpen) return;
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest("input, textarea, [role=tablist]")) return;
-      if (keyActions.current.answer && ["1", "2", "3"].includes(e.key)) keyActions.current.answer(e.key === "1" ? "no" : e.key === "2" ? "ok" : "love");
+      if (keyActions.current.maybe && e.key.toLowerCase() === "m") keyActions.current.maybe();
+      else if (keyActions.current.answer && ["1", "2", "3"].includes(e.key)) keyActions.current.answer(e.key === "1" ? "no" : e.key === "2" ? "ok" : "love");
       else if (e.key === "ArrowRight") keyActions.current.next();
       else if (e.key === "ArrowLeft" || e.key === "Backspace") keyActions.current.back();
       else if (e.key === "ArrowDown") {
@@ -1345,6 +1391,9 @@ export function ZestApp() {
                   <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the photo down to go, or tap Let&apos;s go
                 </li>
                 <li className="flex items-center gap-2.5">
+                  <span aria-hidden="true" className="w-5 text-center text-base">☆</span>Maybe saves it for later, and picks lean that way
+                </li>
+                <li className="flex items-center gap-2.5">
                   <span aria-hidden="true" className="w-5 text-center text-base">◉</span>Tap the photo for more photos
                 </li>
               </ul>
@@ -1436,6 +1485,8 @@ export function ZestApp() {
           />
         ) : (
           <PartyEndOfList
+            done={votableCount > 0 ? party.members.filter((m) => (party.progress[m.id] ?? 0) >= votableCount).length : 0}
+            total={party.members.length}
             onSearch={() => setComposing(true)}
             onStartOver={() => {
               setPIndex(0);
@@ -1478,6 +1529,7 @@ export function ZestApp() {
           onPull={pullGo}
           pullAction="go"
           photoNow={swipes === 0}
+          isMaybe={isMaybe}
           onTangent={submitCraving}
           expanded={expandedId === current.id}
           onExpand={() => setExpandedId(current.id)}
@@ -1557,6 +1609,49 @@ export function ZestApp() {
         </form>
       )}
 
+      {maybesOpen && !inParty && maybes.length > 0 && (
+        <MaybesSheet maybes={maybes} onOpen={openMaybe} onRemove={removeMaybe} onClose={() => setMaybesOpen(false)} />
+      )}
+      {/* Back, always bottom-left; Maybe (solo) or where you are and Skip (group) beside it. */}
+      <NavRow
+        hidden={composing || receiptOpen || !(adding ? addingCurrent : shown)}
+        canBack={canGoBack}
+        onBack={goBack}
+        center={
+          adding ? (
+            <span className="text-sm text-white/60">
+              {adding.at + 1} of {adding.picks.length}
+            </span>
+          ) : inParty ? (
+            <span className="text-sm text-white/60">
+              {partyPicks.slice(0, pAt).filter((p) => !unfitSet.has(p.id)).length + 1} of {votableCount}
+            </span>
+          ) : current ? (
+            <button
+              type="button"
+              onClick={toggleMaybe}
+              aria-pressed={isMaybe}
+              aria-label={isMaybe ? `${current.name} is a maybe. Tap to take it off` : `Maybe: save ${current.name} for later and see another`}
+              className={`${navPill} ${isMaybe ? "bg-star/20 text-star" : "bg-white/10 text-white hover:bg-white/15"}`}
+            >
+              <span aria-hidden="true">{isMaybe ? "★" : "☆"}</span> Maybe
+            </button>
+          ) : null
+        }
+        right={
+          adding ? null : inParty ? (
+            partyCurrent && (
+              <button type="button" onClick={partyNext} aria-label="Skip this place for now (no answer)" className={`${navPill} text-white/85 hover:bg-white/10`}>
+                Skip <span aria-hidden="true">›</span>
+              </button>
+            )
+          ) : maybes.length > 0 ? (
+            <button type="button" onClick={() => setMaybesOpen(true)} className={`${navPill} text-white/85 hover:bg-white/10`}>
+              Maybes ({maybes.length}) <span aria-hidden="true">›</span>
+            </button>
+          ) : null
+        }
+      />
       <Controls
         searching={composing}
         disabled={!(adding ? addingCurrent : shown) || receiptOpen}

@@ -232,6 +232,8 @@ export function PartyBar({
 }) {
   const seconds = useSecondsLeft(expiresAt);
   const lowTime = seconds <= 120;
+  // Ending the vote for everyone is deliberate: the first tap asks, the second ends it.
+  const [confirmReveal, setConfirmReveal] = useState(false);
   return (
     <div className="mx-4 mb-2 space-y-1">
       <div className="flex items-center gap-2 rounded-full bg-social/15 py-1 pr-1 pl-3">
@@ -286,8 +288,14 @@ export function PartyBar({
           </button>
         )}
         {lowTime && (
-          <button type="button" onClick={onReveal} className="h-11 shrink-0 rounded-full bg-white px-4 font-semibold text-ink">
-            Reveal now
+          <button
+            type="button"
+            onClick={() => (confirmReveal ? onReveal() : setConfirmReveal(true))}
+            onBlur={() => setConfirmReveal(false)}
+            className={`h-11 shrink-0 rounded-full px-4 font-semibold ${confirmReveal ? "bg-paprika text-white" : "bg-white text-ink"}`}
+            aria-label={confirmReveal ? "Tap again to end the vote for everyone" : "Show the result now: ends the vote for everyone"}
+          >
+            {confirmReveal ? "End vote?" : "Show result"}
           </button>
         )}
       </div>
@@ -301,22 +309,60 @@ export function PartyBar({
 }
 
 /**
- * The end of the list so far. Not a finish line: anyone can search and add a place, and the
- * vote ends at the first match, or with the most-voted place when time's up.
+ * The end of the list so far. Says who you're waiting on, and makes "show the result now" a
+ * clear, deliberate choice: it ends the vote for everyone, so it takes a second tap to confirm.
  */
-export function PartyEndOfList({ onSearch, onStartOver, onReveal }: { onSearch: () => void; onStartOver: () => void; onReveal: () => void }) {
+export function PartyEndOfList({
+  done,
+  total,
+  onSearch,
+  onStartOver,
+  onReveal,
+}: {
+  done: number;
+  total: number;
+  onSearch: () => void;
+  onStartOver: () => void;
+  onReveal: () => void;
+}) {
+  const [confirming, setConfirming] = useState(false);
+  const waiting = Math.max(0, total - done);
   return (
     <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
       <p className="font-display text-2xl font-bold">You&apos;ve answered every place.</p>
-      <p className="text-white/70">The result shows as soon as everyone&apos;s done (or when time&apos;s up). Add a place if nothing&apos;s quite right.</p>
-      <button type="button" onClick={onSearch} className="mt-2 h-12 w-full rounded-full bg-social px-6 font-semibold text-white">
+      <p className="text-white/75">
+        {total < 2
+          ? "Invite friends to vote, or show the result now."
+          : waiting > 0
+            ? `Waiting on ${waiting} ${waiting === 1 ? "person" : "people"} · ${done} of ${total} done. The result shows by itself when everyone's finished.`
+            : "Everyone's done. The result is on its way."}
+      </p>
+      <div className="mt-2 w-full space-y-1.5 rounded-3xl bg-white/6 p-3 text-left">
+        <button
+          type="button"
+          onClick={() => (confirming ? onReveal() : setConfirming(true))}
+          className={`h-12 w-full rounded-full font-semibold transition ${confirming ? "bg-paprika text-white" : "bg-white text-ink"}`}
+        >
+          {confirming ? "Tap again to end the vote for everyone" : "Show the result now"}
+        </button>
+        <p className="px-2 text-sm text-white/60">
+          {confirming ? (
+            <>
+              Everyone sees the result at once.{" "}
+              <button type="button" onClick={() => setConfirming(false)} className="font-semibold text-white/85 underline-offset-2 hover:underline">
+                Keep waiting
+              </button>
+            </>
+          ) : (
+            "Ends the vote for everyone and picks the place with the most points so far (Love it 2, OK 1)."
+          )}
+        </p>
+      </div>
+      <button type="button" onClick={onSearch} className="h-12 w-full rounded-full bg-social px-6 font-semibold text-white">
         + Add a place
       </button>
       <button type="button" onClick={onStartOver} className="h-12 w-full rounded-full bg-white/12 px-6 font-semibold text-white">
         Go back through them
-      </button>
-      <button type="button" onClick={onReveal} className="h-11 font-semibold text-white/70 hover:text-white">
-        Reveal now (ends the vote)
       </button>
     </section>
   );

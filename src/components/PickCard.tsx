@@ -7,7 +7,7 @@ import { CLOSING_SOON_MINUTES, distanceText, formatClock, mealFrame, minutesUnti
 import { PickPhoto } from "./PickPhoto";
 import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
-import { BagIcon, CarIcon, ChevronDownIcon, ChevronLeftIcon, ClockIcon, ExternalIcon, LeafIcon, MoreIcon, PartyIcon, PhoneIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, MoreIcon, PartyIcon, PhoneIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import { useCardGestures } from "@/hooks/useCardGestures";
 import { directionsUrl, orderAhead } from "@/lib/links";
 import { aimAt, aimTargets, type AimKey } from "@/lib/aim";
@@ -42,6 +42,8 @@ interface Props {
   onExpand?: () => void;
   /** In a group: your answer to this place (others' stay secret until the reveal). Null = not answered yet. */
   answer?: "love" | "ok" | "no" | null;
+  /** Solo: this pick is on the Maybes list. */
+  isMaybe?: boolean;
   /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
   photoNow?: boolean;
   /** In a group: the place suits the group's wishes (budget, distance, food words). */
@@ -78,6 +80,7 @@ export function PickCard({
   answer,
   fitsGroup,
   photoNow,
+  isMaybe,
   hint,
   onHinted,
   onCantEat,
@@ -240,17 +243,6 @@ export function PickCard({
             ))}
           </div>
         )}
-        {/* A quiet way back without swiping (Another, beside search, moves on), once there's somewhere to go back to. */}
-        {hasBack && (
-          <button
-            type="button"
-            onClick={onBack}
-            aria-label="Previous pick"
-            className="absolute top-1/2 left-2 z-10 grid size-11 -translate-y-1/2 place-items-center rounded-full bg-black/30 text-white/80 backdrop-blur-sm transition hover:bg-black/50 hover:text-white"
-          >
-            <ChevronLeftIcon size={22} />
-          </button>
-        )}
         {/* Swipe feedback */}
         <span
           aria-hidden="true"
@@ -276,6 +268,13 @@ export function PickCard({
               }`}
             >
               {answer === "love" ? "♥ You love it" : answer === "ok" ? "👍 You said OK" : "✕ Not for you"}
+            </span>
+          </div>
+        )}
+        {isMaybe && !answer && (
+          <div className={`pointer-events-none absolute top-3 right-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-3 text-sm font-semibold text-star backdrop-blur-md">
+              <span aria-hidden="true">★</span> Your maybe
             </span>
           </div>
         )}
