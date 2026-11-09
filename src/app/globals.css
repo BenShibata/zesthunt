@@ -247,3 +247,31 @@ body {
     animation: none;
   }
 }
+
+/* A new pick comes in from the side it's coming from: right when moving on, left when going back. */
+@keyframes enter-right {
+  from { transform: translateX(56px) scale(0.97); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+@keyframes enter-left {
+  from { transform: translateX(-56px) scale(0.97); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.animate-enter-right {
+  /* backwards, not both: once it ends, the drag transform must win. */
+  animation: enter-right 220ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+
+.animate-enter-left {
+  /* backwards, not both: once it ends, the drag transform must win. */
+  animation: enter-left 220ms cubic-bezier(0.2, 0.9, 0.3, 1) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-enter-right,
+  .animate-enter-left {
+    animation: none;
+  }
+}

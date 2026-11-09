@@ -8,16 +8,36 @@ import type { PickPhoto as Photo } from "@/lib/types";
  */
 const PHOTO_DELAY_MS = 900;
 
-function RemotePhoto({ url, alt, instant }: { url: string; alt: string; instant?: boolean }) {
+/** While a photo loads: the place's own color and a symbol for its food, so no two picks look alike. */
+export interface PhotoTint {
+  hue: number;
+  symbol: string;
+}
+
+function Placeholder({ alt, tint }: { alt: string; tint?: PhotoTint }) {
+  if (!tint) return <div role="img" aria-label={alt} className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_40%,#2a2620_0%,#141210_70%)]" />;
+  return (
+    <div
+      role="img"
+      aria-label={alt}
+      className="absolute inset-0 grid place-items-center"
+      style={{ background: `radial-gradient(120% 90% at 50% 38%, hsl(${tint.hue} 42% 30%) 0%, hsl(${tint.hue} 35% 12%) 72%)` }}
+    >
+      <span aria-hidden="true" className="text-[7rem] leading-none opacity-70 drop-shadow-lg select-none">
+        {tint.symbol}
+      </span>
+    </div>
+  );
+}
+
+function RemotePhoto({ url, alt, instant, tint }: { url: string; alt: string; instant?: boolean; tint?: PhotoTint }) {
   const [ready, setReady] = useState(Boolean(instant));
   useEffect(() => {
     if (instant) return;
     const t = setTimeout(() => setReady(true), PHOTO_DELAY_MS);
     return () => clearTimeout(t);
   }, [url, instant]);
-  if (!ready) {
-    return <div role="img" aria-label={alt} className="absolute inset-0 bg-[radial-gradient(120%_90%_at_50%_40%,#2a2620_0%,#141210_70%)]" />;
-  }
+  if (!ready) return <Placeholder alt={alt} tint={tint} />;
   // Not draggable: the browser's own image drag would cancel a swipe or pull mid-gesture.
   return (
     <img src={url} alt={alt} referrerPolicy="no-referrer" draggable={false} className="animate-develop pointer-events-none absolute inset-0 size-full object-cover select-none" />
@@ -29,8 +49,8 @@ function RemotePhoto({ url, alt, instant }: { url: string; alt: string; instant?
  * the key and the user's IP never reach Google from the browser. Demo places (and
  * places without photos) get a painterly placeholder from a palette.
  */
-export function PickPhoto({ photo, alt, instant }: { photo: Photo; alt: string; /** Asked for (a flip): no delay. */ instant?: boolean }) {
-  if (photo.kind === "url") return <RemotePhoto key={photo.url} url={photo.url} alt={alt} instant={instant} />;
+export function PickPhoto({ photo, alt, instant, tint }: { photo: Photo; alt: string; /** Asked for (a flip): no delay. */ instant?: boolean; tint?: PhotoTint }) {
+  if (photo.kind === "url") return <RemotePhoto key={photo.url} url={photo.url} alt={alt} instant={instant} tint={tint} />;
 
   const [a, b, c] = photo.palette;
   const layers: Record<typeof photo.motif, string> = {

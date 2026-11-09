@@ -153,6 +153,8 @@ export function ZestApp() {
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
+  // Which way the next card comes in: from the right when moving on, from the left when going back.
+  const [enterFrom, setEnterFrom] = useState<"right" | "left">("right");
   /** Solo "Maybe": a shortlist for this visit only (memory, never saved). Searches lean toward it. */
   const [maybes, setMaybes] = useState<Pick[]>([]);
   const maybesRef = useRef<Pick[]>([]);
@@ -696,6 +698,7 @@ export function ZestApp() {
     if (!partyCurrent) return;
     const before = party.myAnswers[partyCurrent.id];
     party.answer(partyCurrent.id, a);
+    setEnterFrom("right");
     haptic(a === "love" ? 14 : 8);
     if (before && before !== a) setNotice(`Changed to ${a === "love" ? "Love it" : a === "ok" ? "OK" : "Not for me"}.`);
     else if (party.members.length < 2 && Object.keys(party.myAnswers).length === 0) setNotice("Answered. Invite friends to vote too.");
@@ -972,7 +975,11 @@ export function ZestApp() {
 
   const inParty = party.active;
   // The same three moves everywhere: next, back, and pull down (go / vote / add).
-  const next = adding ? () => setAdding((a) => a && { ...a, at: a.at + 1 }) : inParty ? partyNext : () => soloSkip();
+  const moveOn = adding ? () => setAdding((a) => a && { ...a, at: a.at + 1 }) : inParty ? partyNext : () => soloSkip();
+  const next = () => {
+    setEnterFrom("right");
+    moveOn();
+  };
   /** Maybe: save this pick to the shortlist (or take it off) and move on. What's coming leans toward it. */
   const toggleMaybe = () => {
     if (!current) return;
@@ -990,6 +997,7 @@ export function ZestApp() {
     const lean = maybeSignals(saved);
     setQueue((q) => [...q.slice(0, index + 1), ...applyMaybes(q.slice(index + 1), lean)]);
     setNotice(saved.length === 1 ? "Saved as a maybe. Picks will lean this way." : `Saved. ${saved.length} maybes so far.`);
+    setEnterFrom("right");
     soloSkip(true);
   };
   const isMaybe = Boolean(current && maybes.some((m) => m.placeId === current.placeId));
@@ -1007,7 +1015,11 @@ export function ZestApp() {
     setMaybes(rest);
     if (rest.length === 0) setMaybesOpen(false);
   };
-  const back = adding ? () => setAdding((a) => (a && a.at > 0 ? { ...a, at: a.at - 1 } : a)) : inParty ? partyRewind : soloRewind;
+  const stepBack = adding ? () => setAdding((a) => (a && a.at > 0 ? { ...a, at: a.at - 1 } : a)) : inParty ? partyRewind : soloRewind;
+  const back = () => {
+    setEnterFrom("left");
+    stepBack();
+  };
   const pullGo = adding ? () => void addToVote() : inParty ? () => partyAnswer("love") : soloGo;
   const shown = inParty ? partyCurrent : current;
   const canGoBack = adding ? adding.at > 0 : inParty ? pHistory.length > 0 : history.length > 0;
@@ -1449,6 +1461,7 @@ export function ZestApp() {
                 hasBack={canGoBack}
                 onPull={pullGo}
                 pullAction="add"
+                enterFrom={enterFrom}
               />
             ) : adding.loading ? (
               <PickSkeleton />
@@ -1478,6 +1491,7 @@ export function ZestApp() {
                 hasBack={canGoBack}
             onPull={pullGo}
             pullAction="vote"
+            enterFrom={enterFrom}
             onCantEat={() => cantEatInParty(partyCurrent.id)}
             fitNote={now ? fitNote(partyCurrent, dietary, partyCurrent.travelUnknown ? null : partyCurrent.walkMinutes, now) : null}
             expanded={expandedId === partyCurrent.id}
@@ -1528,6 +1542,7 @@ export function ZestApp() {
                 hasBack={canGoBack}
           onPull={pullGo}
           pullAction="go"
+          enterFrom={enterFrom}
           photoNow={swipes === 0}
           isMaybe={isMaybe}
           onTangent={submitCraving}
