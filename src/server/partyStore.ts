@@ -8,15 +8,16 @@ import type { PartySteer } from "@/lib/types";
  * A room holds exactly: its code, member nicknames (with a hashed join key), the
  * shared deck of restaurant cards, answers, each member's wishes (budget, distance and food
  * words from a fixed list; only a nameless summary ever leaves the server), and the match.
- * Never location, prompts or typed text. Every key expires at the same absolute time, 10 minutes after the
- * room was created (a hard TTL that activity does not extend).
+ * Never location, prompts or typed text. Every key expires at the same absolute time, 45 minutes after the
+ * room was created (a hard TTL that activity does not extend). There's no countdown on screen: votes
+ * end when everyone's done, and people are told how long it's been.
  *
  * Backends: Upstash Redis over REST when UPSTASH_REDIS_REST_URL/TOKEN are set
  * (needed on Vercel, where instances don't share memory), else in-process memory
  * for local development.
  */
 
-export const ROOM_TTL_MS = 10 * 60_000;
+export const ROOM_TTL_MS = 45 * 60_000;
 
 /** A member's answer to a place. "go" and "skip" are the older yes/no, still accepted. */
 export type Answer = "love" | "ok" | "no" | "go" | "skip";
@@ -33,6 +34,8 @@ export interface RoomMeta {
   /** Null for an open room started from an AI assistant: no host, everyone joins by link. */
   hostId: string | null;
   expiresAt: number;
+  /** When the room opened, for "10 minutes in" notices. */
+  startedAt?: number;
   /** The one-time "+5 minutes" was used. */
   extended?: boolean;
   /** Latest group nudge: a mood word only, never typed text. */
@@ -57,6 +60,9 @@ export interface RoomStore {
   /** Cards that don't fit someone in the room (no who, no why). */
   addUnfit(code: string, pickIds: string[], expiresAt: number): Promise<void>;
   unfit(code: string): Promise<string[]>;
+  /** Members who said "I'm done": they're finished voting even with places left unanswered. */
+  setDone(code: string, memberId: string, done: boolean, expiresAt: number): Promise<void>;
+  done(code: string): Promise<string[]>;
   /** Sets the match once; later calls keep the first. */
   setMatch(code: string, pickId: string, expiresAt: number): Promise<void>;
   match(code: string): Promise<string | null>;
@@ -68,6 +74,7 @@ export interface RoomStore {
 
 interface MemRoom {
   unfit: Set<string>;
+  done: Set<string>;
   meta: RoomMeta;
   members: Map<string, StoredMember>;
   deck: string[];
@@ -96,7 +103,7 @@ class MemoryStore implements RoomStore {
   async create(code: string, meta: RoomMeta, host: StoredMember | null) {
     this.sweep();
     if (this.get(code)) return false;
-    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), wishes: new Map(), match: null, unfit: new Set() });
+    this.rooms.set(code, { meta, members: new Map(host ? [[host.id, host]] : []), deck: [], swipes: new Map(), wishes: new Map(), match: null, unfit: new Set(), done: new Set() });
     return true;
   }
   async meta(code: string) {
@@ -141,6 +148,14 @@ class MemoryStore implements RoomStore {
   async unfit(code: string) {
     return [...(this.get(code)?.unfit ?? [])];
   }
+  async setDone(code: string, memberId: string, done: boolean) {
+    const room = this.get(code);
+    if (done) room?.done.add(memberId);
+    else room?.done.delete(memberId);
+  }
+  async done(code: string) {
+    return [...(this.get(code)?.done ?? [])];
+  }
   async setMatch(code: string, pickId: string) {
     const room = this.get(code);
     if (room && !room.match) room.match = pickId;
@@ -181,7 +196,7 @@ class UpstashStore implements RoomStore {
     const ttl = Math.max(1, Math.ceil((meta.expiresAt - Date.now()) / 1000));
     await this.run([
       ["SET", this.k(code, "meta"), JSON.stringify(meta), "XX", "EX", ttl],
-      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "wishes", "match", "unfit"),
+      ...this.expire(code, meta.expiresAt, "members", "deck", "swipes", "wishes", "match", "unfit", "done"),
     ]);
   }
   async addMember(code: string, m: StoredMember, expiresAt: number) {
@@ -229,6 +244,13 @@ class UpstashStore implements RoomStore {
   }
   async unfit(code: string) {
     const [raw] = await this.run([["SMEMBERS", this.k(code, "unfit")]]);
+    return (raw as string[] | null) ?? [];
+  }
+  async setDone(code: string, memberId: string, done: boolean, expiresAt: number) {
+    await this.run([[done ? "SADD" : "SREM", this.k(code, "done"), memberId], ...this.expire(code, expiresAt, "done")]);
+  }
+  async done(code: string) {
+    const [raw] = await this.run([["SMEMBERS", this.k(code, "done")]]);
     return (raw as string[] | null) ?? [];
   }
   async setMatch(code: string, pickId: string, expiresAt: number) {

@@ -5,8 +5,8 @@ import { haptic } from "@/lib/haptics";
 
 /** Sideways distance that moves to the next or previous pick. */
 const SWIPE_AT = 96;
-/** How far to pull down before letting go launches (like drawing a bow). */
-export const PULL_AT = 110;
+/** How far to pull down before letting go launches (like drawing a bow): far enough that it's never by accident. */
+export const PULL_AT = 150;
 /** Movement before a gesture picks a direction; less than this and it's a tap. */
 const DECIDE_AT = 8;
 const TAP_MS = 350;
@@ -154,7 +154,7 @@ export function useCardGestures({
     /** -1 (swiping left, next) … 1 (swiping right, back). */
     progress: Math.max(-1, Math.min(1, dx / SWIPE_AT)),
     /** How far the photo has moved down, with resistance past the launch point. */
-    pull: pullRaw < PULL_AT ? pullRaw * 0.75 : Math.min(170, PULL_AT * 0.75 + (pullRaw - PULL_AT) * 0.25),
+    pull: pullRaw < PULL_AT ? pullRaw * 0.6 : Math.min(150, PULL_AT * 0.6 + (pullRaw - PULL_AT) * 0.2),
     /** 0 → 1 as the pull approaches the launch point. */
     tension: Math.min(1, pullRaw / PULL_AT),
     armed: pullRaw >= PULL_AT,

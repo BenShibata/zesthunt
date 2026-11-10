@@ -18,6 +18,8 @@ import {
   recordSwipe,
   renameMember,
   steerParty,
+  setDone,
+  stopAt,
 } from "@/server/party";
 import { MOODS } from "@/lib/types";
 import type { PartyCard } from "@/lib/types";
@@ -41,6 +43,8 @@ const Body = z.discriminatedUnion("action", [
   z.object({ action: z.literal("wishes"), ...Auth, wish: WishSchema }),
   z.object({ action: z.literal("cards"), ...Auth, cards: z.array(PartyCardSchema).max(40) }),
   z.object({ action: z.literal("add"), ...Auth, card: PartyCardSchema }),
+  z.object({ action: z.literal("done"), ...Auth, done: z.boolean() }),
+  z.object({ action: z.literal("stop"), ...Auth, pickId: z.string().max(200) }),
 ]);
 
 /**
@@ -88,6 +92,11 @@ export async function POST(request: Request) {
         return Response.json(await steerParty(body.code, body.memberId, body.key, body.mood), { headers: NO_STORE });
       case "add":
         return Response.json(await addPlace(body.code, body.memberId, body.key, body.card as PartyCard), { headers: NO_STORE });
+      case "done":
+        await setDone(body.code, body.memberId, body.key, body.done);
+        return Response.json({ ok: true }, { headers: NO_STORE });
+      case "stop":
+        return Response.json(await stopAt(body.code, body.memberId, body.key, body.pickId), { headers: NO_STORE });
       case "cards":
         return Response.json({ deckSize: await addCards(body.code, body.memberId, body.key, body.cards as PartyCard[]) }, { headers: NO_STORE });
     }

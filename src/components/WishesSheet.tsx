@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Wish } from "@/lib/wishes";
 
 export const EMPTY_WISH: Wish = { price: null, reach: null, crave: [] };
@@ -61,13 +61,33 @@ export function WishesForm({ value, onChange, cravings, compact }: { value: Wish
   );
 }
 
-/** The same choices as a sheet, for people joining a group. */
-export function WishesSheet({ cravings, initial, onSave, onSkip }: { cravings: string[]; initial?: Wish | null; onSave: (w: Wish) => void; onSkip: () => void }) {
+/**
+ * The same choices as a sheet, for people joining a group, and the one place in a group for
+ * everything about what you want: wishes, plus (as `children`) what you eat and asking the
+ * group for something different.
+ */
+export function WishesSheet({
+  cravings,
+  initial,
+  onSave,
+  onSkip,
+  children,
+}: {
+  cravings: string[];
+  initial?: Wish | null;
+  onSave: (w: Wish) => void;
+  onSkip: () => void;
+  children?: ReactNode;
+}) {
   const [wish, setWish] = useState<Wish>(initial ?? EMPTY_WISH);
   return (
     <div className="relative z-40 h-0">
       <button type="button" aria-label="Skip wishes" tabIndex={-1} onClick={onSkip} className="fixed inset-0 -z-10 cursor-default bg-black/60" />
-      <section role="dialog" aria-labelledby="wishes-title" className="animate-rise absolute inset-x-3 top-2 space-y-4 rounded-3xl bg-ink-3 p-5 shadow-2xl ring-1 ring-white/10">
+      <section
+        role="dialog"
+        aria-labelledby="wishes-title"
+        className="animate-rise absolute inset-x-3 top-2 max-h-[calc(100dvh-5rem)] space-y-4 overflow-y-auto rounded-3xl bg-ink-3 p-5 shadow-2xl ring-1 ring-white/10"
+      >
         <div>
           <h2 id="wishes-title" className="font-display text-xl font-bold">
             What would work for you?
@@ -75,6 +95,7 @@ export function WishesSheet({ cravings, initial, onSave, onSkip }: { cravings: s
           <p className="text-sm text-white/70">A few taps. The group only sees everyone&apos;s wishes together, never whose.</p>
         </div>
         <WishesForm value={wish} onChange={setWish} cravings={cravings} />
+        {children}
         <div className="flex gap-2 pt-1">
           <button type="button" onClick={() => onSave(wish)} className="h-12 flex-1 rounded-full bg-social font-semibold text-white">
             Done

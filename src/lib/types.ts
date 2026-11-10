@@ -179,6 +179,12 @@ export interface PartyState {
   extended: boolean;
   /** The latest group nudge ("Heartier"): the host's phone fetches matching cards from deck position `at`. */
   steer: PartySteer | null;
+  /** When the room opened, for "10 minutes in" notices (there's no countdown). */
+  startedAt: number;
+  /** Members who said "I'm done" (finished, even with places left). */
+  done: string[];
+  /** Places every member loves: everyone is told, and anyone can stop the vote there. */
+  everyoneLoves: string[];
   /** Places removed because they don't fit someone (needs, or not enough time to get there). No who, no why. */
   unfit: string[];
 }

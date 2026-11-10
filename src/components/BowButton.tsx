@@ -6,10 +6,10 @@ import { useBow, type Bow } from "@/lib/bow";
 
 /** Holding this long (without moving) starts drawing the bow; a quicker tap opens the menu. */
 const HOLD_MS = 180;
-/** How long a hold takes to draw the bow all the way. */
-const DRAW_MS = 650;
-/** Sliding the finger sideways aims; the arrow moves further than the finger. */
-const AIM_GAIN = 1.6;
+/** How long a hold takes to draw the bow all the way: long enough that it's never by accident. */
+const DRAW_MS = 1100;
+/** Sliding the finger sideways aims, a little further than the finger moves. */
+const AIM_GAIN = 1.15;
 
 /**
  * Let's go. A tap opens the menu of choices. Press and hold to draw the bow over the card
@@ -46,7 +46,7 @@ export function BowButton({
   };
   useEffect(() => stop, []);
 
-  const tensionOf = (s: NonNullable<typeof g.current>, now: number) => Math.min(1, Math.max((now - s.t0) / DRAW_MS, s.pullDown / 110));
+  const tensionOf = (s: NonNullable<typeof g.current>, now: number) => Math.min(1, Math.max((now - s.t0) / DRAW_MS, s.pullDown / 170));
   const frame = (now: number) => {
     const s = g.current;
     if (!s?.drawing) return;
@@ -128,7 +128,7 @@ export function BowButton({
       <span aria-hidden="true" className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${tension * 100}%` }} />
       <span className="relative inline-flex items-center gap-1.5">
         {icon}
-        {tension > 0 ? (ready ? "Let go to shoot" : "Aim…") : label}
+        {tension > 0 ? (ready ? "Let go!" : "Aim…") : label}
       </span>
     </button>
   );

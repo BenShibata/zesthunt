@@ -7,24 +7,6 @@ import type { PartyResult } from "@/lib/partyResults";
 import { QrCode } from "./QrCode";
 import { PaymentLine } from "./PaymentChips";
 
-/** Ticks the clock, so a moved deadline ("+5 min") shows at once. */
-function useSecondsLeft(expiresAt: number) {
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(t);
-  }, []);
-  return Math.max(0, Math.floor((expiresAt - now) / 1000));
-}
-
-function Countdown({ seconds }: { seconds: number }) {
-  return (
-    <span className="tabular-nums" aria-label={`Room closes in ${Math.ceil(seconds / 60)} minutes`}>
-      {`${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`}
-    </span>
-  );
-}
-
 /**
  * Opening an invite link joins right away (a food name is handed out, no form), so this
  * screen only shows while joining, or why it couldn't.
@@ -37,7 +19,7 @@ export function JoinScreen({ code, busy, error, onRetry, onSolo }: { code: strin
         {error ? "Couldn't join the hunt" : "Joining the hunt…"}
       </h1>
       <p className="text-white/75">
-        Party <span className="font-mono font-semibold tracking-widest text-white">{code}</span>. No account, no form. Gone in 10 minutes.
+        Party <span className="font-mono font-semibold tracking-widest text-white">{code}</span>. No account, no form. Gone within the hour.
       </p>
       {error && (
         <>
@@ -190,63 +172,48 @@ function Avatars({ members, meId }: { members: PartyMember[]; meId: string }) {
 }
 
 /**
- * Who's here, the clock, and how the vote ends: when enough people love the same place, or as
- * soon as everyone has answered every place (else when time's up). "Wishes" and "+ Add" are
- * always one tap away; when time is short it offers "Reveal now" and a one-time "+5 min".
+ * Who's here and how the vote ends: as soon as everyone's done (each person has answered every
+ * place, or tapped "I'm done"). No countdown: the app says how long it's been instead.
+ * "Wishes" (with what you eat and asking for something different) and "+ Add" are one tap away.
  */
 export function PartyBar({
   code,
-  expiresAt,
   members,
   meId,
-  extended,
   onInvite,
   onLeave,
-  onReveal,
-  onExtend,
-  onRequest,
   onWishes,
   onAdd,
   wishes,
   done,
+  iAmDone,
+  onDone,
 }: {
-  /** How many people have answered every place (never what they answered). */
+  /** How many people are finished (answered every place, or said they're done; never what they answered). */
   done?: number;
-  /** Set or change what would work for me. */
+  /** Wishes, what I eat, and asking for something different. */
   onWishes?: () => void;
   /** Search for a place to add to the vote. */
   onAdd?: () => void;
   /** The group's wishes as one line ("$$ or less · ramen"), if anyone set some. */
   wishes?: string;
-  /** Ask the group for something different (only where a host can fetch new cards). */
-  onRequest?: () => void;
   code: string;
-  expiresAt: number;
   members: PartyMember[];
   meId: string;
-  extended: boolean;
   onInvite: () => void;
   onLeave: () => void;
-  onReveal: () => void;
-  onExtend: () => void;
+  /** I said "I'm done". */
+  iAmDone?: boolean;
+  /** "I'm done" / "Keep voting". */
+  onDone?: (done: boolean) => void;
 }) {
-  const seconds = useSecondsLeft(expiresAt);
-  const lowTime = seconds <= 120;
-  // Ending the vote for everyone is deliberate: the first tap asks, the second ends it.
-  const [confirmReveal, setConfirmReveal] = useState(false);
+  const pill = "h-11 shrink-0 rounded-full px-3 font-semibold";
   return (
     <div className="mx-4 mb-2 space-y-1">
       <div className="flex items-center gap-2 rounded-full bg-social/15 py-1 pr-1 pl-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Avatars members={members} meId={meId} />
-          <span className={`truncate text-sm ${lowTime ? "font-semibold text-paprika-bright" : "text-white/80"}`}>
-            {/* On small phones the clock matters more than the code (which Invite shows). */}
-            <span className="hidden min-[380px]:inline">
-              <span className="font-mono font-semibold tracking-widest text-white">{code}</span>
-              <span aria-hidden="true"> · </span>
-            </span>
-            <Countdown seconds={seconds} />
-          </span>
+          <span className="truncate font-mono text-sm font-semibold tracking-widest text-white">{code}</span>
         </div>
         <button type="button" onClick={onInvite} className="h-11 rounded-full bg-social px-4 text-sm font-semibold text-white">
           Invite
@@ -255,47 +222,37 @@ export function PartyBar({
           Leave
         </button>
       </div>
-      <div className="flex min-h-11 items-center gap-2 pl-2 text-sm">
+      <div className="flex min-h-11 items-center gap-1.5 pl-2 text-sm">
         <span className="min-w-0 flex-1 truncate text-white/70">
           {members.length < 2 ? (
             "Invite friends to vote."
           ) : (
             <>
               <span aria-hidden="true">🔒 </span>
-              {done !== undefined ? `${done} of ${members.length} done` : "Reveals when all done"}
+              {done !== undefined ? `${done}/${members.length} done` : "Reveals when all done"}
               <span className="sr-only">. The result shows when everyone&apos;s done; answers stay secret until then.</span>
             </>
           )}
         </span>
-        {onWishes && !lowTime && (
-          <button type="button" onClick={onWishes} className="h-11 shrink-0 rounded-full bg-white/10 px-3.5 font-semibold text-white hover:bg-white/15">
+        {onWishes && (
+          <button type="button" onClick={onWishes} className={`${pill} bg-white/10 text-white hover:bg-white/15`}>
             Wishes
           </button>
         )}
-        {onAdd && !lowTime && (
-          <button type="button" onClick={onAdd} className="h-11 shrink-0 rounded-full bg-white/10 px-3.5 font-semibold text-white hover:bg-white/15">
+        {onAdd && (
+          <button type="button" onClick={onAdd} className={`${pill} bg-white/10 text-white hover:bg-white/15`}>
             + Add
           </button>
         )}
-        {onRequest && !onWishes && !lowTime && (
-          <button type="button" onClick={onRequest} className="h-11 shrink-0 rounded-full bg-white/10 px-4 font-semibold text-white hover:bg-white/15">
-            Request
-          </button>
-        )}
-        {lowTime && !extended && (
-          <button type="button" onClick={onExtend} className="h-11 shrink-0 rounded-full px-3 font-semibold text-social-bright hover:bg-white/10">
-            +5 min
-          </button>
-        )}
-        {lowTime && (
+        {onDone && (
           <button
             type="button"
-            onClick={() => (confirmReveal ? onReveal() : setConfirmReveal(true))}
-            onBlur={() => setConfirmReveal(false)}
-            className={`h-11 shrink-0 rounded-full px-4 font-semibold ${confirmReveal ? "bg-paprika text-white" : "bg-white text-ink"}`}
-            aria-label={confirmReveal ? "Tap again to end the vote for everyone" : "Show the result now: ends the vote for everyone"}
+            onClick={() => onDone(!iAmDone)}
+            aria-pressed={iAmDone}
+            aria-label={iAmDone ? "Keep voting" : "I'm done: I've seen enough. The result shows once everyone's done"}
+            className={`${pill} ${iAmDone ? "bg-white/10 text-white" : "bg-white text-ink"}`}
           >
-            {confirmReveal ? "End vote?" : "Show result"}
+            {iAmDone ? "Keep voting" : "I'm done"}
           </button>
         )}
       </div>
@@ -309,18 +266,52 @@ export function PartyBar({
 }
 
 /**
+ * Everyone loves the same place: tell everyone, and let them choose. Stopping ends the vote
+ * with that place for the whole group; keeping on just hides this until another place gets there.
+ */
+export function EveryoneLoves({ name, onStop, onKeep }: { name: string; onStop: () => void; onKeep: () => void }) {
+  return (
+    <div className="relative z-40 h-0">
+      <button type="button" aria-label="Keep voting" tabIndex={-1} onClick={onKeep} className="fixed inset-0 -z-10 cursor-default bg-black/60" />
+      <section role="alertdialog" aria-labelledby="loves-title" aria-describedby="loves-text" className="animate-rise absolute inset-x-3 top-2 space-y-3 rounded-3xl bg-ink-3 p-5 text-center shadow-2xl ring-1 ring-social/40">
+        <p className="text-4xl" aria-hidden="true">
+          🎉
+        </p>
+        <h2 id="loves-title" className="font-display text-2xl font-bold">
+          Everyone loves {name}!
+        </h2>
+        <p id="loves-text" className="text-white/75">
+          Stop voting and go there? It ends the vote for the whole group.
+        </p>
+        <button type="button" onClick={onStop} autoFocus className="h-12 w-full rounded-full bg-social font-semibold text-white">
+          Stop and pick {name}
+        </button>
+        <button type="button" onClick={onKeep} className="h-11 w-full rounded-full font-semibold text-white/75 hover:text-white">
+          Keep voting
+        </button>
+      </section>
+    </div>
+  );
+}
+
+/**
  * The end of the list so far. Says who you're waiting on, and makes "show the result now" a
  * clear, deliberate choice: it ends the vote for everyone, so it takes a second tap to confirm.
  */
 export function PartyEndOfList({
   done,
   total,
+  quit,
+  onKeepVoting,
   onSearch,
   onStartOver,
   onReveal,
 }: {
   done: number;
   total: number;
+  /** Ended by "I'm done" rather than by reaching the end of the list. */
+  quit?: boolean;
+  onKeepVoting?: () => void;
   onSearch: () => void;
   onStartOver: () => void;
   onReveal: () => void;
@@ -329,7 +320,7 @@ export function PartyEndOfList({
   const waiting = Math.max(0, total - done);
   return (
     <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
-      <p className="font-display text-2xl font-bold">You&apos;ve answered every place.</p>
+      <p className="font-display text-2xl font-bold">{quit ? "You're done voting." : "You've answered every place."}</p>
       <p className="text-white/75">
         {total < 2
           ? "Invite friends to vote, or show the result now."
@@ -358,7 +349,12 @@ export function PartyEndOfList({
           )}
         </p>
       </div>
-      <button type="button" onClick={onSearch} className="h-12 w-full rounded-full bg-social px-6 font-semibold text-white">
+      {quit && onKeepVoting && (
+        <button type="button" onClick={onKeepVoting} className="h-12 w-full rounded-full bg-social px-6 font-semibold text-white">
+          Keep voting
+        </button>
+      )}
+      <button type="button" onClick={onSearch} className={`h-12 w-full rounded-full px-6 font-semibold text-white ${quit ? "bg-white/12" : "bg-social"}`}>
         + Add a place
       </button>
       <button type="button" onClick={onStartOver} className="h-12 w-full rounded-full bg-white/12 px-6 font-semibold text-white">

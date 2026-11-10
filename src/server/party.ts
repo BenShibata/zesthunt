@@ -14,9 +14,19 @@ export function pickName(taken: string[]): string {
   return free.length > 0 ? free[randomInt(free.length)] : `Guest ${taken.length + 1}`;
 }
 
-/** "Love it"s needed for an instant match: everyone in groups of up to 3, all but one in bigger groups (so one holdout can't stall it). */
+/**
+ * "Love it"s that make a place a clear favorite: everyone in groups of up to 3, all but one in
+ * bigger groups. Kept for the state's `needed`; the vote itself no longer ends on its own when
+ * everyone loves a place: everyone is told, and anyone can stop there (see `everyoneLoves`).
+ */
 export function matchNeeded(members: number): number {
   return members <= 3 ? members : members - 1;
+}
+
+/** Places every member loves (in a group of two or more): the group can stop there. */
+export function everyoneLoves(t: Tally, memberIds: string[], order: string[]): string[] {
+  if (memberIds.length < 2) return [];
+  return order.filter((id) => memberIds.every((m) => t[id]?.love.includes(m)));
 }
 
 const EXTEND_MS = 5 * 60_000;
@@ -122,7 +132,7 @@ export async function createParty(nickname: string | undefined, cards: PartyCard
   const { member, key } = newMember(name);
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newCode();
-    if (await store.create(code, { hostId: member.id, expiresAt }, member)) {
+    if (await store.create(code, { hostId: member.id, expiresAt, startedAt: Date.now() }, member)) {
       await store.appendDeck(code, cards.slice(0, MAX_DECK).map((c) => JSON.stringify(c)), expiresAt);
       return { code, memberId: member.id, key, expiresAt, nickname: name };
     }
@@ -136,7 +146,7 @@ export async function createOpenParty(cards: PartyCard[]) {
   const expiresAt = Date.now() + ROOM_TTL_MS;
   for (let attempt = 0; attempt < 5; attempt++) {
     const code = newCode();
-    if (await store.create(code, { hostId: null, expiresAt }, null)) {
+    if (await store.create(code, { hostId: null, expiresAt, startedAt: Date.now() }, null)) {
       await store.appendDeck(code, cards.slice(0, MAX_DECK).map((c) => JSON.stringify(c)), expiresAt);
       return { code, expiresAt };
     }
@@ -228,21 +238,25 @@ export function bestPlace(t: Tally, order: string[]): string | null {
 }
 
 /**
- * Ends the vote when it can: an instant match when enough people love the same place, or
- * (faster) as soon as everyone has answered every place in play, the best place wins.
+ * Ends the vote as soon as everyone is finished, each person either having answered every
+ * place in play or said "I'm done": the best place wins. (When everyone loves a place, the
+ * vote doesn't end by itself: everyone is told, and can choose to stop there.)
  */
-async function maybeFinish(code: string, expiresAt: number, lovedId?: string) {
+async function maybeFinish(code: string, expiresAt: number) {
   const store = roomStore();
-  const [members, swipes, unfit, deck, match] = await Promise.all([store.members(code), store.swipes(code), store.unfit(code), store.deck(code, 0), store.match(code)]);
+  const [members, swipes, unfit, deck, match, done] = await Promise.all([
+    store.members(code),
+    store.swipes(code),
+    store.unfit(code),
+    store.deck(code, 0),
+    store.match(code),
+    store.done(code),
+  ]);
   if (match || members.length < 2) return;
   const ids = members.map((m) => m.id);
   const t = tallyFrom(swipes, ids, unfit);
-  if (lovedId && (t[lovedId]?.love.length ?? 0) >= matchNeeded(members.length)) {
-    await store.setMatch(code, lovedId, expiresAt);
-    return;
-  }
   const inPlay = deck.cards.map((c) => (JSON.parse(c) as PartyCard).id).filter((id) => !unfit.includes(id));
-  const everyoneDone = inPlay.length > 0 && ids.every((m) => inPlay.every((id) => swipes[`${m}|${id}`] !== undefined));
+  const everyoneDone = inPlay.length > 0 && ids.every((m) => done.includes(m) || inPlay.every((id) => swipes[`${m}|${id}`] !== undefined));
   if (!everyoneDone) return;
   const best = bestPlace(t, inPlay);
   if (best) await store.setMatch(code, best, expiresAt);
@@ -263,7 +277,26 @@ export async function markUnfit(code: string, memberId: string, key: string, pic
 export async function recordSwipe(code: string, memberId: string, key: string, pickId: string, dir: Answer) {
   const { meta } = await authed(code, memberId, key);
   await roomStore().swipe(code, memberId, pickId, dir, meta.expiresAt);
-  await maybeFinish(code, meta.expiresAt, asVote(dir) === "love" ? pickId : undefined);
+  await maybeFinish(code, meta.expiresAt);
+}
+
+/** "I'm done": I've seen enough. Counts as finished, so the result can show without me answering the rest. "Keep voting" undoes it. */
+export async function setDone(code: string, memberId: string, key: string, done: boolean) {
+  const { meta } = await authed(code, memberId, key);
+  await roomStore().setDone(code, memberId, done, meta.expiresAt);
+  if (done) await maybeFinish(code, meta.expiresAt);
+}
+
+/** "Stop here": everyone loves this place, so anyone can end the vote with it. */
+export async function stopAt(code: string, memberId: string, key: string, pickId: string) {
+  const { meta } = await authed(code, memberId, key);
+  const store = roomStore();
+  const [members, swipes, unfit, deck] = await Promise.all([store.members(code), store.swipes(code), store.unfit(code), store.deck(code, 0)]);
+  const ids = members.map((m) => m.id);
+  const order = deck.cards.map((c) => (JSON.parse(c) as PartyCard).id);
+  if (!everyoneLoves(tallyFrom(swipes, ids, unfit), ids, order).includes(pickId)) throw new PartyError(409, "Not everyone loves that one (yet).");
+  await store.setMatch(code, pickId, meta.expiresAt);
+  return { match: pickId };
 }
 
 /** A member's wishes (budget, distance, food words from the fixed list). Only a nameless summary is ever shown. */
@@ -315,13 +348,15 @@ export async function steerParty(code: string, memberId: string, key: string, mo
 export async function partyState(code: string, memberId: string, key: string, since: number): Promise<PartyState> {
   const { meta } = await authed(code, memberId, key);
   const store = roomStore();
-  const [members, deck, swipes, match, unfit, wishes] = await Promise.all([
+  const [members, deck, swipes, match, unfit, wishes, done, fullDeck] = await Promise.all([
     store.members(code),
     store.deck(code, since),
     store.swipes(code),
     store.match(code),
     store.unfit(code),
     store.wishes(code),
+    store.done(code),
+    store.deck(code, 0),
   ]);
   const ids = members.map((m) => m.id);
   const t = tallyFrom(swipes, ids, unfit);
@@ -364,5 +399,9 @@ export async function partyState(code: string, memberId: string, key: string, si
     extended: Boolean(meta.extended),
     steer: meta.steer ?? null,
     unfit,
+    startedAt: meta.startedAt ?? meta.expiresAt - ROOM_TTL_MS,
+    done: done.filter((id) => ids.includes(id)),
+    // A group result, not anyone's ballot: when every single person loves a place, everyone may know.
+    everyoneLoves: match ? [] : everyoneLoves(t, ids, fullDeck.cards.map((c) => (JSON.parse(c) as PartyCard).id)),
   };
 }

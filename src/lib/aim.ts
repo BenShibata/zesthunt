@@ -6,10 +6,10 @@
  */
 export type AimKey = "journey" | "directions" | "order" | "call";
 
-/** Sideways pixels before a pull counts as aimed. */
-export const AIM_AT = 35;
+/** Sideways pixels before a pull counts as aimed: wide enough that a wobble doesn't change the choice. */
+export const AIM_AT = 50;
 /** Sideways pixels for the far-left target. */
-export const AIM_FAR = 110;
+export const AIM_FAR = 140;
 
 export function aimAt(aim: number, has: { order: boolean; call: boolean }): AimKey {
   if (aim <= -AIM_FAR && has.order) return "order";

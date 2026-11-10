@@ -23,6 +23,8 @@ interface Props {
   onBack: () => void;
   /** There's a pick to go back to (otherwise the BACK stamp stays hidden). */
   hasBack?: boolean;
+  /** Solo: swiping says what you think. Left is "less like this", right is "more like this" (instead of next and back). */
+  likeSwipes?: boolean;
   /**
    * Pull the photo down and let go (or tap the notch): "go" starts the journey solo, aimed at
    * directions, ordering, calling or (straight down) every choice; "vote" votes in a group;
@@ -103,6 +105,7 @@ export function PickCard({
   onNext,
   onBack,
   hasBack,
+  likeSwipes,
   onPull,
   pullAction = "go",
   disabled,
@@ -154,7 +157,7 @@ export function PickCard({
   const armed = ext ? ext.tension >= 1 : gestures.armed;
   const launching = ext ? ext.launching : gestures.launching;
   const aim = ext ? ext.aim : gestures.aim;
-  const pull = ext ? ext.tension * 36 : gestures.pull;
+  const pull = ext ? ext.tension * 16 : gestures.pull;
   // Each place looks different even before its photo arrives: its own color, and a symbol for its food.
   const symbol = foodSymbol(pick);
   const tint = { hue: placeHue(pick), symbol };
@@ -219,7 +222,8 @@ export function PickCard({
   };
   const tip = targetPos(aimed);
   // The bow sits near the bottom of the photo and follows the aim a little; its string draws back with the pull.
-  const bow = { x: box.w / 2 + aim * 0.3, y: Math.min(box.photoH - 30, Math.max(tip.y + 190, box.photoH * 0.72)) };
+  // Held from Let's go, the bow sits right above the button, at the bottom of the card.
+  const bow = { x: box.w / 2 + aim * 0.3, y: ext ? box.h - 40 : Math.min(box.photoH - 30, Math.max(tip.y + 190, box.photoH * 0.72)) };
   const nock = { x: bow.x, y: bow.y + 8 + tension * 30 };
   // The arrow's flight path curves up toward the target, stopping at its edge.
   const end = { x: tip.x, y: tip.y + 30 };
@@ -248,6 +252,7 @@ export function PickCard({
       flight={flight}
       ring={RING}
       symbol={symbol}
+      fromButton={Boolean(ext)}
     />}
     <article
       // A new place is a new card: it slides in from the side, so moving on never looks like the same card springing back.
@@ -291,17 +296,17 @@ export function PickCard({
         {/* Swipe feedback */}
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute left-5 top-1/3 rotate-[-12deg] rounded-lg border-4 border-paprika-bright px-3 py-1 font-display text-3xl font-extrabold text-paprika-bright"
-          style={{ opacity: hasBack ? Math.max(0, progress) : 0 }}
+          className={`pointer-events-none absolute left-5 top-1/3 rotate-[-12deg] rounded-lg border-4 px-3 py-1 font-display text-3xl font-extrabold ${likeSwipes ? "border-teal-bright text-teal-bright" : "border-paprika-bright text-paprika-bright"}`}
+          style={{ opacity: hasBack || likeSwipes ? Math.max(0, progress) : 0 }}
         >
-          BACK
+          {likeSwipes ? "👍 MORE" : "BACK"}
         </span>
         <span
           aria-hidden="true"
           className="pointer-events-none absolute right-5 top-1/3 rotate-[12deg] rounded-lg border-4 border-white px-3 py-1 font-display text-3xl font-extrabold text-white"
           style={{ opacity: Math.max(0, -progress) }}
         >
-          NEXT
+          {likeSwipes ? "👎 LESS" : "NEXT"}
         </span>
 
         {/* In a group: your own answer (others' stay secret). Tap another answer below to change it. */}
@@ -571,7 +576,10 @@ function AimOverlay({
   flight,
   ring,
   symbol,
+  fromButton,
 }: {
+  /** Drawn by holding Let's go (rather than pulling the card): changes the words of the hint. */
+  fromButton?: boolean;
   armed: boolean;
   launching: boolean;
   tension: number;
@@ -678,10 +686,34 @@ function AimOverlay({
             </span>
           );
         })}
-      {armed && !launching && (
-        <p className="absolute inset-x-0 text-center" style={{ top: t.y + 64 }}>
-          <span className="inline-flex h-9 items-center rounded-full bg-paprika px-4 text-sm font-bold text-white shadow-lg">Let go: {t.label}</span>
-        </p>
+      {/* How to choose: a finger sliding between arrows, until it's time to let go. */}
+      {!launching && (
+        <div className="absolute inset-x-0 flex flex-col items-center gap-1.5 text-center" style={{ top: t.y + 64 }}>
+          {armed ? (
+            <span className="inline-flex h-9 items-center rounded-full bg-paprika px-4 text-sm font-bold text-white shadow-lg">Let go: {t.label}</span>
+          ) : (
+            <span className="inline-flex h-9 items-center rounded-full bg-white/90 px-4 text-sm font-bold text-ink shadow-lg">
+              {fromButton ? "Keep holding to draw" : "Keep pulling to draw"}
+            </span>
+          )}
+          <span className="inline-flex items-center gap-2 rounded-full bg-black/55 px-3 py-1 text-xs font-semibold text-white/90">
+            <span className="text-base text-white/70">‹</span>
+            <span className="animate-sway inline-block text-lg leading-none">👆</span>
+            <span className="text-base text-white/70">›</span>
+            Slide your finger to choose
+          </span>
+        </div>
+      )}
+      {/* Arrows at the bow's tips: it turns as your finger slides. */}
+      {!launching && (
+        <>
+          <span className="animate-sway-left absolute text-xl font-bold text-white/80" style={{ left: bow.x - 74, top: bow.y - 2 }}>
+            ‹
+          </span>
+          <span className="animate-sway-right absolute text-xl font-bold text-white/80" style={{ left: bow.x + 64, top: bow.y - 2 }}>
+            ›
+          </span>
+        </>
       )}
     </div>
   );
