@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
 import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
-import { applyMaybes, applySignals, cantEatHints, maybeSignals, skipSignals } from "@/lib/categories";
+import { applyMaybes, applySignals, cantEatHints, lessSignals, maybeSignals, mergeSignals, skipSignals } from "@/lib/categories";
 import { haptic } from "@/lib/haptics";
 import { cravingShortcuts } from "@/lib/cravings";
 import { fitNote, tooLate } from "@/lib/partyFit";
@@ -32,7 +32,11 @@ import { InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyResults } from 
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
 import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon } from "./Icons";
-import type { AimKey } from "@/lib/aim";
+import { aimAt, type AimKey } from "@/lib/aim";
+import { aimOptions, openAimedTarget } from "@/lib/links";
+import { createBow } from "@/lib/bow";
+import { LAUNCH_MS } from "@/hooks/useCardGestures";
+import { BowButton } from "./BowButton";
 import { dietaryBadge, readStoredDietary, useDietary } from "@/hooks/useDietary";
 import type { Dietary } from "@/lib/types";
 
@@ -153,9 +157,11 @@ export function ZestApp() {
   const firstOfSession = useRef(true);
   const inflight = useRef<AbortController | null>(null);
   const skipped = useRef<Pick[]>([]);
+  /** "Less like this": skips that steer away straight away (memory only). */
+  const disliked = useRef<Pick[]>([]);
   // Which way the next card comes in: from the right when moving on, from the left when going back.
   const [enterFrom, setEnterFrom] = useState<"right" | "left">("right");
-  /** Solo "Maybe": a shortlist for this visit only (memory, never saved). Searches lean toward it. */
+  /** Solo "More like this": places you liked this visit (memory only, never saved). Searches lean toward them. */
   const [maybes, setMaybes] = useState<Pick[]>([]);
   const maybesRef = useRef<Pick[]>([]);
   const [maybesOpen, setMaybesOpen] = useState(false);
@@ -343,7 +349,7 @@ export function ZestApp() {
       setIndex(0);
       setHistory([]);
       setFeed({ status: "loading" });
-      fetchQueue(m, skipSignals(skipped.current), { append: false, extra });
+      fetchQueue(m, mergeSignals(lessSignals(disliked.current), skipSignals(skipped.current)), { append: false, extra });
     },
     [fetchQueue],
   );
@@ -381,17 +387,21 @@ export function ZestApp() {
 
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
 
-  const soloSkip = useCallback((asMaybe = false) => {
+  /** Move on: a plain skip, after a like ("More like this"), or steering away ("Less like this"). */
+  const soloSkip = useCallback((how: "skip" | "liked" | "less" = "skip") => {
     if (!current) return;
-    // A maybe isn't a "no": it doesn't count toward skip hints.
+    const asMaybe = how === "liked";
+    // A like isn't a "no": it doesn't count toward skip hints.
     if (!asMaybe) skipped.current = [...skipped.current, current];
-    const next = skipSignals(skipped.current);
+    if (how === "less") disliked.current = [...disliked.current.filter((p) => p.id !== current.id), current];
+    const next = mergeSignals(lessSignals(disliked.current), skipSignals(skipped.current));
     const fresh = next.filter((s) => !signals.includes(s));
-    if (fresh.length > 0 && !asMaybe) {
+    if ((fresh.length > 0 || how === "less") && !asMaybe) {
       // Reorder what's left right away so the signal feels instant; the next refill sends it to the ranker.
       setQueue((q) => [...q.slice(0, index + 1), ...applySignals(q.slice(index + 1), next)]);
       setSignals(next);
-      setNotice(`Got it: ${fresh[0]}.`);
+      if (how === "less") setNotice(current.category ? `Got it: fewer ${current.category}.` : "Got it: less like that.");
+      else setNotice(`Got it: ${fresh[0]}.`);
     }
     setHistory((h) => [...h, index]);
     setIndex((i) => i + 1);
@@ -444,7 +454,10 @@ export function ZestApp() {
     if (history.length === 0) return;
     const back = history[history.length - 1];
     const pick = queue[back];
-    if (pick) skipped.current = skipped.current.filter((p) => p.id !== pick.id);
+    if (pick) {
+      skipped.current = skipped.current.filter((p) => p.id !== pick.id);
+      disliked.current = disliked.current.filter((p) => p.id !== pick.id);
+    }
     setIndex(back);
     setHistory(history.slice(0, -1));
   }, [history, queue]);
@@ -597,6 +610,7 @@ export function ZestApp() {
     setComposing(false);
     voice.cancel();
     skipped.current = [];
+    disliked.current = [];
     maybesRef.current = [];
     setMaybes([]);
     setSignals([]);
@@ -980,14 +994,21 @@ export function ZestApp() {
     setEnterFrom("right");
     moveOn();
   };
-  /** Maybe: save this pick to the shortlist (or take it off) and move on. What's coming leans toward it. */
+  /** Less like this: move on, and what's coming steers away from this kind of place at once. */
+  const lessLike = () => {
+    if (!current) return;
+    haptic(8);
+    setEnterFrom("right");
+    soloSkip("less");
+  };
+  /** More like this: save this pick to the liked list (or take it off) and move on. What's coming leans toward it. */
   const toggleMaybe = () => {
     if (!current) return;
     if (maybes.some((m) => m.placeId === current.placeId)) {
       const rest = maybes.filter((m) => m.placeId !== current.placeId);
       maybesRef.current = rest;
       setMaybes(rest);
-      setNotice("Taken off your maybes.");
+      setNotice("Taken off the places you liked.");
       return;
     }
     const saved = [...maybes, current];
@@ -996,11 +1017,29 @@ export function ZestApp() {
     haptic(10);
     const lean = maybeSignals(saved);
     setQueue((q) => [...q.slice(0, index + 1), ...applyMaybes(q.slice(index + 1), lean)]);
-    setNotice(saved.length === 1 ? "Saved as a maybe. Picks will lean this way." : `Saved. ${saved.length} maybes so far.`);
+    setNotice(saved.length === 1 ? "Liked. More like this coming up, and it's saved for later." : `Liked. ${saved.length} saved so far.`);
     setEnterFrom("right");
-    soloSkip(true);
+    soloSkip("liked");
   };
   const isMaybe = Boolean(current && maybes.some((m) => m.placeId === current.placeId));
+  // Holding Let's go draws the bow over the card; letting go shoots at what's aimed.
+  const [bow] = useState(createBow);
+  const shoot = (aim: number) => {
+    if (!current) return bow.set(null);
+    const target = aimAt(aim, aimOptions(current));
+    // Straight from the gesture, so the browser allows the new tab or the call.
+    openAimedTarget(current, target);
+    haptic(18);
+    bow.set({ tension: 1, aim, launching: true });
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    setTimeout(
+      () => {
+        bow.set(null);
+        soloGo(target);
+      },
+      still ? 0 : LAUNCH_MS,
+    );
+  };
   /** From the Maybes list: jump back to one (it's still in the queue), ready to go. */
   const openMaybe = (p: Pick) => {
     setMaybesOpen(false);
@@ -1037,9 +1076,9 @@ export function ZestApp() {
   const timer = useInactivityTimer(IDLE_MS, onIdle, Boolean(locked) || inParty || Boolean(party.matchedCard));
 
   // Keyboard: → next, ← or Backspace back, ↓ go (or vote, or add), solo or in a group.
-  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void; maybe?: () => void }>({ next, back: goBack, pullGo });
+  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void; maybe?: () => void; less?: () => void }>({ next, back: goBack, pullGo });
   useEffect(() => {
-    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined, maybe: !inParty && !adding ? toggleMaybe : undefined };
+    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined, maybe: !inParty && !adding ? toggleMaybe : undefined, less: !inParty && !adding ? lessLike : undefined };
   });
   useEffect(() => {
     if (locked || composing || receiptOpen) return;
@@ -1047,6 +1086,7 @@ export function ZestApp() {
       const target = e.target as HTMLElement;
       if (target.closest("input, textarea, [role=tablist]")) return;
       if (keyActions.current.maybe && e.key.toLowerCase() === "m") keyActions.current.maybe();
+      else if (keyActions.current.less && e.key.toLowerCase() === "l") keyActions.current.less();
       else if (keyActions.current.answer && ["1", "2", "3"].includes(e.key)) keyActions.current.answer(e.key === "1" ? "no" : e.key === "2" ? "ok" : "love");
       else if (e.key === "ArrowRight") keyActions.current.next();
       else if (e.key === "ArrowLeft" || e.key === "Backspace") keyActions.current.back();
@@ -1400,10 +1440,10 @@ export function ZestApp() {
                   <span aria-hidden="true" className="w-5 text-center text-base">←</span>Swipe for another pick
                 </li>
                 <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the photo down to go, or tap Let&apos;s go
+                  <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the card down, or hold Let&apos;s go, to aim and shoot
                 </li>
                 <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">☆</span>Maybe saves it for later, and picks lean that way
+                  <span aria-hidden="true" className="w-5 text-center text-base">👍</span>More or less like this steers what comes next
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span aria-hidden="true" className="w-5 text-center text-base">◉</span>Tap the photo for more photos
@@ -1545,6 +1585,7 @@ export function ZestApp() {
           enterFrom={enterFrom}
           photoNow={swipes === 0}
           isMaybe={isMaybe}
+          bow={bow}
           onTangent={submitCraving}
           expanded={expandedId === current.id}
           onExpand={() => setExpandedId(current.id)}
@@ -1627,7 +1668,7 @@ export function ZestApp() {
       {maybesOpen && !inParty && maybes.length > 0 && (
         <MaybesSheet maybes={maybes} onOpen={openMaybe} onRemove={removeMaybe} onClose={() => setMaybesOpen(false)} />
       )}
-      {/* Back, always bottom-left; Maybe (solo) or where you are and Skip (group) beside it. */}
+      {/* Back, always bottom-left; Let's go and the liked list (solo), or where you are and Skip (group), beside it. */}
       <NavRow
         hidden={composing || receiptOpen || !(adding ? addingCurrent : shown)}
         canBack={canGoBack}
@@ -1642,15 +1683,15 @@ export function ZestApp() {
               {partyPicks.slice(0, pAt).filter((p) => !unfitSet.has(p.id)).length + 1} of {votableCount}
             </span>
           ) : current ? (
-            <button
-              type="button"
-              onClick={toggleMaybe}
-              aria-pressed={isMaybe}
-              aria-label={isMaybe ? `${current.name} is a maybe. Tap to take it off` : `Maybe: save ${current.name} for later and see another`}
-              className={`${navPill} ${isMaybe ? "bg-star/20 text-star" : "bg-white/10 text-white hover:bg-white/15"}`}
-            >
-              <span aria-hidden="true">{isMaybe ? "★" : "☆"}</span> Maybe
-            </button>
+            <BowButton
+              bow={bow}
+              label="Let's go"
+              aria={`Let's go: ${current.travelMode === "drive" ? "drive" : "walk"} to ${current.name}. Tap for choices, or hold and slide to aim.`}
+              icon={current.travelMode === "drive" ? <CarIcon size={20} /> : <WalkIcon size={20} />}
+              disabled={receiptOpen}
+              onTap={() => setGoMenu(true)}
+              onShoot={shoot}
+            />
           ) : null
         }
         right={
@@ -1661,8 +1702,8 @@ export function ZestApp() {
               </button>
             )
           ) : maybes.length > 0 ? (
-            <button type="button" onClick={() => setMaybesOpen(true)} className={`${navPill} text-white/85 hover:bg-white/10`}>
-              Maybes ({maybes.length}) <span aria-hidden="true">›</span>
+            <button type="button" onClick={() => setMaybesOpen(true)} aria-label={`Places you liked (${maybes.length})`} className={`${navPill} text-white/85 hover:bg-white/10`}>
+              Liked ({maybes.length}) <span aria-hidden="true">›</span>
             </button>
           ) : null
         }
@@ -1670,7 +1711,19 @@ export function ZestApp() {
       <Controls
         searching={composing}
         disabled={!(adding ? addingCurrent : shown) || receiptOpen}
-        next={(adding ? addingCurrent : shown) ? { label: inParty ? "Next" : "Another", onClick: next } : undefined}
+        next={
+          adding
+            ? addingCurrent
+              ? { label: "Next", onClick: next }
+              : undefined
+            : inParty
+              ? shown
+                ? { label: "Next", onClick: next }
+                : undefined
+              : current
+                ? { label: "Less like this", aria: `Less like this: skip ${current.name} and see fewer like it`, onClick: lessLike, icon: <span aria-hidden="true">👎</span> }
+                : undefined
+        }
         answer={
           inParty && !adding && partyCurrent ? { value: party.myAnswers[partyCurrent.id] ?? null, onAnswer: partyAnswer, place: partyCurrent.name } : undefined
         }
@@ -1683,11 +1736,12 @@ export function ZestApp() {
               ? undefined
               : current
                 ? {
-                    label: "Let's go",
-                    aria: `Let's go: ${current.travelMode === "drive" ? "drive" : "walk"} to ${current.name}`,
-                    onClick: () => setGoMenu(true),
-                    tone: "go",
-                    icon: current.travelMode === "drive" ? <CarIcon size={20} /> : <WalkIcon size={20} />,
+                    label: isMaybe ? "Liked" : "More like this",
+                    aria: isMaybe ? `You liked ${current.name}. Tap to take it off` : `More like this: like ${current.name}, save it for later and see more like it`,
+                    onClick: toggleMaybe,
+                    tone: isMaybe ? "liked" : "like",
+                    pressed: isMaybe,
+                    icon: <span aria-hidden="true">👍</span>,
                   }
                 : undefined
         }

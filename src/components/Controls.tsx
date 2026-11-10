@@ -6,13 +6,14 @@ import { ArrowRightIcon, HeartIcon, MicIcon, SearchIcon, XIcon } from "./Icons";
 /**
  * The bottom bar, beside the gestures rather than instead of them: a "move on" button on the
  * left, search in the middle (tap to type, hold to speak, inside the idle countdown ring),
- * and the main action on the right: Let's go solo, Vote in a group, Add while adding.
+ * and an action on the right. Solo: Less like this · search · More like this (Let's go sits
+ * in the row above). Adding to a group's vote: Next · search · Add.
  */
 interface Props {
-  /** Left: move on ("Another" solo, "Next" in a group). */
-  next?: { label: string; onClick: () => void };
-  /** Right: the main action for the pick on screen. */
-  primary?: { label: string; aria: string; onClick: () => void; tone: "go" | "vote" | "voted" | "add"; icon?: ReactNode };
+  /** Left: move on ("Less like this" solo, "Next" in a group). The icon defaults to an arrow. */
+  next?: { label: string; onClick: () => void; aria?: string; icon?: ReactNode };
+  /** Right: an action for the pick on screen. */
+  primary?: { label: string; aria: string; onClick: () => void; tone: "go" | "vote" | "voted" | "add" | "like" | "liked"; icon?: ReactNode; pressed?: boolean };
   disabled?: boolean;
   /**
    * In a group: three answers for the place on screen, always visible. The current answer
@@ -41,7 +42,7 @@ export function Controls(p: Props) {
   const ring = 2 * Math.PI * 41;
   // Labeled pills: words say what happens. Icons are a bonus; on the narrowest phones the words alone fit.
   const pill =
-    "flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-2 text-base font-semibold whitespace-nowrap text-white shadow-lg transition active:scale-95 disabled:opacity-40";
+    "flex h-14 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-2 text-base font-semibold whitespace-nowrap text-white shadow-lg transition active:scale-95 disabled:opacity-40 max-[359px]:text-sm";
   const pillIcon = "hidden shrink-0 min-[360px]:block";
   if (p.answer) {
     const a = p.answer;
@@ -77,7 +78,14 @@ export function Controls(p: Props) {
     );
   }
 
-  const tones = { go: "bg-paprika hover:bg-paprika-deep", vote: "bg-social hover:brightness-110", voted: "bg-social/30 ring-2 ring-social", add: "bg-social hover:brightness-110" };
+  const tones = {
+    go: "bg-paprika hover:bg-paprika-deep",
+    vote: "bg-social hover:brightness-110",
+    voted: "bg-social/30 ring-2 ring-social",
+    add: "bg-social hover:brightness-110",
+    like: "bg-white/12 hover:bg-white/18",
+    liked: "bg-teal/30 ring-2 ring-teal",
+  };
   const urgent = p.timeLeft < 0.1;
 
   return (
@@ -88,10 +96,12 @@ export function Controls(p: Props) {
           className={`${pill} bg-white/12 hover:bg-white/18 ${p.searching ? "pointer-events-none opacity-0" : ""}`}
           onClick={p.next.onClick}
           disabled={p.disabled}
+          aria-label={p.next.aria}
           tabIndex={p.searching ? -1 : undefined}
         >
+          {p.next.icon ? <span className={pillIcon}>{p.next.icon}</span> : null}
           {p.next.label}
-          <ArrowRightIcon size={18} className={pillIcon} />
+          {!p.next.icon && <ArrowRightIcon size={18} className={pillIcon} />}
         </button>
       ) : (
         <span className="flex-1" />
@@ -160,6 +170,7 @@ export function Controls(p: Props) {
           onClick={p.primary.onClick}
           disabled={p.disabled}
           aria-label={p.primary.aria}
+          aria-pressed={p.primary.pressed}
           tabIndex={p.searching ? -1 : undefined}
         >
           {p.primary.icon && <span className={pillIcon}>{p.primary.icon}</span>}

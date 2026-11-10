@@ -100,7 +100,7 @@ export function PrivacyReceipt({
             {diet && diet.allergies.length > 0 && <Row label="Allergies">{diet.allergies.join(", ")}</Row>}
             {sent.craving && <Row label="Craving">“{sent.craving}”</Row>}
             {sent.skipSignals && sent.skipSignals.length > 0 && <Row label="Skip hints">{sent.skipSignals.join(", ")}</Row>}
-            {sent.likeSignals && sent.likeSignals.length > 0 && <Row label="Maybe hints">{sent.likeSignals.join(", ")}</Row>}
+            {sent.likeSignals && sent.likeSignals.length > 0 && <Row label="Liked hints">{sent.likeSignals.join(", ")}</Row>}
             {sent.exclude && sent.exclude.length > 0 && (
               <Row label="Seen">
                 {sent.exclude.length} place {sent.exclude.length === 1 ? "ID" : "IDs"} you&apos;ve already seen, so they aren&apos;t repeated

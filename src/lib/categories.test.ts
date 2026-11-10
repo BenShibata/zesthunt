@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyMaybes, cantEatHints, dietSafeSuggestion, maybeLikeness, maybeSignals } from "./categories";
+import { applyMaybes, applySignals, cantEatHints, dietSafeSuggestion, lessSignals, maybeLikeness, maybeSignals, mergeSignals } from "./categories";
 import { buildMockQueue } from "./mockPicks";
 
 const buildMockQueueForMaybes = () => buildMockQueue("fresh", new Date("2026-11-09T19:00:00Z"), { firstOfSession: false, allMoods: true });
@@ -66,5 +66,19 @@ describe("maybes", () => {
     const firstOther = out.findIndex((p) => p.category !== "noodles");
     expect(out.slice(0, firstOther).every((p) => p.category === "noodles")).toBe(true);
     expect(maybeLikeness({ ...all[0], category: "noodles", priceLevel: 2 }, ["more noodles", "around $$"])).toBe(3);
+  });
+});
+
+describe("less like this", () => {
+  const p = (id: string, category: string | null) => ({ id, category, walkMinutes: 5, priceLevel: 1 }) as Parameters<typeof applySignals>[0][number];
+  it("counts a single explicit no straight away, most recent first, without repeats", () => {
+    expect(lessSignals([p("a", "tacos"), p("b", "noodles"), p("c", "tacos"), p("d", null)])).toEqual(["fewer tacos", "fewer noodles"]);
+  });
+  it("moves that kind of food behind the rest", () => {
+    const order = applySignals([p("1", "tacos"), p("2", "pizza"), p("3", "tacos"), p("4", "salad")], lessSignals([p("x", "tacos")]));
+    expect(order.map((x) => x.id)).toEqual(["2", "4", "1", "3"]);
+  });
+  it("merges with skip patterns without repeats", () => {
+    expect(mergeSignals(["fewer tacos"], ["fewer tacos", "shorter walks"])).toEqual(["fewer tacos", "shorter walks"]);
   });
 });

@@ -10,8 +10,8 @@ export const PULL_AT = 110;
 /** Movement before a gesture picks a direction; less than this and it's a tap. */
 const DECIDE_AT = 8;
 const TAP_MS = 350;
-/** Long enough for the card to fly at the target and the target to burst. */
-const LAUNCH_MS = 380;
+/** Long enough for the arrow to fly to its target and the target to take the hit. */
+export const LAUNCH_MS = 600;
 /** A committed swipe: the card flies off the side before the next one comes in. */
 const FLY_MS = 180;
 
@@ -20,9 +20,10 @@ type Axis = "x" | "pull" | "up" | "none" | null;
 /**
  * The pick card's gestures, one direction per gesture:
  * - swipe left: the next pick; swipe right: back to the previous one;
- * - on the photo only, pull down and let go to launch (go, or vote in a group): the photo
- *   stretches like a drawn bow, buzzes once when it's far enough, and flies off on release.
- *   Moving sideways while pulling aims (the card picks what's aimed at from `aim`);
+ * - pull down and let go to launch (go, or vote in a group): the card draws back like a bow,
+ *   buzzes once when it's far enough, and on release springs back as the arrow flies.
+ *   Moving sideways while pulling aims (the card picks what's aimed at from `aim`). The
+ *   details pull too while closed, or open and scrolled to their top;
  * - on the photo only, a tap flips to the next photo.
  * The details panel takes sideways swipes too, while its up-and-down scrolling stays native.
  * Presses that start on a button or link are left alone, so those keep working.

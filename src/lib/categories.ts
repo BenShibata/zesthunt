@@ -76,6 +76,21 @@ export function skipSignals(skipped: Pick[]): string[] {
   return signals.slice(0, 6);
 }
 
+/**
+ * "Less like this": an explicit no counts at once (no waiting for a pattern), as "fewer <kind>"
+ * for each kind of food passed on this way, most recent first.
+ */
+export function lessSignals(disliked: Pick[]): string[] {
+  const out: string[] = [];
+  for (const p of [...disliked].reverse()) if (p.category && !out.includes(`fewer ${p.category}`)) out.push(`fewer ${p.category}`);
+  return out.slice(0, 4);
+}
+
+/** Explicit "less like this" signals first, then patterns from plain skips, without repeats. */
+export function mergeSignals(...lists: string[][]): string[] {
+  return [...new Set(lists.flat())].slice(0, 8);
+}
+
 /** Moves picks that match a skip signal behind the others, keeping order otherwise. */
 export function applySignals(picks: Pick[], signals: string[]): Pick[] {
   if (signals.length === 0) return picks;

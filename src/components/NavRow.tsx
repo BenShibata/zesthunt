@@ -6,7 +6,7 @@ import { ChevronLeftIcon } from "./Icons";
 /**
  * One row, always in the same place just above the bottom buttons: "‹ Back" on the left
  * (faded when there's nothing to go back to), something in the middle, something on the
- * right. Solo: Maybe and the Maybes list. In a group: where you are, and Skip.
+ * right. Solo: Let's go and the places you liked. In a group: where you are, and Skip.
  */
 export function NavRow({ canBack, onBack, center, right, hidden }: { canBack: boolean; onBack: () => void; center?: ReactNode; right?: ReactNode; hidden?: boolean }) {
   return (
