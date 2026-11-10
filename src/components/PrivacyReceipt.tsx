@@ -152,7 +152,7 @@ export function PrivacyReceipt({
 
           <p className="rounded-2xl bg-teal/20 px-3 py-2.5 text-sm text-white">
             <span className="font-semibold">Kept by us: nothing.</span> The request is forgotten as soon as the answer finishes.
-            {inParty && " In this party, the room holds nicknames and swipes until its 10 minutes are up."}
+            {inParty && " In this party, the room holds nicknames and swipes until it closes, 45 minutes after it opened."}
           </p>
 
           <p className="text-xs text-white/60">

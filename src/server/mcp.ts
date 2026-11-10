@@ -38,7 +38,7 @@ How to present results:
 - Lead with one pick and say why in a sentence. Offer the next one or two as backups.
 - Only recommend places in the results. "try" is a suggested style of dish, not a confirmed menu item.
 - Don't mention calories or call food good or bad. If the user has allergies, remind them to check with the restaurant.
-- For a group, start_hunt_party gives a link everyone swipes on; it's a match when all of them say go.`;
+- For a group, start_hunt_party gives a link where everyone answers the same places (Love it, OK, Not for me); the result shows when everyone's done, and if everyone loves a place they can stop there.`;
 
 const Area = {
   area: z
@@ -207,8 +207,8 @@ export function buildMcpServer(origin: string, signal: AbortSignal) {
     {
       title: "Start a hunt party",
       description:
-        "Open a shared Zesthunt room for a group deciding where to eat. Returns a link to send the group: everyone swipes on the same open places, and it's a match when all of them say go. " +
-        "The room needs no accounts and disappears after 10 minutes.",
+        "Open a shared Zesthunt room for a group deciding where to eat. Returns a link to send the group: everyone answers the same open places (Love it, OK, Not for me), and the best place shows when everyone's done; if everyone loves a place, they can stop there. " +
+        "The room needs no accounts and disappears after 45 minutes.",
       inputSchema: Area,
       outputSchema: {
         demo: z.boolean(),
@@ -235,10 +235,10 @@ export function buildMcpServer(origin: string, signal: AbortSignal) {
       const { code, expiresAt } = await createOpenParty(cards);
       const link = `${origin}/#p=${code}`;
       const minutes = Math.round((expiresAt - Date.now()) / 60000);
-      const roomPrivacy = "The room holds only nicknames, these places and swipes, and disappears in 10 minutes. No accounts, no location.";
+      const roomPrivacy = "The room holds only nicknames, these places and swipes, and disappears in 45 minutes. No accounts, no location.";
       const out = { demo: isDemo(), link, code, expires_in_minutes: minutes, places_in_room: cards.length, privacy: roomPrivacy };
       return {
-        content: [{ type: "text", text: `Hunt party ready: ${link}\nSend it to the group. Everyone swipes; it's a match when you all say go. Closes in ${minutes} minutes.\n${roomPrivacy}` }],
+        content: [{ type: "text", text: `Hunt party ready: ${link}\nSend it to the group. Everyone answers; the best place shows when you're all done (or stop early if everyone loves one). Closes in ${minutes} minutes.\n${roomPrivacy}` }],
         structuredContent: out,
       };
     },

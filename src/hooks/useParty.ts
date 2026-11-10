@@ -58,7 +58,7 @@ export function codeFromHash(): string | null {
 
 /**
  * One hunt party session, held in memory only. Polls the room every 2s for members,
- * new cards and a match. Ends when the room's hard 10-minute TTL runs out.
+ * new cards and a match. Ends when the room's hard 45-minute TTL runs out.
  */
 export function useParty() {
   const [session, setSession] = useState<Session | null>(null);
@@ -81,6 +81,9 @@ export function useParty() {
   const [needed, setNeeded] = useState(2);
   const [extended, setExtended] = useState(false);
   const [steer, setSteer] = useState<PartySteer | null>(null);
+  const [startedAt, setStartedAt] = useState(0);
+  const [doneIds, setDoneIds] = useState<string[]>([]);
+  const [everyoneLoves, setEveryoneLoves] = useState<string[]>([]);
   // "+5 minutes" moves the deadline, so it's tracked apart from the session.
   const [expiresAt, setExpiresAt] = useState(0);
   const expiresRef = useRef(0);
@@ -103,6 +106,9 @@ export function useParty() {
     setUnfit([]);
     setExtended(false);
     setSteer(null);
+    setStartedAt(0);
+    setDoneIds([]);
+    setEveryoneLoves([]);
     deckLen.current = 0;
     deckRef.current = [];
     matchRef.current = null;
@@ -172,6 +178,26 @@ export function useParty() {
       if (!a || pickIds.length === 0) return;
       setUnfit((prev) => [...new Set([...prev, ...pickIds])]);
       await call({ action: "unfit", ...a, pickIds });
+    },
+    [auth],
+  );
+
+  /** "I'm done" (or "Keep voting"): finished, even with places left. Shown here at once. */
+  const finish = useCallback(
+    async (done: boolean) => {
+      const a = auth();
+      if (!a) return;
+      setDoneIds((ids) => (done ? [...new Set([...ids, a.memberId])] : ids.filter((id) => id !== a.memberId)));
+      await call({ action: "done", ...a, done });
+    },
+    [auth],
+  );
+
+  /** Everyone loves this place: end the vote with it, for everyone. */
+  const stopAt = useCallback(
+    async (pickId: string) => {
+      const a = auth();
+      if (a) await call({ action: "stop", ...a, pickId });
     },
     [auth],
   );
@@ -263,6 +289,9 @@ export function useParty() {
         setNeeded(s.needed);
         setExtended(s.extended);
         setSteer((prev) => (prev?.seq === s.steer?.seq ? prev : s.steer));
+        setStartedAt(s.startedAt);
+        setDoneIds((prev) => (prev.join() === s.done.join() ? prev : s.done));
+        setEveryoneLoves((prev) => (prev.join() === s.everyoneLoves.join() ? prev : s.everyoneLoves));
         if (s.expiresAt !== expiresRef.current) {
           expiresRef.current = s.expiresAt;
           setExpiresAt(s.expiresAt);
@@ -312,6 +341,13 @@ export function useParty() {
     needed,
     extended,
     steer,
+    startedAt,
+    /** Who said "I'm done". */
+    doneIds,
+    iAmDone: Boolean(session && doneIds.includes(session.memberId)),
+    everyoneLoves,
+    finish,
+    stopAt,
     rename,
     reveal,
     extend,

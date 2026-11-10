@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PartyCard } from "@/lib/types";
 import { resetUpstashForTests } from "./upstash";
 import { resetRoomStoreForTests } from "./partyStore";
-import { addPlace, bestPlace, createOpenParty, createParty, setWishes, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty } from "./party";
+import { addPlace, bestPlace, createOpenParty, createParty, setDone, setWishes, decideNow, extendParty, joinParty, markUnfit, matchNeeded, partyState, PartyError, recordSwipe, renameMember, steerParty, stopAt } from "./party";
 
 const card = (id: string) => ({ id, placeId: id, name: id }) as PartyCard;
 
@@ -18,18 +18,42 @@ afterEach(() => {
 });
 
 describe("hunt party", () => {
-  it("matches only when every member says go on the same pick", async () => {
-    const host = await createParty("Ana", [card("x"), card("y")]);
+  it("tells everyone when every member loves the same place, and anyone can stop there", async () => {
+    const host = await createParty("Ana", [card("x"), card("y"), card("z")]);
     const friend = await joinParty(host.code, "Ben");
 
     await recordSwipe(host.code, host.memberId, host.key, "x", "go");
     await recordSwipe(friend.code, friend.memberId, friend.key, "y", "go");
-    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBeFalsy();
+    expect((await partyState(host.code, host.memberId, host.key, 0)).everyoneLoves).toEqual([]);
+    await expect(stopAt(host.code, host.memberId, host.key, "x")).rejects.toMatchObject({ status: 409 });
 
-    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "go");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "love");
     const state = await partyState(host.code, host.memberId, host.key, 0);
-    expect(state.match).toBeTruthy();
-    expect(JSON.stringify(state.match)).toContain("x");
+    // No automatic end: everyone is told, and chooses.
+    expect(state.match).toBeNull();
+    expect(state.everyoneLoves).toEqual(["x"]);
+    await stopAt(friend.code, friend.memberId, friend.key, "x");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBe("x");
+  });
+
+  it("lets a voter say they're done: the result shows once everyone is finished", async () => {
+    const host = await createParty("Ana", [card("x"), card("y"), card("z")]);
+    const friend = await joinParty(host.code, "Ben");
+    for (const id of ["x", "y", "z"]) await recordSwipe(host.code, host.memberId, host.key, id, id === "y" ? "love" : "no");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "y", "ok");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBeNull();
+    await setDone(friend.code, friend.memberId, friend.key, true);
+    const s = await partyState(host.code, host.memberId, host.key, 0);
+    expect(s.done).toEqual([friend.memberId]);
+    expect(s.match).toBe("y");
+  });
+
+  it("can take back \"I'm done\" and keep voting", async () => {
+    const host = await createParty("Ana", [card("x"), card("y")]);
+    const friend = await joinParty(host.code, "Ben");
+    await setDone(friend.code, friend.memberId, friend.key, true);
+    await setDone(friend.code, friend.memberId, friend.key, false);
+    expect((await partyState(host.code, host.memberId, host.key, 0)).done).toEqual([]);
   });
 
   it("doesn't match a room of one", async () => {
@@ -49,10 +73,11 @@ describe("hunt party", () => {
     await expect(joinParty(code, "late")).rejects.toBeInstanceOf(PartyError);
   });
 
-  it("ends 10 minutes after creation, even with activity", async () => {
+  it("ends 45 minutes after creation, even with activity, and says when it started", async () => {
     vi.useFakeTimers();
     const host = await createParty("Ana", [card("x")]);
-    vi.advanceTimersByTime(9 * 60_000);
+    expect((await partyState(host.code, host.memberId, host.key, 0)).startedAt).toBe(Date.now());
+    vi.advanceTimersByTime(44 * 60_000);
     await partyState(host.code, host.memberId, host.key, 0);
     vi.advanceTimersByTime(60_001);
     await expect(joinParty(host.code, "Ben")).rejects.toMatchObject({ status: 404 });
@@ -68,18 +93,20 @@ describe("hunt party", () => {
     expect(names).toContain("Sam");
   });
 
-  it("needs everyone up to 3 people, and all but one from 4", async () => {
+  it("says everyone loves a place only when every member does, and shows every vote after", async () => {
     expect([2, 3, 4, 5, 8].map(matchNeeded)).toEqual([2, 3, 3, 4, 7]);
-    const host = await createParty(undefined, [card("x")]);
+    const host = await createParty(undefined, [card("x"), card("y")]);
     const others = [await joinParty(host.code), await joinParty(host.code), await joinParty(host.code)];
-    for (const m of [host, others[0]]) await recordSwipe(host.code, m.memberId, m.key, "x", "go");
-    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBeNull();
-    await recordSwipe(host.code, others[1].memberId, others[1].key, "x", "go");
+    for (const m of [host, ...others.slice(0, 2)]) await recordSwipe(host.code, m.memberId, m.key, "x", "go");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).everyoneLoves).toEqual([]);
+    await recordSwipe(host.code, others[2].memberId, others[2].key, "x", "love");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).everyoneLoves).toEqual(["x"]);
+    await stopAt(host.code, others[2].memberId, others[2].key, "x");
     const state = await partyState(host.code, host.memberId, host.key, 0);
     expect(state.match).toBe("x");
     // Once there's a result, every vote is shown.
-    expect(state.likes.x).toHaveLength(3);
-    expect(state.needed).toBe(3);
+    expect(state.likes.x).toHaveLength(4);
+    expect(state.everyoneLoves).toEqual([]);
   });
 
   it("decides for the group: the most-liked card wins, but only once someone has said go", async () => {
@@ -157,9 +184,9 @@ describe("hunt party", () => {
     expect(added.added).toBe(true);
     expect(JSON.stringify(added)).not.toContain(friend.memberId);
     expect((await partyState(friend.code, friend.memberId, friend.key, 0)).myVotes).toContain("ramen");
-    // The host votes too: with two people, that's a match.
+    // The host loves it too: with two people, everyone loves it.
     await recordSwipe(host.code, host.memberId, host.key, "ramen", "go");
-    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBe("ramen");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).everyoneLoves).toEqual(["ramen"]);
   });
 
   it("adding a place that's already in the list just votes for it", async () => {
@@ -178,15 +205,12 @@ describe("hunt party", () => {
     expect((await partyState(host.code, host.memberId, host.key, 0)).myVotes).toEqual([]);
   });
 
-  it("matches instantly when enough people love the same place, but not on OK alone", async () => {
+  it("counts only love for \"everyone loves it\", never OK", async () => {
     const host = await createParty("Ana", [card("x"), card("y"), card("z")]);
     const friend = await joinParty(host.code, "Ben");
     await recordSwipe(host.code, host.memberId, host.key, "x", "ok");
-    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "ok");
-    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBeNull();
-    await recordSwipe(host.code, host.memberId, host.key, "y", "love");
-    await recordSwipe(friend.code, friend.memberId, friend.key, "y", "love");
-    expect((await partyState(host.code, host.memberId, host.key, 0)).match).toBe("y");
+    await recordSwipe(friend.code, friend.memberId, friend.key, "x", "love");
+    expect((await partyState(host.code, host.memberId, host.key, 0)).everyoneLoves).toEqual([]);
   });
 
   it("reveals as soon as everyone has answered every place: most points win (love 2, OK 1)", async () => {

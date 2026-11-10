@@ -46,7 +46,7 @@ const sections: { title: string; body: string[] }[] = [
       "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's answers (Love it, OK, Not for me), each person's wishes (budget, distance and food words picked from a fixed list), the latest group nudge as a mood word, and which places don't fit someone. Never location, what anyone eats, or what anyone typed.",
       "Answers stay secret until the result. Wishes are only ever shown as one combined summary (\u201c$$ or less \u00b7 ramen\u201d), never whose.",
       "Your phone reads the places against what you eat and shows you a private note; it never removes a place on a guess. If you tap “Can't eat this”, or a place would close before you could get there, the room learns only which place to drop. Never who or why.",
-      "Rooms vanish 10 minutes after they're created (15 if someone taps +5 min, once), no matter what.",
+      "Rooms vanish 45 minutes after they're created, no matter what.",
     ],
   },
   {

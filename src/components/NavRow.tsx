@@ -29,4 +29,4 @@ export function NavRow({ canBack, onBack, center, right, hidden }: { canBack: bo
   );
 }
 
-export const navPill = "inline-flex h-11 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold transition active:scale-95";
+export const navPill = "inline-flex h-11 items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold whitespace-nowrap transition active:scale-95";
