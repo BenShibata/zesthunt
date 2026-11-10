@@ -94,3 +94,22 @@ export function inviteMessage(pick: Pick): { title: string; text: string; url: s
     : "";
   return { title: `Want to come to ${pick.name}?`, text: pick.guessed ? `Want to come? ${pick.name}.${closes}` : `Want to come? ${pick.name}: ${pick.suggestion.replace(/^Try /, "")}.${closes}`, url };
 }
+
+/** Which aimed choices a place has: ordering (own site or delivery apps) and calling. */
+export function aimOptions(pick: Pick): { order: boolean; call: boolean } {
+  return { order: orderAhead(pick).kind !== "none", call: Boolean(pick.phoneDial) };
+}
+
+/**
+ * Shooting at a choice opens it straight away, from the gesture itself (browsers only allow
+ * new tabs and calls from one): directions, the restaurant's own ordering page, or a call.
+ * Delivery apps and "all options" open on the journey screen instead.
+ */
+export function openAimedTarget(pick: Pick, target: "journey" | "directions" | "order" | "call"): void {
+  if (target === "directions") window.open(directionsUrl(pick), "_blank", "noopener");
+  else if (target === "call" && pick.phoneDial) window.location.assign(`tel:${pick.phoneDial}`);
+  else if (target === "order") {
+    const order = orderAhead(pick);
+    if (order.kind === "own") window.open(order.url, "_blank", "noopener");
+  }
+}

@@ -9,9 +9,10 @@ import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
 import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, MoreIcon, PartyIcon, PhoneIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import { useCardGestures } from "@/hooks/useCardGestures";
-import { directionsUrl, orderAhead } from "@/lib/links";
+import { aimOptions, directionsUrl, openAimedTarget } from "@/lib/links";
 import { aimAt, aimTargets, type AimKey } from "@/lib/aim";
 import { foodSymbol, placeHue } from "@/lib/look";
+import { useBow, type Bow } from "@/lib/bow";
 
 interface Props {
   pick: Pick;
@@ -45,7 +46,7 @@ interface Props {
   answer?: "love" | "ok" | "no" | null;
   /** Which side the card comes in from: right when moving on, left when going back. */
   enterFrom?: "right" | "left";
-  /** Solo: this pick is on the Maybes list. */
+  /** Solo: you liked this pick ("More like this"). */
   isMaybe?: boolean;
   /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
   photoNow?: boolean;
@@ -62,7 +63,15 @@ interface Props {
   /** First card of the session: lean left and right once to show it can be swiped. */
   hint?: boolean;
   onHinted?: () => void;
+  /**
+   * The bow drawn from somewhere else (holding Let's go): how far it's drawn (0 → 1), the
+   * sideways aim, and whether it has just been let go. Drawn over the card like a pull.
+   */
+  bow?: Bow;
 }
+
+/** How long the arrow takes to reach its target. */
+export const FLIGHT_MS = 280;
 
 /** What each health label searches for when tapped. */
 const LABEL_QUERY: Record<HealthLabel, string> = {
@@ -97,7 +106,9 @@ export function PickCard({
   onPull,
   pullAction = "go",
   disabled,
+  bow: bowStore,
 }: Props) {
+  const drawn = useBow(bowStore);
   const closesIn = minutesUntil(pick.closesAt, now);
   const closingSoon = closesIn != null && closesIn <= CLOSING_SOON_MINUTES;
   const price = priceText(pick.priceLevel);
@@ -112,8 +123,7 @@ export function PickCard({
   const photo = gallery[at];
   // Solo, a pull aims at what letting go does (see lib/aim).
   const aiming = pullAction === "go";
-  const order = orderAhead(pick);
-  const has = { order: order.kind !== "none", call: Boolean(pick.phoneDial) };
+  const has = aimOptions(pick);
   const walking = pick.travelMode === "walk";
   const TARGETS: Record<AimKey, { label: string; icon: ReactNode }> = {
     order: { label: "Order to go", icon: <BagIcon size={24} /> },
@@ -123,11 +133,7 @@ export function PickCard({
   };
   // What the browser only allows straight from the gesture happens on release.
   const release = (aim: number) => {
-    if (!aiming) return;
-    const t = aimAt(aim, has);
-    if (t === "directions") window.open(directionsUrl(pick), "_blank", "noopener");
-    else if (t === "call" && pick.phoneDial) window.location.assign(`tel:${pick.phoneDial}`);
-    else if (t === "order" && order.kind === "own") window.open(order.url, "_blank", "noopener");
+    if (aiming) openAimedTarget(pick, aimAt(aim, has));
   };
   const gestures = useCardGestures({
     onNext,
@@ -136,11 +142,19 @@ export function PickCard({
     onRelease: release,
     onTap: gallery.length > 1 ? () => setShot({ id: pick.id, i: at + 1 }) : undefined,
     // The details pull like the photo while closed, or open and scrolled to the top; swiping up opens them.
+    // Not while the bow is drawn from Let's go.
     panelFree: !expanded || detailsAtTop,
     onSwipeUp: expanded ? undefined : onExpand,
-    disabled,
+    disabled: disabled || Boolean(drawn),
   });
-  const { dx, progress, pull, tension, armed, launching, aim, settle } = gestures;
+  const { dx, progress, settle } = gestures;
+  // Holding Let's go draws the same bow as pulling the card.
+  const ext = drawn && (drawn.tension > 0 || drawn.launching) ? drawn : null;
+  const tension = ext ? ext.tension : gestures.tension;
+  const armed = ext ? ext.tension >= 1 : gestures.armed;
+  const launching = ext ? ext.launching : gestures.launching;
+  const aim = ext ? ext.aim : gestures.aim;
+  const pull = ext ? ext.tension * 36 : gestures.pull;
   // Each place looks different even before its photo arrives: its own color, and a symbol for its food.
   const symbol = foodSymbol(pick);
   const tint = { hue: placeHue(pick), symbol };
@@ -157,6 +171,32 @@ export function PickCard({
     if (lastAim.current && lastAim.current !== aimed) haptic(6);
     lastAim.current = aimed;
   }, [pulling, aimed]);
+  // Open details scrolled to the top: a downward drag draws the bow instead of rubber-banding the
+  // panel. touch-action pan-down does this where it's supported; Safari needs the touch stopped.
+  const detailsRef = useRef<HTMLDivElement>(null);
+  const canPull = Boolean(onPull) && !disabled;
+  useEffect(() => {
+    const el = detailsRef.current;
+    if (!el || !expanded || !canPull) return;
+    let startY = 0;
+    let mode: "pull" | "scroll" | null = null;
+    const start = (e: TouchEvent) => {
+      startY = e.touches[0]?.clientY ?? 0;
+      mode = e.touches.length > 1 || el.scrollTop > 0 ? "scroll" : null;
+    };
+    const move = (e: TouchEvent) => {
+      if (mode === "scroll") return;
+      const dy = (e.touches[0]?.clientY ?? startY) - startY;
+      if (mode === null) mode = dy > 0 ? "pull" : dy < 0 ? "scroll" : null;
+      if (mode === "pull" && e.cancelable) e.preventDefault();
+    };
+    el.addEventListener("touchstart", start, { passive: true });
+    el.addEventListener("touchmove", move, { passive: false });
+    return () => {
+      el.removeEventListener("touchstart", start);
+      el.removeEventListener("touchmove", move);
+    };
+  }, [pick.id, expanded, canPull]);
   // The card's size, for drawing the bow, the arrow and the targets.
   const cardRef = useRef<HTMLDivElement>(null);
   const [box, setBox] = useState({ w: 390, h: 700, photoH: 480 });
@@ -181,13 +221,13 @@ export function PickCard({
   // The bow sits near the bottom of the photo and follows the aim a little; its string draws back with the pull.
   const bow = { x: box.w / 2 + aim * 0.3, y: Math.min(box.photoH - 30, Math.max(tip.y + 190, box.photoH * 0.72)) };
   const nock = { x: bow.x, y: bow.y + 8 + tension * 30 };
-  const arrowEnd = { x: tip.x, y: tip.y + 40 };
-  // The arrow's flight path curves up toward the target.
-  const flight = `M ${nock.x} ${nock.y} Q ${(nock.x + arrowEnd.x) / 2} ${Math.min(nock.y, arrowEnd.y) - 40} ${arrowEnd.x} ${arrowEnd.y}`;
+  // The arrow's flight path curves up toward the target, stopping at its edge.
+  const end = { x: tip.x, y: tip.y + 30 };
+  const flight: Flight = { from: nock, via: { x: (nock.x + end.x) / 2, y: Math.min(nock.y, end.y) - 40 }, to: end };
   const RING = 2 * Math.PI * 35;
-  // The whole card (photo and details) moves with the pull, then flies at the target.
+  // The whole card (photo and details) moves with the pull; on release it springs back as the arrow flies.
   const cardTransform = launching
-    ? `translate(${(tip.x - box.w / 2) * 0.7}px, -95%) scale(0.55) rotate(${(tip.x - box.w / 2) / 40}deg)`
+    ? undefined
     : dx
       ? `translateX(${dx}px) rotate(${dx / 50}deg)`
       : pull
@@ -196,8 +236,7 @@ export function PickCard({
 
   return (
     <div ref={cardRef} className="relative flex min-h-0 flex-1 flex-col">
-    <AimOverlay
-      show={pulling}
+    {pulling && <AimOverlay
       armed={armed}
       launching={launching}
       tension={tension}
@@ -209,7 +248,7 @@ export function PickCard({
       flight={flight}
       ring={RING}
       symbol={symbol}
-    />
+    />}
     <article
       // A new place is a new card: it slides in from the side, so moving on never looks like the same card springing back.
       key={pick.id}
@@ -218,10 +257,8 @@ export function PickCard({
       className={`relative flex min-h-0 flex-1 flex-col ${enterFrom === "left" ? "animate-enter-left" : "animate-enter-right"}`}
       style={{
         transform: cardTransform,
-        opacity: settle === "fly" ? 0.4 : launching ? 0 : undefined,
-        transition: launching
-          ? "transform 360ms cubic-bezier(.5,-0.3,.7,.3), opacity 360ms ease-in"
-          : settle === "fly"
+        opacity: settle === "fly" ? 0.4 : undefined,
+        transition: settle === "fly"
             ? "transform 180ms ease-in, opacity 180ms ease-in"
             : dx || pull
               ? "none"
@@ -281,8 +318,8 @@ export function PickCard({
         )}
         {isMaybe && !answer && (
           <div className={`pointer-events-none absolute top-3 right-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
-            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-3 text-sm font-semibold text-star backdrop-blur-md">
-              <span aria-hidden="true">★</span> Your maybe
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-3 text-sm font-semibold text-white backdrop-blur-md">
+              <span aria-hidden="true">👍</span> You liked this
             </span>
           </div>
         )}
@@ -329,6 +366,7 @@ export function PickCard({
       {/* Details: their own panel. Swipe sideways here too; opened, they scroll up and down. */}
       <div
         key={pick.id}
+        ref={detailsRef}
         {...gestures.panelHandlers}
         onScroll={(e) => {
           const top = e.currentTarget.scrollTop <= 0;
@@ -337,7 +375,7 @@ export function PickCard({
         // Closed: every drag is ours. Open at the top: the browser only scrolls the content down (finger
         // moving up), so a downward drag is a pull. (Safari lacks pan-down and keeps pan-y there.)
         style={{ touchAction: !expanded ? "none" : detailsAtTop ? "pan-down" : "pan-y" }}
-        className={`animate-rise relative flex select-none items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-4 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-contain" : ""}`}
+        className={`animate-rise relative flex select-none items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-4 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-none" : ""}`}
         {...(expanded ? { tabIndex: 0, "aria-label": `Details about ${pick.name}` } : {})}
       >
         <div className="min-w-0 flex-1">
@@ -457,14 +495,71 @@ export function PickCard({
   );
 }
 
+type Point = { x: number; y: number };
+/** The arrow's curved flight: from the nock, bending through `via`, to the target's edge. */
+type Flight = { from: Point; via: Point; to: Point };
+
+const flightPath = (f: Flight) => `M ${f.from.x} ${f.from.y} Q ${f.via.x} ${f.via.y} ${f.to.x} ${f.to.y}`;
+/** A point along the flight (0 → 1), and which way the arrow points there. */
+function along(f: Flight, t: number): Point & { angle: number } {
+  const u = 1 - t;
+  const x = u * u * f.from.x + 2 * u * t * f.via.x + t * t * f.to.x;
+  const y = u * u * f.from.y + 2 * u * t * f.via.y + t * t * f.to.y;
+  const dx = 2 * u * (f.via.x - f.from.x) + 2 * t * (f.to.x - f.via.x);
+  const dy = 2 * u * (f.via.y - f.from.y) + 2 * t * (f.to.y - f.via.y);
+  return { x, y, angle: (Math.atan2(dy, dx) * 180) / Math.PI };
+}
+
+/** An arrow pointing right from its tip at (0, 0): shaft, head and fletching. */
+function ArrowShape({ color }: { color: string }) {
+  return (
+    <g strokeLinecap="round">
+      <line x1={-46} y1={0} x2={-4} y2={0} stroke={color} strokeWidth="3.5" />
+      <path d="M 0 0 L -13 -7 L -10 0 L -13 7 Z" fill={color} />
+      <path d="M -40 0 L -50 -7 M -44 0 L -54 -7 M -40 0 L -50 7 M -44 0 L -54 7" stroke={color} strokeOpacity="0.8" strokeWidth="2" />
+    </g>
+  );
+}
+
+/** The arrow in flight: it follows the curve to the target, then calls `onHit`. */
+function FlyingArrow({ flight, onHit }: { flight: Flight; onHit: () => void }) {
+  const [t, setT] = useState(0);
+  const hitRef = useRef(onHit);
+  useEffect(() => {
+    hitRef.current = onHit;
+  });
+  useEffect(() => {
+    // With reduced motion it lands on the first frame.
+    const ms = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 1 : FLIGHT_MS;
+    let raf = 0;
+    let t0 = -1;
+    const step = (now: number) => {
+      if (t0 < 0) t0 = now;
+      const k = Math.min(1, (now - t0) / ms);
+      // Fast off the string, easing a touch as it arrives.
+      setT(1 - (1 - k) * (1 - k) * 0.6 - (1 - k) * 0.4);
+      if (k < 1) raf = requestAnimationFrame(step);
+      else hitRef.current();
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  const p = along(flight, t);
+  return (
+    <g transform={`translate(${p.x} ${p.y}) rotate(${p.angle})`}>
+      <ArrowShape color="var(--color-paprika-bright)" />
+    </g>
+  );
+}
+
 /**
  * The bow and arrow, drawn over the card while it's pulled (the card moves; this stays put).
- * Targets in an arc; a bow whose string draws back with the pull; an arrow curving toward the
- * aimed target; a ring around that target filling as the pull tightens (orange when letting go
- * will fire); and, on release, a little burst of the place's food at the target.
+ * Targets in an arc; a bow whose string draws back with the pull; the arrow nocked on it,
+ * pointing along a faint curve to the aimed target; a ring around that target filling as the
+ * pull tightens (orange when letting go will fire). Let go and the string snaps, the arrow
+ * flies the curve, and the target takes the hit with a little burst of the place's food.
  */
 function AimOverlay({
-  show,
   armed,
   launching,
   tension,
@@ -477,49 +572,64 @@ function AimOverlay({
   ring,
   symbol,
 }: {
-  show: boolean;
   armed: boolean;
   launching: boolean;
   tension: number;
   box: { w: number; h: number };
   targets: { key: AimKey; x: number; y: number; label: string; icon: ReactNode }[];
   aimed: AimKey;
-  bow: { x: number; y: number };
-  nock: { x: number; y: number };
-  flight: string;
+  bow: Point;
+  nock: Point;
+  flight: Flight;
   ring: number;
   symbol: string;
 }) {
-  if (!show) return null;
-  const hot = armed ? "var(--color-paprika-bright)" : "white";
+  const [hit, setHit] = useState(false);
+  // The flight is fixed the moment the arrow leaves, so nothing moving behind it can bend it.
+  const [shot, setShot] = useState<Flight | null>(null);
+  if (launching && !shot) setShot(flight);
+  const hot = armed || launching ? "var(--color-paprika-bright)" : "white";
   const t = targets.find((x) => x.key === aimed)!;
+  const path = flightPath(shot ?? flight);
+  // The nocked arrow points where it will fly; it grows forward on the string as the bow is drawn.
+  const start = along(flight, 0);
+  const tipAt = { x: nock.x + Math.cos((start.angle * Math.PI) / 180) * (40 + tension * 24), y: nock.y + Math.sin((start.angle * Math.PI) / 180) * (40 + tension * 24) };
+  const limbL = { x: bow.x - 44, y: bow.y + 14 };
+  const limbR = { x: bow.x + 44, y: bow.y + 14 };
   return (
     <div aria-hidden="true" className="animate-fade pointer-events-none absolute inset-0 z-30">
       <div className="absolute inset-0 bg-ink/55" />
       <svg className="absolute inset-0 size-full overflow-visible" viewBox={`0 0 ${box.w} ${box.h}`}>
-        <defs>
-          <marker id="arrowhead" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="5" markerHeight="5" orient="auto-start-reverse">
-            <path d="M0,0 L10,5 L0,10 z" fill={hot} />
-          </marker>
-        </defs>
-        {/* The flight path, faint; the arrow itself grows along it with the pull. */}
-        {!launching && <path d={flight} fill="none" stroke="white" strokeOpacity="0.22" strokeWidth="2" strokeDasharray="3 7" />}
-        <path
-          d={flight}
-          fill="none"
-          stroke={hot}
-          strokeWidth="4"
-          strokeLinecap="round"
-          pathLength={1}
-          strokeDasharray={`${Math.max(0.12, launching ? 1 : tension)} 1`}
-          markerEnd={armed || launching ? "url(#arrowhead)" : undefined}
-          className="transition-[stroke] duration-150"
-        />
-        {/* The bow: a curved limb, and a string drawn back to the nock. */}
+        {/* Where the arrow will go: faint while aiming, gone once it's away. */}
+        {!hit && <path d={path} fill="none" stroke={hot} strokeOpacity={launching ? 0.15 : 0.3} strokeWidth="2" strokeDasharray="3 7" />}
+        {/* The bow: a curved limb, and a string drawn back to the nock (straight again once it's let go). */}
+        <g stroke="white" strokeLinecap="round" fill="none">
+          <path d={`M ${limbL.x} ${limbL.y} Q ${bow.x} ${bow.y - 22 - (launching ? 0 : tension * 6)} ${limbR.x} ${limbR.y}`} strokeWidth="5" strokeOpacity="0.9" />
+          <path
+            d={launching ? `M ${limbL.x} ${limbL.y} L ${limbR.x} ${limbR.y}` : `M ${limbL.x} ${limbL.y} L ${nock.x} ${nock.y} L ${limbR.x} ${limbR.y}`}
+            strokeWidth="1.5"
+            strokeOpacity="0.7"
+            className={launching ? "animate-twang" : ""}
+          />
+        </g>
         {!launching && (
-          <g stroke="white" strokeLinecap="round" fill="none">
-            <path d={`M ${bow.x - 44} ${bow.y + 14} Q ${bow.x} ${bow.y - 22} ${bow.x + 44} ${bow.y + 14}`} strokeWidth="5" strokeOpacity="0.9" />
-            <path d={`M ${bow.x - 44} ${bow.y + 14} L ${nock.x} ${nock.y} L ${bow.x + 44} ${bow.y + 14}`} strokeWidth="1.5" strokeOpacity="0.7" />
+          <g transform={`translate(${tipAt.x} ${tipAt.y}) rotate(${start.angle})`}>
+            <ArrowShape color={hot} />
+          </g>
+        )}
+        {launching && shot && !hit && (
+          <FlyingArrow
+            flight={shot}
+            onHit={() => {
+              setHit(true);
+              haptic(14);
+            }}
+          />
+        )}
+        {/* Struck: the arrow stays in the target. */}
+        {hit && shot && (
+          <g transform={`translate(${shot.to.x} ${shot.to.y}) rotate(${along(shot, 1).angle})`}>
+            <ArrowShape color="var(--color-paprika-bright)" />
           </g>
         )}
         {/* How far to pull: the aimed target's ring fills, and turns orange when it's ready to fire. */}
@@ -540,7 +650,7 @@ function AimOverlay({
         return (
           <div
             key={x.key}
-            className={`absolute flex w-20 -translate-x-1/2 -translate-y-7 flex-col items-center gap-1.5 transition-all duration-150 ${on ? "scale-110" : "scale-90 opacity-50"} ${on && armed && !launching ? "animate-wiggle" : ""}`}
+            className={`absolute flex w-20 -translate-x-1/2 -translate-y-7 flex-col items-center gap-1.5 transition-all duration-150 ${on ? "scale-110" : launching ? "scale-90 opacity-25" : "scale-90 opacity-50"} ${on && armed && !launching ? "animate-wiggle" : ""} ${on && hit ? "animate-struck" : ""}`}
             style={{ left: x.x, top: x.y }}
           >
             <span
@@ -548,14 +658,14 @@ function AimOverlay({
                 on ? (armed || launching ? "bg-paprika text-white" : "bg-white text-ink") : "bg-white/15 text-white"
               }`}
             >
-              {on && launching ? <span className="animate-pop text-2xl font-bold">✓</span> : x.icon}
+              {on && hit ? <span className="animate-pop text-2xl font-bold">✓</span> : x.icon}
             </span>
             <span className={`text-center text-xs leading-tight font-semibold ${on ? "text-white" : "text-white/70"}`}>{x.label}</span>
           </div>
         );
       })}
-      {/* A little burst of the place's food at the target as it lands. */}
-      {launching &&
+      {/* A little burst of the place's food at the target as the arrow lands. */}
+      {hit &&
         Array.from({ length: 10 }, (_, i) => {
           const a = (i / 10) * Math.PI * 2;
           return (
