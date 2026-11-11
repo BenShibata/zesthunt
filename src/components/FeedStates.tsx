@@ -58,7 +58,7 @@ export function LocationPrompt({
         </button>
       )}
       <AreaVisual source="preview" />
-      <p className="-mt-1 text-sm text-white/65">Your location is rounded on this phone before it&apos;s sent, used for this search only, and never saved.</p>
+      <p className="-mt-1 text-sm text-white/65">Your location is rounded on this device before it&apos;s sent, used for this search only, and never saved.</p>
     </section>
   );
 }

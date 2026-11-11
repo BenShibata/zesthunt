@@ -1,5 +1,6 @@
 "use client";
 
+import { KEPT_HERE } from "@/lib/copy";
 import type { Pick } from "@/lib/types";
 import { formatClock, priceText } from "@/lib/time";
 import { CarIcon, WalkIcon, XIcon } from "./Icons";
@@ -29,7 +30,7 @@ export function SavedSheet({
           <h2 id="maybes-title" className="font-display text-lg font-bold">
             Saved
           </h2>
-          <p className="text-sm text-white/60">👍 liked (picks lean this way) · ☆ maybe. Tap one to look again. Only on this phone, until you close the page.</p>
+          <p className="text-sm text-white/60">👍 liked (picks lean this way) · ☆ maybe. Tap one to look again. {KEPT_HERE}</p>
         </div>
         <ul className="max-h-[50dvh] overflow-y-auto">
           {saved.map(({ pick: p, kind }) => (

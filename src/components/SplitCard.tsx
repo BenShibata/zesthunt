@@ -55,7 +55,7 @@ export function SplitCard({ placeName, defaultPeople, startOpen }: { placeName: 
         <h2 id={`${id}-title`} className="font-display text-lg font-bold">
           Split the bill
         </h2>
-        <span className="text-xs text-sheet-muted dark:text-white/60">Stays on your phone</span>
+        <span className="text-xs text-sheet-muted dark:text-white/60">Stays on your device</span>
       </div>
 
       <div className="mt-3 flex items-end gap-3">

@@ -1,5 +1,6 @@
 "use client";
 
+import { KEPT_HERE } from "@/lib/copy";
 import { useEffect } from "react";
 import type { Dietary } from "@/lib/types";
 import { ALLERGIES, DIETS } from "@/hooks/useDietary";
@@ -85,7 +86,7 @@ export function DietPanel({
           <h2 id="diet-title" className="font-display text-xl font-bold">
             What do you eat?
           </h2>
-          <p className="text-sm text-white/75">Every pick will fit. Change it any time.</p>
+          <p className="text-sm text-white/75">Picks are filtered to suit you, but we can&apos;t check ingredients: always confirm with the restaurant, especially for allergies.</p>
         </div>
         <button type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-ink">
           Done
@@ -138,7 +139,7 @@ export function DietPanel({
         <label className="flex min-h-11 items-center justify-between gap-3">
           <span className="text-sm">
             <span className="font-semibold">Remember this on this device</span>
-            <span className="block text-white/65">Saved only in this browser. We never store them.</span>
+            <span className="block text-white/65">{KEPT_HERE}</span>
           </span>
           <input
             type="checkbox"

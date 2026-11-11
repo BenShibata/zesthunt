@@ -132,7 +132,7 @@ export function Controls(p: Props) {
           aria-label={
             p.group
               ? "Search for a place to add to the vote. Tap to type, or hold to speak."
-              : `Search for a craving. Tap to type, or hold to speak. Picks clear in ${p.minutesLeft} minute${p.minutesLeft === 1 ? "" : "s"}.`
+              : `Search for a craving. Tap to type, or hold to speak. Your picks reset after ${p.minutesLeft} more quiet minute${p.minutesLeft === 1 ? "" : "s"}.`
           }
           onPointerDown={(e) => {
             if (e.button !== 0) return;

@@ -61,7 +61,7 @@ export function AreaVisual({
         ? `A city-level guess${label ? ` (${label})` : ""}. Nothing more precise.`
         : source === "typed"
           ? "Only the words you typed are sent."
-          : "Only this ~1 km area leaves your phone.";
+          : "Only this ~1 km area leaves your device.";
 
   return (
     <figure className={className}>
@@ -100,7 +100,7 @@ export function AreaVisual({
         {you && (
           <span className="inline-flex items-center gap-1.5">
             <span aria-hidden="true" className="inline-block size-2.5 rounded-full bg-paprika-bright" />
-            Your exact spot stays on this phone.
+            Your exact spot stays on this device.
           </span>
         )}
         {source === "demo" && caption}

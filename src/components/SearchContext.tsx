@@ -44,10 +44,12 @@ export function SearchContext({
         <button
           type="button"
           onClick={onUseLocation}
-          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-full bg-teal/25 px-3 font-semibold text-teal-bright hover:bg-teal/35"
+          aria-label="Use my location"
+          className={`inline-flex shrink-0 items-center justify-center gap-1 rounded-full bg-teal/25 font-semibold text-teal-bright hover:bg-teal/35 ${craving ? "size-11" : "h-9 px-3"}`}
         >
-          <PinIcon size={13} />
-          Use my location
+          <PinIcon size={craving ? 17 : 13} />
+          {/* With a craving beside it, just the pin, so the area name has room. */}
+          {!craving && "Use my location"}
         </button>
       )}
       {craving && (

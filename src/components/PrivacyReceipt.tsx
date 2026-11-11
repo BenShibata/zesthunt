@@ -59,7 +59,7 @@ export function PrivacyReceipt({
             <LockIcon size={18} className="text-teal-bright" />
             What we sent
           </h2>
-          <p className="text-sm text-white/75">Your last request, exactly as it left this phone.</p>
+          <p className="text-sm text-white/75">Your last request, exactly as it left this device.</p>
         </div>
         <button type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-ink">
           Done

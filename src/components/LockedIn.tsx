@@ -1,5 +1,6 @@
 "use client";
 
+import { KEPT_HERE } from "@/lib/copy";
 import { useEffect, useRef, useState } from "react";
 import { ALLERGIES } from "@/lib/dietary";
 import type { Pick } from "@/lib/types";
@@ -304,7 +305,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           <label className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
             <span className="text-sm">
               <span className="font-semibold">Remember {pick.name} for next time</span>
-              <span className="block text-sheet-muted dark:text-white/65">Saved only on this phone. If it&apos;s open nearby next time, it comes first.</span>
+              <span className="block text-sheet-muted dark:text-white/65">{KEPT_HERE} If it&apos;s open nearby next time, it comes first.</span>
             </span>
             <input
               type="checkbox"

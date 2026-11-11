@@ -52,6 +52,11 @@ interface Props {
   onMaybe?: () => void;
   /** This place is on your maybes. */
   isLater?: boolean;
+  /**
+   * The location is only a rough guess (from the network): walk times would be made up, so the
+   * card says where instead, and offers the real location first.
+   */
+  approx?: { area: string; onUseLocation: () => void };
   /** Solo: you liked this pick ("More like this"). */
   isMaybe?: boolean;
   /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
@@ -112,6 +117,7 @@ export function PickCard({
   likeSwipes,
   onMaybe,
   isLater,
+  approx,
   onPull,
   pullAction = "go",
   disabled,
@@ -365,7 +371,19 @@ export function PickCard({
           </div>
         )}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 px-4 pt-4 pb-8">
-          {pick.travelUnknown ? (
+          {approx ? (
+            <button
+              type="button"
+              onClick={approx.onUseLocation}
+              className="pointer-events-auto flex min-h-11 items-center gap-2 rounded-full bg-black/55 px-4 text-left text-base font-semibold text-white backdrop-blur-md hover:bg-black/70"
+            >
+              <PinIcon size={18} className="shrink-0 text-teal-bright" />
+              <span>
+                Near {approx.area}
+                <span className="block text-sm font-normal text-teal-bright">Use my location for walk times</span>
+              </span>
+            </button>
+          ) : pick.travelUnknown ? (
             <p className="flex items-center gap-2 font-display text-[1.75rem] leading-none font-extrabold tracking-tight whitespace-nowrap text-white drop-shadow-lg">
               <PartyIcon size={26} className="shrink-0" />
               Group pick

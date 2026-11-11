@@ -1,5 +1,6 @@
 "use client";
 
+import { KEPT_HERE, PARTY_KEPT } from "@/lib/copy";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
 import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
@@ -31,7 +32,7 @@ import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty
 import { EveryoneLoves, InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyResults } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon, XIcon } from "./Icons";
 import { aimAt, type AimKey } from "@/lib/aim";
 import { aimOptions, openAimedTarget } from "@/lib/links";
 import { createBow } from "@/lib/bow";
@@ -52,6 +53,14 @@ function clearHash() {
 }
 
 const IDLE_MS = 10 * 60 * 1000;
+
+const TIPS_KEY = "zesthunt:tips:v1";
+/** First-visit tips, one at a time, in plain words. Each gesture also has a button. */
+const TIPS = [
+  "Swipe left for less like this, right for more like this.",
+  "Swipe up to save a maybe for later.",
+  "Ready? Tap Let's go, or pull the card down, to get directions, order or call.",
+];
 /** Lingering this long on a pick opens its details: interest earns more detail. */
 const DWELL_MS = 4000;
 /** Skips in a row before "Not quite?" offers its one best guess. */
@@ -142,7 +151,7 @@ export function ZestApp() {
   const areaQuery = useRef<string | null>(null);
   // Mirrors of `craving` and `widened` for request building inside stable callbacks.
   const cravingRef = useRef<string | null>(null);
-  // "Back to Kai Poke?": places remembered on this phone (opt-in), offered first once per session.
+  // "Back to Kai Poke?": places remembered on this device (opt-in), offered first once per session.
   const winIds = useRef<Set<string> | null>(null);
   const returnTried = useRef(false);
   const [returningId, setReturningId] = useState<string | null>(null);
@@ -390,6 +399,8 @@ export function ZestApp() {
 
 
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
+  // The area is the network's rough guess and the device hasn't shared its location: no walk times on show.
+  const approxNow = Boolean(lastMeta?.areaSource === "ip" && !precise);
 
   /** Move on: a plain skip, after a like ("More like this"), or steering away ("Less like this"). */
   const soloSkip = useCallback((how: "skip" | "liked" | "less" = "skip") => {
@@ -397,10 +408,15 @@ export function ZestApp() {
     const asMaybe = how === "liked";
     // A like isn't a "no": it doesn't count toward skip hints.
     if (!asMaybe) skipped.current = [...skipped.current, current];
-    if (how === "less") disliked.current = [...disliked.current.filter((p) => p.id !== current.id), current];
-    const next = mergeSignals(lessSignals(disliked.current), skipSignals(skipped.current));
+    // Inside a search ("tacos"), passing on a place means "not this place", never "fewer tacos":
+    // no kind-of-food signals are learned from it, only distance and price patterns.
+    const inSearch = Boolean(cravingRef.current);
+    if (how === "less" && !inSearch) disliked.current = [...disliked.current.filter((p) => p.id !== current.id), current];
+    const all = mergeSignals(lessSignals(disliked.current), skipSignals(skipped.current));
+    const next = inSearch ? all.filter((s) => !s.startsWith("fewer ") || signals.includes(s)) : all;
     const fresh = next.filter((s) => !signals.includes(s));
-    if ((fresh.length > 0 || how === "less") && !asMaybe) {
+    if (how === "less" && inSearch && !asMaybe) setNotice("Got it: not this one.");
+    else if ((fresh.length > 0 || how === "less") && !asMaybe) {
       // Reorder what's left right away so the signal feels instant; the next refill sends it to the ranker.
       setQueue((q) => [...q.slice(0, index + 1), ...applySignals(q.slice(index + 1), next)]);
       setSignals(next);
@@ -597,7 +613,7 @@ export function ZestApp() {
     areaQuery.current = null;
     applyWiden(false);
     setPrecise(pos);
-    setNotice("Rounded to ~1 km before it left your phone.");
+    setNotice("Rounded to ~1 km before it left your device.");
     load(mood);
   };
 
@@ -740,7 +756,7 @@ export function ZestApp() {
     }
     setPIndex(pAt + 1);
   };
-  /** Maybe (in a group): move on without answering, and come back to it before you're done. Only on this phone. */
+  /** Maybe (in a group): move on without answering, and come back to it before you're done. Only on this device. */
   const partyMaybe = () => {
     if (!partyCurrent) return;
     if (pLater.includes(partyCurrent.id)) {
@@ -1213,8 +1229,24 @@ export function ZestApp() {
   };
   // First-pick tips: how the card works, until the first swipe or "Got it". Kept in memory only
   // (nothing is saved), so they're back on the next visit until you swipe once.
-  const [tipsDismissed, setTipsDismissed] = useState(false);
-  const showTips = !tipsDismissed && !inParty && !adding && swipes === 0 && Boolean(current) && !composing && !goMenu && !locked;
+  // Remembered on this device once dismissed (just a yes/no, nothing about the person).
+  const [tipsDismissed, setTipsDismissed] = useState(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(TIPS_KEY) === "done";
+    } catch {
+      return false;
+    }
+  });
+  const [tipStep, setTipStep] = useState(0);
+  const dismissTips = () => {
+    setTipsDismissed(true);
+    try {
+      window.localStorage.setItem(TIPS_KEY, "done");
+    } catch {
+      // Storage blocked: the tips just come back next visit.
+    }
+  };
+  const showTips = !tipsDismissed && !inParty && !adding && Boolean(current) && !composing && !goMenu && !locked && !maybesOpen;
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 45-minute clock, so the idle timer pauses in a party too.
@@ -1291,7 +1323,7 @@ export function ZestApp() {
   if (locked && now) {
     return (
       <LockedIn
-        pick={locked}
+        pick={approxNow ? { ...locked, travelUnknown: true } : locked}
         startWithOrder={lockedOrder}
         decided={decided ?? undefined}
         onRememberChange={() => setWinsCount(readWins().length)}
@@ -1423,13 +1455,13 @@ export function ZestApp() {
       ? [
           {
             label: "Forget remembered places",
-            detail: `${winsCount} saved on this phone`,
+            detail: `${winsCount} saved on this device`,
             icon: <RewindIcon size={18} />,
             onSelect: () => {
               forgetAllWins();
               setWinsCount(0);
               setReturningId(null);
-              setNotice("Forgotten. No places are remembered on this phone.");
+              setNotice("Forgotten. No places are remembered on this device.");
             },
           },
         ]
@@ -1546,7 +1578,7 @@ export function ZestApp() {
               <UtensilsIcon size={18} className="shrink-0 text-white/70" />
               <span className="flex-1">
                 What I eat
-                <span className="block text-sm font-normal text-white/60">{dietaryBadge(dietary) ?? "Diets and allergies. Only on this phone."}</span>
+                <span className="block text-sm font-normal text-white/60">{dietaryBadge(dietary) ?? `Diets and allergies. ${KEPT_HERE}`}</span>
               </span>
               <span aria-hidden="true" className="text-white/50">
                 ›
@@ -1662,25 +1694,27 @@ export function ZestApp() {
               )}
             </div>
           </div>
+          {/* One short tip at a time, on one line, so the photo stays visible. */}
           {showTips && (
-            <div className="animate-rise pointer-events-auto self-center rounded-2xl bg-black/70 px-4 py-3 text-sm text-white shadow-lg backdrop-blur-md" role="note" aria-label="How it works">
-              <ul className="space-y-1.5">
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">↔</span>Swipe left for less like this, right for more
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the card down, or hold Let&apos;s go, to aim and shoot
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">☆</span>Swipe up (or Maybe) to save one for later
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">◉</span>Tap the photo for more photos
-                </li>
-              </ul>
-              <button type="button" onClick={() => setTipsDismissed(true)} className="mt-2 h-9 w-full rounded-full bg-white/15 font-semibold hover:bg-white/25">
-                Got it
+            <div
+              key={tipStep}
+              className="animate-rise pointer-events-auto flex min-h-11 items-center gap-1 self-center rounded-full bg-black/70 py-1 pr-1 pl-4 text-sm text-white shadow-lg backdrop-blur-md"
+              role="note"
+              aria-label={`Tip ${tipStep + 1} of ${TIPS.length}`}
+            >
+              <span className="min-w-0">{TIPS[tipStep]}</span>
+              <button
+                type="button"
+                onClick={() => (tipStep + 1 < TIPS.length ? setTipStep(tipStep + 1) : dismissTips())}
+                className="h-9 shrink-0 rounded-full px-3 font-semibold text-teal-bright hover:bg-white/10"
+              >
+                {tipStep + 1 < TIPS.length ? "Next" : "Got it"}
               </button>
+              {tipStep + 1 < TIPS.length && (
+                <button type="button" onClick={dismissTips} aria-label="Hide tips" className="grid size-9 shrink-0 place-items-center rounded-full text-white/60 hover:text-white">
+                  <XIcon size={14} />
+                </button>
+              )}
             </div>
           )}
           {/* One guess, small and out of the way; never while someone is reading the details. */}
@@ -1817,6 +1851,7 @@ export function ZestApp() {
           onBack={() => toggleMaybe({ swiped: true })}
           onMaybe={toggleLater}
           isLater={isLater}
+          approx={approxNow && searchArea ? { area: searchArea.label, onUseLocation: () => void shareMyLocation() } : undefined}
           likeSwipes
           onPull={pullGo}
           pullAction="go"
@@ -1840,7 +1875,7 @@ export function ZestApp() {
 
       {goMenu && current && !inParty && (
         <GoMenu
-          pick={current}
+          pick={approxNow ? { ...current, travelUnknown: true } : current}
           onClose={() => setGoMenu(false)}
           onChoose={(target) => {
             setGoMenu(false);
@@ -2010,7 +2045,7 @@ export function ZestApp() {
           className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2 text-xs text-white/60 hover:text-white/85"
         >
           <LockIcon size={12} className="text-teal-bright" />
-          {inParty ? "Nothing kept after the party." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
+          {inParty ? PARTY_KEPT : KEPT_HERE}
           <span className="font-semibold text-teal-bright">What we sent</span>
         </button>
       </div>
