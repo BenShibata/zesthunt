@@ -32,7 +32,7 @@ import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty
 import { EveryoneLoves, InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyResults } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon, XIcon } from "./Icons";
+import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon, XIcon, StarIcon, ThumbDownIcon, ThumbUpIcon } from "./Icons";
 import { aimAt, type AimKey } from "@/lib/aim";
 import { aimOptions, openAimedTarget } from "@/lib/links";
 import { createBow } from "@/lib/bow";
@@ -62,7 +62,6 @@ const TIPS = [
   "Ready? Tap Let's go, or pull the card down, to get directions, order or call.",
 ];
 /** Lingering this long on a pick opens its details: interest earns more detail. */
-const DWELL_MS = 4000;
 /** Skips in a row before "Not quite?" offers its one best guess. */
 const SKIPS_BEFORE_NUDGE = 3;
 /** An ignored guess fades after this long, and waits this many more skips before coming back. */
@@ -1279,14 +1278,8 @@ export function ZestApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [locked, composing, receiptOpen]);
 
-  // Lingering on a pick is interest: open its details without being asked.
+  // Details open only when asked (tap "More about this place", or swipe up on them).
   const shownId = shown?.id ?? null;
-  const busy = dietOpen || composing || areaOpen || receiptOpen || inviteOpen;
-  useEffect(() => {
-    if (!shownId || busy || expandedId === shownId) return;
-    const t = setTimeout(() => setExpandedId(shownId), DWELL_MS);
-    return () => clearTimeout(t);
-  }, [shownId, busy, expandedId]);
 
   // The hunt's clock starts when the first pick appears (and again after an idle reset).
   useEffect(() => {
@@ -1495,9 +1488,7 @@ export function ZestApp() {
                 aria-label={`Saved places (${savedList.length})`}
                 className="inline-flex h-11 items-center gap-1 rounded-full bg-white/10 px-3 text-sm font-semibold whitespace-nowrap text-white hover:bg-white/15"
               >
-                <span aria-hidden="true" className="text-star">
-                  ☆
-                </span>
+                <StarIcon size={16} className="text-star" />
                 <span className="hidden min-[430px]:inline">Saved</span> {savedList.length}
               </button>
             )}
@@ -1959,12 +1950,28 @@ export function ZestApp() {
               aria-label={`Your answers: ${myTally.love} love it, ${myTally.ok} OK, ${myTally.no} not for me${pendingLaters.length > 0 ? `, ${pendingLaters.length} maybe` : ""}. ${myTally.left} left to see.`}
             >
               {/* Only the symbols used so far, so it stays one short line. */}
-              {myTally.love > 0 && <span aria-hidden="true" className="text-social-bright">♥{myTally.love}</span>}
-              {myTally.ok > 0 && <span aria-hidden="true">👍{myTally.ok}</span>}
-              {myTally.no > 0 && <span aria-hidden="true" className="text-white/60">✕{myTally.no}</span>}
+              {myTally.love > 0 && (
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-social-bright">
+                  <HeartIcon size={13} />
+                  {myTally.love}
+                </span>
+              )}
+              {myTally.ok > 0 && (
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5">
+                  <ThumbUpIcon size={14} />
+                  {myTally.ok}
+                </span>
+              )}
+              {myTally.no > 0 && (
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-white/60">
+                  <XIcon size={13} />
+                  {myTally.no}
+                </span>
+              )}
               {pendingLaters.length > 0 && (
-                <span aria-hidden="true" className="text-star">
-                  ☆{pendingLaters.length}
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-star">
+                  <StarIcon size={14} />
+                  {pendingLaters.length}
                 </span>
               )}
               <span aria-hidden="true" className="font-semibold text-white">{myTally.left} left</span>
@@ -2002,7 +2009,7 @@ export function ZestApp() {
                 ? { label: "Next", onClick: next }
                 : undefined
               : current
-                ? { label: "Less like this", aria: `Less like this: skip ${current.name} and see fewer like it`, onClick: lessLike, icon: <span aria-hidden="true">👎</span> }
+                ? { label: "Less like this", aria: `Less like this: skip ${current.name} and see fewer like it`, onClick: lessLike, icon: <ThumbDownIcon size={18} /> }
                 : undefined
         }
         answer={
@@ -2022,7 +2029,7 @@ export function ZestApp() {
                     onClick: () => toggleMaybe(),
                     tone: isMaybe ? "liked" : "like",
                     pressed: isMaybe,
-                    icon: <span aria-hidden="true">👍</span>,
+                    icon: <ThumbUpIcon size={18} />,
                   }
                 : undefined
         }
@@ -2069,7 +2076,7 @@ function MaybeButton({ on, name, group, onClick }: { on: boolean; name: string; 
       }
       className={`${navPill} ${on ? "bg-star/20 text-star" : "bg-white/10 text-white hover:bg-white/15"}`}
     >
-      <span aria-hidden="true">{on ? "★" : "☆"}</span> Maybe
+      <StarIcon size={16} filled={on} /> Maybe
     </button>
   );
 }

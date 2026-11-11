@@ -287,3 +287,29 @@ export function PhoneIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function ThumbUpIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3Z" />
+      <path d="M7 10l4-7a2.5 2.5 0 0 1 2.5 2.9L13 9h5.6a2 2 0 0 1 2 2.4l-1.4 7.2a2 2 0 0 1-2 1.4H7" />
+    </svg>
+  );
+}
+
+export function ThumbDownIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M17 14V3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1h-3Z" />
+      <path d="M17 14l-4 7a2.5 2.5 0 0 1-2.5-2.9L11 15H5.4a2 2 0 0 1-2-2.4l1.4-7.2a2 2 0 0 1 2-1.4H17" />
+    </svg>
+  );
+}
+
+export function StarIcon({ filled, ...props }: IconProps & { filled?: boolean }) {
+  return (
+    <svg {...base(props)}>
+      <path d="m12 3 2.7 5.6 6.1.8-4.5 4.2 1.1 6.1L12 16.8l-5.4 2.9 1.1-6.1-4.5-4.2 6.1-.8Z" fill={filled ? "currentColor" : "none"} />
+    </svg>
+  );
+}

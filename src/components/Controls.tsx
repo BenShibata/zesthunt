@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, type ReactNode } from "react";
-import { ArrowRightIcon, HeartIcon, MicIcon, SearchIcon, XIcon } from "./Icons";
+import { ArrowRightIcon, HeartIcon, MicIcon, SearchIcon, ThumbUpIcon, XIcon } from "./Icons";
 
 /**
  * The bottom bar, beside the gestures rather than instead of them: a "move on" button on the
@@ -68,7 +68,7 @@ export function Controls(p: Props) {
       <div className="relative z-30 px-4 pt-2 pb-1" role="group" aria-label="Your answer for this place">
         <div className="flex gap-2">
           {opt("no", "Not for me", <XIcon size={18} />, "bg-white/25 text-white")}
-          {opt("ok", "OK", <span aria-hidden="true" className="text-base">👍</span>, "bg-teal text-white")}
+          {opt("ok", "OK", <ThumbUpIcon size={18} />, "bg-teal text-white")}
           {opt("love", "Love it", <HeartIcon size={18} />, "bg-social text-white")}
         </div>
         <p className="pt-1.5 text-center text-xs text-white/55" aria-live="polite">
@@ -107,8 +107,10 @@ export function Controls(p: Props) {
         <span className="flex-1" />
       )}
       {/* Center: tap to type, hold to speak, wrapped in the countdown ring */}
-      <div className="relative grid size-[88px] place-items-center">
-        <svg className="absolute inset-0 -rotate-90" viewBox="0 0 88 88" aria-hidden="true">
+      {/* Center: search, labeled, quieter than Let's go (the main action). Tap to type, hold to speak. */}
+      <div className="relative flex shrink-0 flex-col items-center">
+      <div className="relative grid size-[64px] place-items-center">
+        <svg className="absolute inset-0 size-full -rotate-90" viewBox="0 0 88 88" aria-hidden="true">
           <circle cx="44" cy="44" r="41" fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="3" />
           <circle
             cx="44"
@@ -125,8 +127,8 @@ export function Controls(p: Props) {
         </svg>
         <button
           type="button"
-          className={`relative grid size-[70px] place-items-center rounded-full shadow-xl transition active:scale-95 ${
-            p.listening ? "scale-110 bg-paprika text-white" : "bg-white text-ink"
+          className={`relative grid size-[52px] place-items-center rounded-full transition active:scale-95 ${
+            p.listening ? "scale-110 bg-paprika text-white" : "bg-white/15 text-white hover:bg-white/22"
           }`}
           aria-pressed={p.listening}
           aria-label={
@@ -159,8 +161,12 @@ export function Controls(p: Props) {
           }}
           onContextMenu={(e) => e.preventDefault()}
         >
-          {p.listening ? <MicIcon size={30} /> : <SearchIcon size={30} />}
+          {p.listening ? <MicIcon size={24} /> : <SearchIcon size={24} />}
         </button>
+      </div>
+      <span aria-hidden="true" className="-mt-0.5 text-xs font-semibold text-white/70">
+        {p.listening ? "Listening" : "Search"}
+      </span>
       </div>
 
       {p.primary ? (

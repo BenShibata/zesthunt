@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import type { PartyMember } from "@/lib/types";
-import { HeartIcon, PartyIcon } from "./Icons";
+import { HeartIcon, LockIcon, PartyIcon, StarIcon, ThumbUpIcon } from "./Icons";
 import type { PartyResult } from "@/lib/partyResults";
 import { QrCode } from "./QrCode";
 import { PaymentLine } from "./PaymentChips";
@@ -228,7 +228,7 @@ export function PartyBar({
             "Invite friends to vote."
           ) : (
             <>
-              <span aria-hidden="true">🔒 </span>
+              <LockIcon size={13} className="mr-1 inline-block -translate-y-px" />
               {done !== undefined ? `${done}/${members.length} done` : "Reveals when all done"}
               <span className="sr-only">. The result shows when everyone&apos;s done; answers stay secret until then.</span>
             </>
@@ -275,7 +275,7 @@ export function EveryoneLoves({ name, onStop, onKeep }: { name: string; onStop: 
       <button type="button" aria-label="Keep voting" tabIndex={-1} onClick={onKeep} className="fixed inset-0 -z-10 cursor-default bg-black/60" />
       <section role="alertdialog" aria-labelledby="loves-title" aria-describedby="loves-text" className="animate-rise absolute inset-x-3 top-2 space-y-3 rounded-3xl bg-ink-3 p-5 text-center shadow-2xl ring-1 ring-social/40">
         <p className="text-4xl" aria-hidden="true">
-          🎉
+          <PartyIcon size={36} className="mx-auto text-social-bright" />
         </p>
         <h2 id="loves-title" className="font-display text-2xl font-bold">
           Everyone loves {name}!
@@ -328,7 +328,8 @@ export function PartyEndOfList({
       <p className="font-display text-2xl font-bold">{quit ? "You're done voting." : maybes > 0 ? "You've seen every place." : "You've answered every place."}</p>
       {maybes > 0 && onReviewMaybes && (
         <button type="button" onClick={onReviewMaybes} autoFocus className="h-12 w-full rounded-full bg-star px-6 font-semibold text-ink">
-          ☆ Decide your {maybes} {maybes === 1 ? "maybe" : "maybes"}
+          <StarIcon size={16} className="mr-1 inline-block -translate-y-px" />
+          Decide your {maybes} {maybes === 1 ? "maybe" : "maybes"}
         </button>
       )}
       <p className="text-white/75">
@@ -434,7 +435,7 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
                 <span className="flex shrink-0 items-center gap-1 text-sm text-white/75" aria-label={`${o.loved} love it, ${o.likers.length - o.loved} OK: ${o.likers.join(", ")}`}>
                   <HeartIcon size={14} />
                   {o.loved}
-                  <span aria-hidden="true" className="ml-1">👍</span>
+                  <ThumbUpIcon size={14} className="ml-1" />
                   {o.likers.length - o.loved}
                 </span>
               </li>

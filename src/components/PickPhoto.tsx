@@ -30,7 +30,7 @@ function Placeholder({ alt, tint }: { alt: string; tint?: PhotoTint }) {
   );
 }
 
-function RemotePhoto({ url, alt, instant, tint }: { url: string; alt: string; instant?: boolean; tint?: PhotoTint }) {
+function RemotePhoto({ url, alt, instant, tint, onState }: { url: string; alt: string; instant?: boolean; tint?: PhotoTint; onState?: (s: "loaded" | "failed") => void }) {
   const [ready, setReady] = useState(Boolean(instant));
   // The place's color and symbol stay up until the photo has actually arrived, then it fades in quickly.
   const [loaded, setLoaded] = useState(false);
@@ -50,7 +50,12 @@ function RemotePhoto({ url, alt, instant, tint }: { url: string; alt: string; in
         // Not draggable: the browser's own image drag would cancel a swipe or pull mid-gesture.
         draggable={false}
         decoding="async"
-        onLoad={() => setLoaded(true)}
+        onLoad={() => {
+          setLoaded(true);
+          onState?.("loaded");
+        }}
+        // A photo that won't load leaves the placeholder up (and no photo credit).
+        onError={() => onState?.("failed")}
         className={`pointer-events-none absolute inset-0 size-full object-cover select-none ${loaded ? "animate-develop" : "opacity-0"}`}
       />
     </>
@@ -62,8 +67,22 @@ function RemotePhoto({ url, alt, instant, tint }: { url: string; alt: string; in
  * the key and the user's IP never reach Google from the browser. Demo places (and
  * places without photos) get a painterly placeholder from a palette.
  */
-export function PickPhoto({ photo, alt, instant, tint }: { photo: Photo; alt: string; /** Asked for (a flip): no delay. */ instant?: boolean; tint?: PhotoTint }) {
-  if (photo.kind === "url") return <RemotePhoto key={photo.url} url={photo.url} alt={alt} instant={instant} tint={tint} />;
+export function PickPhoto({
+  photo,
+  alt,
+  instant,
+  tint,
+  onState,
+}: {
+  photo: Photo;
+  alt: string;
+  /** Asked for (a flip): no delay. */
+  instant?: boolean;
+  tint?: PhotoTint;
+  /** Whether a real photo arrived or failed, so its credit shows only with the photo itself. */
+  onState?: (s: "loaded" | "failed") => void;
+}) {
+  if (photo.kind === "url") return <RemotePhoto key={photo.url} url={photo.url} alt={alt} instant={instant} tint={tint} onState={onState} />;
 
   const [a, b, c] = photo.palette;
   const layers: Record<typeof photo.motif, string> = {
