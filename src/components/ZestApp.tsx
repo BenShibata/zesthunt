@@ -1468,6 +1468,55 @@ export function ZestApp() {
 
   return (
     <main className="relative mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
+      {/* Desktop only: the empty space beside the phone-width column holds your saved places
+          (or the keyboard shortcuts until there are some). Phones never see it. */}
+      <aside
+        aria-label={savedList.length > 0 && !inParty ? "Saved places" : "Keyboard shortcuts"}
+        className="fixed top-6 left-[calc(50%+14rem+2rem)] hidden max-h-[calc(100dvh-3rem)] w-72 overflow-y-auto rounded-3xl bg-ink-2 p-4 ring-1 ring-white/10 xl:block"
+      >
+        {savedList.length > 0 && !inParty ? (
+          <>
+            <h2 className="mb-2 font-display text-lg font-bold">Saved</h2>
+            <ul className="space-y-1">
+              {savedList.map(({ pick: p, kind }) => (
+                <li key={`${kind}-${p.placeId}`}>
+                  <button type="button" onClick={() => openMaybe(p)} className="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 text-left hover:bg-white/8">
+                    {kind === "liked" ? <ThumbUpIcon size={15} className="shrink-0" /> : <StarIcon size={15} className="shrink-0 text-star" />}
+                    <span className="sr-only">{kind === "liked" ? "Liked: " : "Maybe: "}</span>
+                    <span className="min-w-0 truncate font-semibold">{p.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-white/55">{KEPT_HERE}</p>
+          </>
+        ) : (
+          <>
+            <h2 className="mb-2 font-display text-lg font-bold">Keyboard</h2>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm text-white/80">
+              {(inParty
+                ? [
+                    ["1 / 2 / 3", "Not for me / OK / Love it"],
+                    ["↑", "Maybe"],
+                    ["→", "Next"],
+                    ["← ", "Back"],
+                  ]
+                : [
+                    ["L / M", "Less / more like this"],
+                    ["↑", "Maybe"],
+                    ["↓", "Go: pick this place"],
+                    ["→ / ←", "Next / back"],
+                  ]
+              ).map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="font-mono font-semibold text-white">{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        )}
+      </aside>
       <TopBar
         demo={feedMode === "demo"}
         // In a group everything else lives in Wishes and the party bar: up here, just what we sent.

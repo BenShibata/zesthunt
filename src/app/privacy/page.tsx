@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 const sections: { title: string; body: string[] }[] = [
   {
-    title: "Nothing is saved by us",
+    title: "Kept on this device only, never on our servers",
     body: [
       "No accounts, no login, no cookies, no analytics, no tracking scripts, no third-party pixels.",
       "Your picks, skips, mood, what you type or say, and your location live only in the page's memory. Refresh, close the tab, or leave it for 10 quiet minutes and they're gone.",
