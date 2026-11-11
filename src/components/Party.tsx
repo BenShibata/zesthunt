@@ -1,8 +1,9 @@
 "use client";
 
+import { PARTY_KEPT } from "@/lib/copy";
 import { useEffect, useState } from "react";
 import type { PartyMember } from "@/lib/types";
-import { HeartIcon, PartyIcon } from "./Icons";
+import { HeartIcon, LockIcon, PartyIcon, StarIcon, ThumbUpIcon, XIcon } from "./Icons";
 import type { PartyResult } from "@/lib/partyResults";
 import { QrCode } from "./QrCode";
 import { PaymentLine } from "./PaymentChips";
@@ -64,6 +65,8 @@ export function InviteSheet({
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
+  // Two steps when there's a second one (the host's wishes): invite first, then preferences.
+  const [step, setStep] = useState<"invite" | "prefs">("invite");
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && !editing && onClose();
@@ -79,16 +82,21 @@ export function InviteSheet({
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 id="invite-title" className="font-display text-xl font-bold">
-            Hunt together
+            {step === "invite" ? "Invite your people" : "What would work for you?"}
           </h2>
           <p className="text-sm text-white/75">
-            Everyone answers the same places: Love it, OK or Not for me. The result shows when everyone&apos;s done. {memberCount > 1 ? `${memberCount} here so far.` : "Bring your people in:"}
+            {step === "invite"
+              ? `Everyone answers the same places: Love it, OK or Not for me. ${memberCount > 1 ? `${memberCount} here so far.` : "Bring your people in:"}`
+              : "Optional, and nobody sees whose."}
           </p>
         </div>
-        <button type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-ink">
-          Start swiping
+        <button type="button" onClick={onClose} aria-label="Close" className="grid size-11 shrink-0 place-items-center rounded-full bg-white/10 text-white hover:bg-white/15">
+          <XIcon size={18} />
         </button>
       </div>
+      {step === "prefs" && children}
+      {step === "invite" && (
+      <>
 
       <div className="flex items-center gap-4">
         <QrCode text={link} size={132} label={`QR code for party ${code}. Friends nearby can scan it to join.`} />
@@ -147,7 +155,24 @@ export function InviteSheet({
           </p>
         )}
       </div>
-      {children}
+      </>
+      )}
+      <div className="flex gap-2 pt-1">
+        {step === "invite" && children ? (
+          <button type="button" onClick={() => setStep("prefs")} className="h-12 flex-1 rounded-full bg-white font-semibold text-ink">
+            Next: what works for you
+          </button>
+        ) : (
+          <button type="button" onClick={onClose} className="h-12 flex-1 rounded-full bg-white font-semibold text-ink">
+            Start swiping
+          </button>
+        )}
+        {step === "prefs" && (
+          <button type="button" onClick={() => setStep("invite")} className="h-12 rounded-full px-4 font-semibold text-white/75 hover:text-white">
+            Back
+          </button>
+        )}
+      </div>
     </section>
   );
 }
@@ -228,7 +253,7 @@ export function PartyBar({
             "Invite friends to vote."
           ) : (
             <>
-              <span aria-hidden="true">🔒 </span>
+              <LockIcon size={13} className="mr-1 inline-block -translate-y-px" />
               {done !== undefined ? `${done}/${members.length} done` : "Reveals when all done"}
               <span className="sr-only">. The result shows when everyone&apos;s done; answers stay secret until then.</span>
             </>
@@ -275,7 +300,7 @@ export function EveryoneLoves({ name, onStop, onKeep }: { name: string; onStop: 
       <button type="button" aria-label="Keep voting" tabIndex={-1} onClick={onKeep} className="fixed inset-0 -z-10 cursor-default bg-black/60" />
       <section role="alertdialog" aria-labelledby="loves-title" aria-describedby="loves-text" className="animate-rise absolute inset-x-3 top-2 space-y-3 rounded-3xl bg-ink-3 p-5 text-center shadow-2xl ring-1 ring-social/40">
         <p className="text-4xl" aria-hidden="true">
-          🎉
+          <PartyIcon size={36} className="mx-auto text-social-bright" />
         </p>
         <h2 id="loves-title" className="font-display text-2xl font-bold">
           Everyone loves {name}!
@@ -328,7 +353,8 @@ export function PartyEndOfList({
       <p className="font-display text-2xl font-bold">{quit ? "You're done voting." : maybes > 0 ? "You've seen every place." : "You've answered every place."}</p>
       {maybes > 0 && onReviewMaybes && (
         <button type="button" onClick={onReviewMaybes} autoFocus className="h-12 w-full rounded-full bg-star px-6 font-semibold text-ink">
-          ☆ Decide your {maybes} {maybes === 1 ? "maybe" : "maybes"}
+          <StarIcon size={16} className="mr-1 inline-block -translate-y-px" />
+          Decide your {maybes} {maybes === 1 ? "maybe" : "maybes"}
         </button>
       )}
       <p className="text-white/75">
@@ -434,7 +460,7 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
                 <span className="flex shrink-0 items-center gap-1 text-sm text-white/75" aria-label={`${o.loved} love it, ${o.likers.length - o.loved} OK: ${o.likers.join(", ")}`}>
                   <HeartIcon size={14} />
                   {o.loved}
-                  <span aria-hidden="true" className="ml-1">👍</span>
+                  <ThumbUpIcon size={14} className="ml-1" />
                   {o.likers.length - o.loved}
                 </span>
               </li>
@@ -451,5 +477,38 @@ export function PartyResults({ result, onGo, onLeave }: { result: PartyResult; o
         </button>
       </div>
     </main>
+  );
+}
+
+/**
+ * What a hunt party is, before one is opened: nothing is created (no room, no code) until
+ * "Start a party".
+ */
+export function PartyIntro({ busy, onStart, onClose }: { busy: boolean; onStart: () => void; onClose: () => void }) {
+  return (
+    <div className="relative z-40 h-0">
+      <button type="button" aria-label="Close" tabIndex={-1} onClick={onClose} className="fixed inset-0 -z-10 cursor-default bg-black/60" />
+      <section role="dialog" aria-labelledby="intro-title" className="animate-rise absolute inset-x-3 top-2 space-y-3 rounded-3xl bg-[#121a2e] p-5 shadow-2xl ring-1 ring-social/30">
+        <PartyIcon size={32} className="text-social-bright" />
+        <h2 id="intro-title" className="font-display text-2xl font-bold">
+          Hunt together
+        </h2>
+        <ul className="space-y-1.5 text-sm text-white/80">
+          <li>Friends join from a link or QR code. No accounts, no app.</li>
+          <li>
+            Everyone votes on the same places: <span className="font-semibold text-white">Love it, OK or Not for me</span>. These are votes for the group,
+            unlike More / Less like this, which only steer your own picks.
+          </li>
+          <li>Votes stay secret until everyone&apos;s done, then the group&apos;s place is revealed.</li>
+          <li className="text-white/60">{PARTY_KEPT}</li>
+        </ul>
+        <button type="button" onClick={onStart} disabled={busy} autoFocus className="h-12 w-full rounded-full bg-social font-semibold text-white disabled:opacity-60">
+          {busy ? "Opening…" : "Start a party"}
+        </button>
+        <button type="button" onClick={onClose} className="h-11 w-full rounded-full font-semibold text-white/70 hover:text-white">
+          Not now
+        </button>
+      </section>
+    </div>
   );
 }

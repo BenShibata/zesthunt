@@ -9,7 +9,7 @@ export const metadata: Metadata = {
 
 const sections: { title: string; body: string[] }[] = [
   {
-    title: "Nothing is saved by us",
+    title: "Kept on this device only, never on our servers",
     body: [
       "No accounts, no login, no cookies, no analytics, no tracking scripts, no third-party pixels.",
       "Your picks, skips, mood, what you type or say, and your location live only in the page's memory. Refresh, close the tab, or leave it for 10 quiet minutes and they're gone.",
@@ -38,14 +38,14 @@ const sections: { title: string; body: string[] }[] = [
   },
   {
     title: "Voice",
-    body: ["Hold-to-speak runs on your phone's own speech recognition. Audio never leaves the device; only the words do. If your browser can't do that on-device, you type instead."],
+    body: ["Hold-to-speak runs on your device's own speech recognition. Audio never leaves the device; only the words do. If your browser can't do that on-device, you type instead."],
   },
   {
     title: "Hunt parties",
     body: [
       "A party room holds only its code, nicknames (a food name unless you rename), the shared restaurant cards, everyone's answers (Love it, OK, Not for me), each person's wishes (budget, distance and food words picked from a fixed list), the latest group nudge as a mood word, and which places don't fit someone. Never location, what anyone eats, or what anyone typed.",
       "Answers stay secret until the result. Wishes are only ever shown as one combined summary (\u201c$$ or less \u00b7 ramen\u201d), never whose.",
-      "Your phone reads the places against what you eat and shows you a private note; it never removes a place on a guess. If you tap “Can't eat this”, or a place would close before you could get there, the room learns only which place to drop. Never who or why.",
+      "Your device reads the places against what you eat and shows you a private note; it never removes a place on a guess. If you tap “Can't eat this”, or a place would close before you could get there, the room learns only which place to drop. Never who or why.",
       "Rooms vanish 45 minutes after they're created, no matter what.",
     ],
   },
@@ -53,7 +53,7 @@ const sections: { title: string; body: string[] }[] = [
     title: "What you eat",
     body: [
       "Off by default and kept in memory. If you turn on “Remember this on this device” under What I eat, only those food and allergy choices are saved in this browser. “Forget me” deletes them instantly. We never store them.",
-      "If you turn on “Remember [place] for next time” after Let's go, that place's name and ID are saved in this browser (up to 5) so it can be offered first next time. “Forget remembered places” in the menu deletes them. They never leave your phone.",
+      "If you turn on “Remember [place] for next time” after Let's go, that place's name and ID are saved in this browser (up to 5) so it can be offered first next time. “Forget remembered places” in the menu deletes them. They never leave your device.",
     ],
   },
   {
@@ -64,19 +64,19 @@ const sections: { title: string; body: string[] }[] = [
   },
   {
     title: "See for yourself",
-    body: ["Tap “What we sent” at the bottom of the app to see your last request exactly as it left your phone."],
+    body: ["Tap “What we sent” at the bottom of the app to see your last request exactly as it left your device."],
   },
   {
     title: "Money",
     body: [
-      "We never see your card. Bill splits are worked out on your phone and sent from your own share sheet. Ordering and paying happen on the restaurant's or delivery app's site.",
+      "We never see your card. Bill splits are worked out on your device and sent from your own share sheet. Ordering and paying happen on the restaurant's or delivery app's site.",
     ],
   },
 ];
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-dvh bg-sheet text-sheet-ink dark:bg-[#1b1916] dark:text-white">
+    <main className="dark min-h-dvh bg-[#1b1916] text-white">
       <div className="mx-auto max-w-md px-5 py-8">
         <Link href="/" className="inline-flex h-11 items-center gap-2 font-display text-lg font-extrabold">
           <CompassMark size={24} className="text-paprika" />

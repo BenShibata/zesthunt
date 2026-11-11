@@ -175,7 +175,8 @@ export async function* runPipeline(
     ? places.filter((p) => shortlist.includes(p))
     : rankHeuristically(shortlist, travel, req.mood, firstOfSession, req.likeSignals ?? []);
   const make = (p: Place, ranked?: RankedPick): Pick => {
-    const pick = buildPick(p, travel.get(p.id)!, mode, ranked);
+    const { travel: t, mode: m } = beyondWalking(travel.get(p.id)!, mode);
+    const pick = buildPick(p, t, m, ranked);
     return { ...pick, suggestion: dietSafeSuggestion(pick.suggestion, diets) };
   };
 
@@ -325,6 +326,15 @@ function clean(text: string, fallback: string): string {
   return !t || BANNED.test(t) ? fallback : t;
 }
 
+/** Past this, nobody calls it "walking distance": the pick shows a drive time and a car instead. */
+export const WALK_MAX_MINUTES = 15;
+
+/** A place in the walking ring that's really a drive away gets a drive estimate (and car icon, and driving directions). */
+export function beyondWalking(travel: Travel, mode: "walk" | "drive"): { travel: Travel; mode: "walk" | "drive" } {
+  if (mode !== "walk" || travel.minutes <= WALK_MAX_MINUTES) return { travel, mode };
+  return { travel: { ...travel, minutes: Math.max(2, Math.round((travel.meters * 1.4) / 400)), estimated: true }, mode: "drive" };
+}
+
 function buildPick(place: Place, travel: Travel, mode: "walk" | "drive", ranked?: RankedPick): Pick {
   const prof: Profile = profileFor(place);
   const suggestion = ranked && /^try\b/i.test(ranked.suggestion.trim()) ? clean(ranked.suggestion, prof.suggestion) : prof.suggestion;
@@ -406,7 +416,11 @@ async function* demoFeed(req: PicksRequest, exclude: Set<string>): AsyncGenerato
   const queue = (allMoods: boolean) =>
     buildMockQueue(req.mood, new Date(), { firstOfSession: Boolean(req.firstOfSession), allMoods })
       .filter((p) => !exclude.has(p.id) && !(veg && ["steak and BBQ", "burgers"].includes(p.category ?? "")))
-      .map((p) => ({ ...p, suggestion: dietSafeSuggestion(p.suggestion, diets), sponsored: sponsorDeal(p.placeId) }));
+      .map((p) => ({ ...p, suggestion: dietSafeSuggestion(p.suggestion, diets), sponsored: sponsorDeal(p.placeId) }))
+      .map((p) => {
+        const { travel, mode } = beyondWalking({ minutes: p.walkMinutes, meters: p.distanceMeters, estimated: Boolean(p.timeEstimated) }, p.travelMode);
+        return { ...p, walkMinutes: travel.minutes, travelMode: mode, timeEstimated: travel.estimated };
+      });
   let picks = queue(Boolean(craving));
   let reach = start;
   // A word match stands in for Text Search on the fictional places.

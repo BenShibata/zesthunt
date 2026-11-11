@@ -77,7 +77,7 @@ export function NotQuite({
           );
         })}
         {onSurprise && (
-          <button type="button" onClick={onSurprise} className={`${chip} bg-white/10 text-white hover:bg-white/15`} aria-label="Surprise me: a pick from another mood (or shake your phone)">
+          <button type="button" onClick={onSurprise} className={`${chip} bg-white/10 text-white hover:bg-white/15`} aria-label="Surprise me: a pick from another mood (or shake your device)">
             <DiceIcon size={15} />
             Surprise me
           </button>

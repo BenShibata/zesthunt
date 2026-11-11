@@ -368,3 +368,14 @@ describe("runPipeline: maybes", () => {
     expect(spy.mock.calls[0][0]).toMatchObject({ likeSignals: ["more noodles", "around $$"] });
   });
 });
+
+describe("beyond walking distance", () => {
+  it("turns a long walk into a drive estimate, and leaves short walks alone", async () => {
+    const { beyondWalking } = await import("./pipeline");
+    expect(beyondWalking({ minutes: 9, meters: 600, estimated: true }, "walk").mode).toBe("walk");
+    const far = beyondWalking({ minutes: 21, meters: 1400, estimated: true }, "walk");
+    expect(far.mode).toBe("drive");
+    expect(far.travel.minutes).toBe(5);
+    expect(beyondWalking({ minutes: 30, meters: 9000, estimated: false }, "drive").mode).toBe("drive");
+  });
+});

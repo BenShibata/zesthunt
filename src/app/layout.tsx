@@ -12,9 +12,16 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://zesthunt.vercel.app";
+const DESCRIPTION = "Opens straight onto a meal pick that's open near you. No login, and nothing kept on our servers.";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_URL),
   title: "Zesthunt: what to eat, in seconds",
-  description: "Opens straight onto a meal pick near you. No login, nothing saved.",
+  description: DESCRIPTION,
+  // Link previews (the image comes from app/opengraph-image.tsx).
+  openGraph: { type: "website", siteName: "Zesthunt", title: "Zesthunt: what to eat, in seconds", description: DESCRIPTION, url: "/" },
+  twitter: { card: "summary_large_image", title: "Zesthunt: what to eat, in seconds", description: DESCRIPTION },
   referrer: "no-referrer",
   // Proves to impact.com (the referral network) that this site is ours. Public by design.
   // The same line is served as plain text at /impact-site-verification.txt.

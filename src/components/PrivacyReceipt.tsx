@@ -1,5 +1,6 @@
 "use client";
 
+import { areaSizeText } from "@/lib/time";
 import type { ReactNode } from "react";
 import { MOOD_LABELS, type PicksEvent } from "@/lib/types";
 import type { SentRequest } from "@/lib/api";
@@ -59,7 +60,7 @@ export function PrivacyReceipt({
             <LockIcon size={18} className="text-teal-bright" />
             What we sent
           </h2>
-          <p className="text-sm text-white/75">Your last request, exactly as it left this phone.</p>
+          <p className="text-sm text-white/75">Your last request, exactly as it left this device.</p>
         </div>
         <button type="button" onClick={onClose} className="h-11 shrink-0 rounded-full bg-white px-4 text-sm font-semibold text-ink">
           Done
@@ -78,7 +79,7 @@ export function PrivacyReceipt({
             <Row label="Area">
               {sent.location ? (
                 <>
-                  Rounded to ~1 km:{" "}
+                  Rounded to {areaSizeText()}:{" "}
                   <span className="font-mono">
                     {sent.location.lat.toFixed(2)}, {sent.location.lng.toFixed(2)}
                   </span>
@@ -95,7 +96,10 @@ export function PrivacyReceipt({
               )}
             </Row>
             <Row label="Time">{clock(sent.localTime)}, no date</Row>
-            <Row label="Mood">{MOOD_LABELS[sent.mood]}</Row>
+            <Row label="Mood">
+              {MOOD_LABELS[sent.mood]}
+              <span className="block text-xs text-white/55">The kind of meal to lean toward (Fresh, Hearty, Quick…). It starts as Fresh; Steer changes it.</span>
+            </Row>
             {diet && diet.diets.length > 0 && <Row label="Diet">{diet.diets.join(", ")}</Row>}
             {diet && diet.allergies.length > 0 && <Row label="Allergies">{diet.allergies.join(", ")}</Row>}
             {sent.craving && <Row label="Craving">“{sent.craving}”</Row>}

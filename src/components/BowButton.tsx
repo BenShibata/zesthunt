@@ -122,7 +122,7 @@ export function BowButton({
       }}
       onContextMenu={(e) => e.preventDefault()}
       style={{ WebkitTouchCallout: "none" }}
-      className={`relative inline-flex h-12 touch-none items-center gap-1.5 overflow-hidden rounded-full bg-paprika px-6 text-base font-bold whitespace-nowrap text-white shadow-lg transition select-none hover:bg-paprika-deep active:scale-95 disabled:opacity-40 ${ready ? "ring-2 ring-white" : ""}`}
+      className={`relative inline-flex h-14 touch-none items-center gap-2 overflow-hidden rounded-full bg-paprika px-8 text-lg font-bold whitespace-nowrap text-white shadow-lg transition select-none hover:bg-paprika-deep active:scale-95 disabled:opacity-40 ${ready ? "ring-2 ring-white" : ""}`}
     >
       {/* Fills as the bow is drawn. */}
       <span aria-hidden="true" className="absolute inset-y-0 left-0 bg-white/25" style={{ width: `${tension * 100}%` }} />

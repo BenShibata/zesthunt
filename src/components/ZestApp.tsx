@@ -1,5 +1,6 @@
 "use client";
 
+import { KEPT_HERE, PARTY_KEPT } from "@/lib/copy";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { MOODS, MOOD_LABELS, type FeedMode, type Mood, type PartyCard, type Pick, type PicksEvent } from "@/lib/types";
 import { requestPreciseLocation, roundCoords, streamPicks, walkMinutesOnDevice, type PicksQuery, type SentRequest } from "@/lib/api";
@@ -8,7 +9,7 @@ import { haptic } from "@/lib/haptics";
 import { cravingShortcuts } from "@/lib/cravings";
 import { fitNote, tooLate } from "@/lib/partyFit";
 import { forgetAllWins, readWins } from "@/lib/wins";
-import { mealFrame } from "@/lib/time";
+import { areaSizeText, mealFrame } from "@/lib/time";
 import { useInactivityTimer } from "@/hooks/useInactivityTimer";
 import { requestMotionPermission, useShake } from "@/hooks/useShake";
 import { useVoice, type VoiceFallback } from "@/hooks/useVoice";
@@ -28,10 +29,10 @@ import { secondLookRound, seenIds } from "@/lib/secondLook";
 import { steerGuess, type SteerGuess } from "@/lib/steer";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
-import { EveryoneLoves, InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyResults } from "./Party";
+import { EveryoneLoves, InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyIntro, PartyResults } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon } from "./Icons";
+import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon, XIcon, StarIcon, ThumbDownIcon, ThumbUpIcon, CompassMark, SendIcon } from "./Icons";
 import { aimAt, type AimKey } from "@/lib/aim";
 import { aimOptions, openAimedTarget } from "@/lib/links";
 import { createBow } from "@/lib/bow";
@@ -52,8 +53,15 @@ function clearHash() {
 }
 
 const IDLE_MS = 10 * 60 * 1000;
+
+const TIPS_KEY = "zesthunt:tips:v1";
+/** First-visit tips, one at a time, in plain words. Each gesture also has a button. */
+const TIPS = [
+  "Swipe left for less like this, right for more like this.",
+  "Swipe up to save a maybe for later.",
+  "Ready? Tap Let's go, or pull the card down, to get directions, order or call.",
+];
 /** Lingering this long on a pick opens its details: interest earns more detail. */
-const DWELL_MS = 4000;
 /** Skips in a row before "Not quite?" offers its one best guess. */
 const SKIPS_BEFORE_NUDGE = 3;
 /** An ignored guess fades after this long, and waits this many more skips before coming back. */
@@ -142,7 +150,7 @@ export function ZestApp() {
   const areaQuery = useRef<string | null>(null);
   // Mirrors of `craving` and `widened` for request building inside stable callbacks.
   const cravingRef = useRef<string | null>(null);
-  // "Back to Kai Poke?": places remembered on this phone (opt-in), offered first once per session.
+  // "Back to Kai Poke?": places remembered on this device (opt-in), offered first once per session.
   const winIds = useRef<Set<string> | null>(null);
   const returnTried = useRef(false);
   const [returningId, setReturningId] = useState<string | null>(null);
@@ -185,6 +193,7 @@ export function ZestApp() {
   const [pHistory, setPHistory] = useState<number[]>([]);
   const [hostExtra, setHostExtra] = useState<Pick[]>([]);
   const [wishesOpen, setWishesOpen] = useState(false);
+  const [partyIntro, setPartyIntro] = useState(false);
   const [myWish, setMyWish] = useState<Wish | null>(null);
   // Asked once per group: guests get the sheet when they join; the host sets them in the invite sheet.
   const [askedWishes, setAskedWishes] = useState(false);
@@ -390,6 +399,8 @@ export function ZestApp() {
 
 
   const current = feed.status === "ready" ? (queue[index] ?? null) : null;
+  // The area is the network's rough guess and the device hasn't shared its location: no walk times on show.
+  const approxNow = Boolean(lastMeta?.areaSource === "ip" && !precise);
 
   /** Move on: a plain skip, after a like ("More like this"), or steering away ("Less like this"). */
   const soloSkip = useCallback((how: "skip" | "liked" | "less" = "skip") => {
@@ -397,10 +408,15 @@ export function ZestApp() {
     const asMaybe = how === "liked";
     // A like isn't a "no": it doesn't count toward skip hints.
     if (!asMaybe) skipped.current = [...skipped.current, current];
-    if (how === "less") disliked.current = [...disliked.current.filter((p) => p.id !== current.id), current];
-    const next = mergeSignals(lessSignals(disliked.current), skipSignals(skipped.current));
+    // Inside a search ("tacos"), passing on a place means "not this place", never "fewer tacos":
+    // no kind-of-food signals are learned from it, only distance and price patterns.
+    const inSearch = Boolean(cravingRef.current);
+    if (how === "less" && !inSearch) disliked.current = [...disliked.current.filter((p) => p.id !== current.id), current];
+    const all = mergeSignals(lessSignals(disliked.current), skipSignals(skipped.current));
+    const next = inSearch ? all.filter((s) => !s.startsWith("fewer ") || signals.includes(s)) : all;
     const fresh = next.filter((s) => !signals.includes(s));
-    if ((fresh.length > 0 || how === "less") && !asMaybe) {
+    if (how === "less" && inSearch && !asMaybe) setNotice("Got it: not this one.");
+    else if ((fresh.length > 0 || how === "less") && !asMaybe) {
       // Reorder what's left right away so the signal feels instant; the next refill sends it to the ranker.
       setQueue((q) => [...q.slice(0, index + 1), ...applySignals(q.slice(index + 1), next)]);
       setSignals(next);
@@ -545,8 +561,8 @@ export function ZestApp() {
         groupSearch.current(wish);
         return;
       }
+      // The craving shows as a chip under the top bar; no second copy over the photo.
       applyCraving(wish);
-      setNotice(`Hunting: “${wish}”`);
       load(mood);
     },
     [load, mood, applyCraving],
@@ -597,7 +613,7 @@ export function ZestApp() {
     areaQuery.current = null;
     applyWiden(false);
     setPrecise(pos);
-    setNotice("Rounded to ~1 km before it left your phone.");
+    setNotice(`Rounded to ${areaSizeText()} before it left your device.`);
     load(mood);
   };
 
@@ -740,7 +756,7 @@ export function ZestApp() {
     }
     setPIndex(pAt + 1);
   };
-  /** Maybe (in a group): move on without answering, and come back to it before you're done. Only on this phone. */
+  /** Maybe (in a group): move on without answering, and come back to it before you're done. Only on this device. */
   const partyMaybe = () => {
     if (!partyCurrent) return;
     if (pLater.includes(partyCurrent.id)) {
@@ -1088,7 +1104,8 @@ export function ZestApp() {
     if (dietOpen) closeDiet();
     setReceiptOpen(false);
     if (party.active) setInviteOpen((o) => !o);
-    else if (!partyBusy) void startParty();
+    // First, what a party is: nothing is opened until "Start a party".
+    else if (!partyBusy) setPartyIntro(true);
   };
 
   useEffect(() => {
@@ -1213,8 +1230,24 @@ export function ZestApp() {
   };
   // First-pick tips: how the card works, until the first swipe or "Got it". Kept in memory only
   // (nothing is saved), so they're back on the next visit until you swipe once.
-  const [tipsDismissed, setTipsDismissed] = useState(false);
-  const showTips = !tipsDismissed && !inParty && !adding && swipes === 0 && Boolean(current) && !composing && !goMenu && !locked;
+  // Remembered on this device once dismissed (just a yes/no, nothing about the person).
+  const [tipsDismissed, setTipsDismissed] = useState(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem(TIPS_KEY) === "done";
+    } catch {
+      return false;
+    }
+  });
+  const [tipStep, setTipStep] = useState(0);
+  const dismissTips = () => {
+    setTipsDismissed(true);
+    try {
+      window.localStorage.setItem(TIPS_KEY, "done");
+    } catch {
+      // Storage blocked: the tips just come back next visit.
+    }
+  };
+  const showTips = !tipsDismissed && !inParty && !adding && Boolean(current) && !composing && !goMenu && !locked && !maybesOpen;
 
   // The locked-in pick is never cut off by the idle timer.
   // Party rooms have their own hard 45-minute clock, so the idle timer pauses in a party too.
@@ -1247,14 +1280,8 @@ export function ZestApp() {
     return () => window.removeEventListener("keydown", onKey);
   }, [locked, composing, receiptOpen]);
 
-  // Lingering on a pick is interest: open its details without being asked.
+  // Details open only when asked (tap "More about this place", or swipe up on them).
   const shownId = shown?.id ?? null;
-  const busy = dietOpen || composing || areaOpen || receiptOpen || inviteOpen;
-  useEffect(() => {
-    if (!shownId || busy || expandedId === shownId) return;
-    const t = setTimeout(() => setExpandedId(shownId), DWELL_MS);
-    return () => clearTimeout(t);
-  }, [shownId, busy, expandedId]);
 
   // The hunt's clock starts when the first pick appears (and again after an idle reset).
   useEffect(() => {
@@ -1291,7 +1318,7 @@ export function ZestApp() {
   if (locked && now) {
     return (
       <LockedIn
-        pick={locked}
+        pick={approxNow ? { ...locked, travelUnknown: true } : locked}
         startWithOrder={lockedOrder}
         decided={decided ?? undefined}
         onRememberChange={() => setWinsCount(readWins().length)}
@@ -1423,21 +1450,73 @@ export function ZestApp() {
       ? [
           {
             label: "Forget remembered places",
-            detail: `${winsCount} saved on this phone`,
+            detail: `${winsCount} saved on this device`,
             icon: <RewindIcon size={18} />,
             onSelect: () => {
               forgetAllWins();
               setWinsCount(0);
               setReturningId(null);
-              setNotice("Forgotten. No places are remembered on this phone.");
+              setNotice("Forgotten. No places are remembered on this device.");
             },
           },
         ]
       : []),
+    { label: "About", icon: <CompassMark size={18} />, href: "/about" },
+    { label: "Feedback", icon: <SendIcon size={18} />, href: process.env.NEXT_PUBLIC_FEEDBACK_URL?.trim() || "/about#feedback" },
+    { label: "Privacy", icon: <LockIcon size={18} />, href: "/privacy" },
   ];
 
   return (
     <main className="relative mx-auto flex h-dvh max-w-md flex-col bg-ink text-white">
+      {/* Desktop only: the empty space beside the phone-width column holds your saved places
+          (or the keyboard shortcuts until there are some). Phones never see it. */}
+      <aside
+        aria-label={savedList.length > 0 && !inParty ? "Saved places" : "Keyboard shortcuts"}
+        className="fixed top-6 left-[calc(50%+14rem+2rem)] hidden max-h-[calc(100dvh-3rem)] w-72 overflow-y-auto rounded-3xl bg-ink-2 p-4 ring-1 ring-white/10 xl:block"
+      >
+        {savedList.length > 0 && !inParty ? (
+          <>
+            <h2 className="mb-2 font-display text-lg font-bold">Saved</h2>
+            <ul className="space-y-1">
+              {savedList.map(({ pick: p, kind }) => (
+                <li key={`${kind}-${p.placeId}`}>
+                  <button type="button" onClick={() => openMaybe(p)} className="flex min-h-11 w-full items-center gap-2 rounded-xl px-2 text-left hover:bg-white/8">
+                    {kind === "liked" ? <ThumbUpIcon size={15} className="shrink-0" /> : <StarIcon size={15} className="shrink-0 text-star" />}
+                    <span className="sr-only">{kind === "liked" ? "Liked: " : "Maybe: "}</span>
+                    <span className="min-w-0 truncate font-semibold">{p.name}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-2 text-xs text-white/55">{KEPT_HERE}</p>
+          </>
+        ) : (
+          <>
+            <h2 className="mb-2 font-display text-lg font-bold">Keyboard</h2>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-sm text-white/80">
+              {(inParty
+                ? [
+                    ["1 / 2 / 3", "Not for me / OK / Love it"],
+                    ["↑", "Maybe"],
+                    ["→", "Next"],
+                    ["← ", "Back"],
+                  ]
+                : [
+                    ["L / M", "Less / more like this"],
+                    ["↑", "Maybe"],
+                    ["↓", "Go: pick this place"],
+                    ["→ / ←", "Next / back"],
+                  ]
+              ).map(([k, v]) => (
+                <div key={k} className="contents">
+                  <dt className="font-mono font-semibold text-white">{k}</dt>
+                  <dd>{v}</dd>
+                </div>
+              ))}
+            </dl>
+          </>
+        )}
+      </aside>
       <TopBar
         demo={feedMode === "demo"}
         // In a group everything else lives in Wishes and the party bar: up here, just what we sent.
@@ -1463,9 +1542,7 @@ export function ZestApp() {
                 aria-label={`Saved places (${savedList.length})`}
                 className="inline-flex h-11 items-center gap-1 rounded-full bg-white/10 px-3 text-sm font-semibold whitespace-nowrap text-white hover:bg-white/15"
               >
-                <span aria-hidden="true" className="text-star">
-                  ☆
-                </span>
+                <StarIcon size={16} className="text-star" />
                 <span className="hidden min-[430px]:inline">Saved</span> {savedList.length}
               </button>
             )}
@@ -1520,15 +1597,21 @@ export function ZestApp() {
               }
             }}
           >
-            {/* Starting a group is one sheet: the host's own wishes go right here. */}
-            {party.isHost && !askedWishes && now && (
-              <div className="border-t border-white/10 pt-3">
-                <p className="mb-2 text-sm font-semibold">What would work for you? <span className="font-normal text-white/60">Optional, and nobody sees whose.</span></p>
-                <WishesForm value={hostWish} onChange={setHostWish} cravings={cravingShortcuts(mealFrame(now), dietary.diets)} compact />
-              </div>
-            )}
+            {/* The host's own wishes: the invite sheet's second step. */}
+            {party.isHost && !askedWishes && now ? (
+              <WishesForm value={hostWish} onChange={setHostWish} cravings={cravingShortcuts(mealFrame(now), dietary.diets)} compact />
+            ) : null}
           </InviteSheet>
         </div>
+      )}
+      {partyIntro && !inParty && (
+        <PartyIntro
+          busy={partyBusy}
+          onClose={() => setPartyIntro(false)}
+          onStart={() => {
+            void startParty().then(() => setPartyIntro(false));
+          }}
+        />
       )}
       {wishesOpen && inParty && now && (
         <WishesSheet cravings={cravingShortcuts(mealFrame(now), dietary.diets)} initial={myWish} onSave={saveWishes} onSkip={() => setWishesOpen(false)}>
@@ -1546,7 +1629,7 @@ export function ZestApp() {
               <UtensilsIcon size={18} className="shrink-0 text-white/70" />
               <span className="flex-1">
                 What I eat
-                <span className="block text-sm font-normal text-white/60">{dietaryBadge(dietary) ?? "Diets and allergies. Only on this phone."}</span>
+                <span className="block text-sm font-normal text-white/60">{dietaryBadge(dietary) ?? `Diets and allergies. ${KEPT_HERE}`}</span>
               </span>
               <span aria-hidden="true" className="text-white/50">
                 ›
@@ -1602,7 +1685,7 @@ export function ZestApp() {
         />
       ) : (
         <>
-          <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} onUseLocation={() => void shareMyLocation()} />
+          {!areaOpen && <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} onUseLocation={() => void shareMyLocation()} />}
         </>
       )}
 
@@ -1662,28 +1745,42 @@ export function ZestApp() {
               )}
             </div>
           </div>
+          {/* One short tip at a time, on one line, so the photo stays visible. */}
           {showTips && (
-            <div className="animate-rise pointer-events-auto self-center rounded-2xl bg-black/70 px-4 py-3 text-sm text-white shadow-lg backdrop-blur-md" role="note" aria-label="How it works">
-              <ul className="space-y-1.5">
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">↔</span>Swipe left for less like this, right for more
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the card down, or hold Let&apos;s go, to aim and shoot
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">☆</span>Swipe up (or Maybe) to save one for later
-                </li>
-                <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">◉</span>Tap the photo for more photos
-                </li>
-              </ul>
-              <button type="button" onClick={() => setTipsDismissed(true)} className="mt-2 h-9 w-full rounded-full bg-white/15 font-semibold hover:bg-white/25">
-                Got it
+            <div
+              key={tipStep}
+              className="animate-rise pointer-events-auto flex min-h-11 items-center gap-1 self-center rounded-full bg-black/70 py-1 pr-1 pl-4 text-sm text-white shadow-lg backdrop-blur-md"
+              role="note"
+              aria-label={`Tip ${tipStep + 1} of ${TIPS.length}`}
+            >
+              <span className="min-w-0">{TIPS[tipStep]}</span>
+              <button
+                type="button"
+                onClick={() => (tipStep + 1 < TIPS.length ? setTipStep(tipStep + 1) : dismissTips())}
+                className="h-9 shrink-0 rounded-full px-3 font-semibold text-teal-bright hover:bg-white/10"
+              >
+                {tipStep + 1 < TIPS.length ? "Next" : "Got it"}
               </button>
+              {tipStep + 1 < TIPS.length && (
+                <button type="button" onClick={dismissTips} aria-label="Hide tips" className="grid size-9 shrink-0 place-items-center rounded-full text-white/60 hover:text-white">
+                  <XIcon size={14} />
+                </button>
+              )}
             </div>
           )}
           {/* One guess, small and out of the way; never while someone is reading the details. */}
+          {/* Steering, one tap away on the card once you've passed on a pick (until then the tips have the spot). */}
+          {!steerHint && !steering && !inParty && !showTips && current && swipes > 0 && expandedId !== current.id && !shownNotice && (
+            <button
+              type="button"
+              onClick={() => setTuneOpen(true)}
+              aria-label="Steer the picks: lighter, heartier, quicker, cheaper, a treat, or surprise me"
+              className="animate-rise pointer-events-auto inline-flex h-11 items-center gap-1.5 self-start rounded-full bg-black/60 px-3.5 text-sm font-semibold text-white shadow-lg backdrop-blur-md transition hover:bg-black/70 active:scale-95"
+            >
+              <SlidersIcon size={15} />
+              Steer
+            </button>
+          )}
           {steerHint && !steering && !inParty && current && expandedId !== current.id && (
             <div className="animate-rise pointer-events-auto inline-flex h-11 items-center self-start rounded-full bg-black/60 text-sm font-semibold text-white shadow-lg backdrop-blur-md">
               <button type="button" onClick={takeHint} className="inline-flex h-11 items-center gap-1.5 rounded-full pr-2.5 pl-3.5 transition hover:bg-white/10 active:scale-95">
@@ -1817,6 +1914,7 @@ export function ZestApp() {
           onBack={() => toggleMaybe({ swiped: true })}
           onMaybe={toggleLater}
           isLater={isLater}
+          approx={approxNow && searchArea ? { area: searchArea.label, onUseLocation: () => void shareMyLocation() } : undefined}
           likeSwipes
           onPull={pullGo}
           pullAction="go"
@@ -1840,7 +1938,7 @@ export function ZestApp() {
 
       {goMenu && current && !inParty && (
         <GoMenu
-          pick={current}
+          pick={approxNow ? { ...current, travelUnknown: true } : current}
           onClose={() => setGoMenu(false)}
           onChoose={(target) => {
             setGoMenu(false);
@@ -1859,10 +1957,20 @@ export function ZestApp() {
         />
       )}
       {composing && (
-        <p className="animate-rise relative z-50 px-5 pb-2 font-display text-2xl font-bold">{inParty ? "Find a place to add" : "What sounds good?"}</p>
+        <div className="animate-rise relative z-50 flex items-center justify-between gap-2 pr-3 pb-2 pl-5">
+          <p className="font-display text-2xl font-bold">{inParty ? "Find a place to add" : "What sounds good?"}</p>
+          <button
+            type="button"
+            onClick={() => setComposing(false)}
+            className="inline-flex h-11 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3.5 text-sm font-semibold text-white hover:bg-white/15"
+          >
+            <XIcon size={15} />
+            Close
+          </button>
+        </div>
       )}
       {composing && now && (
-        <div className="animate-rise relative z-50 flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" role="group" aria-label="Quick cravings">
+        <div className="animate-rise relative z-50 flex flex-wrap gap-1.5 px-4 pb-2" role="group" aria-label="Quick cravings">
           {cravingShortcuts(mealFrame(now), dietary.diets).map((c) => (
             <button
               key={c}
@@ -1908,7 +2016,7 @@ export function ZestApp() {
       )}
       {/* Back, always bottom-left; Let's go and the liked list (solo), or where you are and Skip (group), beside it. */}
       <NavRow
-        hidden={composing || receiptOpen || !(adding ? addingCurrent : shown)}
+        hidden={composing || receiptOpen || areaOpen || !(adding ? addingCurrent : shown)}
         canBack={canGoBack}
         onBack={goBack}
         compactBack={inParty && !adding}
@@ -1924,12 +2032,28 @@ export function ZestApp() {
               aria-label={`Your answers: ${myTally.love} love it, ${myTally.ok} OK, ${myTally.no} not for me${pendingLaters.length > 0 ? `, ${pendingLaters.length} maybe` : ""}. ${myTally.left} left to see.`}
             >
               {/* Only the symbols used so far, so it stays one short line. */}
-              {myTally.love > 0 && <span aria-hidden="true" className="text-social-bright">♥{myTally.love}</span>}
-              {myTally.ok > 0 && <span aria-hidden="true">👍{myTally.ok}</span>}
-              {myTally.no > 0 && <span aria-hidden="true" className="text-white/60">✕{myTally.no}</span>}
+              {myTally.love > 0 && (
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-social-bright">
+                  <HeartIcon size={13} />
+                  {myTally.love}
+                </span>
+              )}
+              {myTally.ok > 0 && (
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5">
+                  <ThumbUpIcon size={14} />
+                  {myTally.ok}
+                </span>
+              )}
+              {myTally.no > 0 && (
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-white/60">
+                  <XIcon size={13} />
+                  {myTally.no}
+                </span>
+              )}
               {pendingLaters.length > 0 && (
-                <span aria-hidden="true" className="text-star">
-                  ☆{pendingLaters.length}
+                <span aria-hidden="true" className="inline-flex items-center gap-0.5 text-star">
+                  <StarIcon size={14} />
+                  {pendingLaters.length}
                 </span>
               )}
               <span aria-hidden="true" className="font-semibold text-white">{myTally.left} left</span>
@@ -1954,6 +2078,7 @@ export function ZestApp() {
           ) : null
         }
       />
+      {!areaOpen && (
       <Controls
         searching={composing}
         disabled={!(adding ? addingCurrent : shown) || receiptOpen}
@@ -1967,7 +2092,7 @@ export function ZestApp() {
                 ? { label: "Next", onClick: next }
                 : undefined
               : current
-                ? { label: "Less like this", aria: `Less like this: skip ${current.name} and see fewer like it`, onClick: lessLike, icon: <span aria-hidden="true">👎</span> }
+                ? { label: "Less like this", aria: `Less like this: skip ${current.name} and see fewer like it`, onClick: lessLike, icon: <ThumbDownIcon size={18} /> }
                 : undefined
         }
         answer={
@@ -1987,7 +2112,7 @@ export function ZestApp() {
                     onClick: () => toggleMaybe(),
                     tone: isMaybe ? "liked" : "like",
                     pressed: isMaybe,
-                    icon: <span aria-hidden="true">👍</span>,
+                    icon: <ThumbUpIcon size={18} />,
                   }
                 : undefined
         }
@@ -2002,6 +2127,7 @@ export function ZestApp() {
         }}
         onHoldEnd={voice.stop}
       />
+      )}
       <div className="flex justify-center px-3 pb-[env(safe-area-inset-bottom)]">
         <button
           type="button"
@@ -2010,7 +2136,7 @@ export function ZestApp() {
           className="inline-flex min-h-11 items-center gap-1.5 rounded-full px-2 text-xs text-white/60 hover:text-white/85"
         >
           <LockIcon size={12} className="text-teal-bright" />
-          {inParty ? "Nothing kept after the party." : dietRemembered ? "Nothing saved by us." : "Nothing saved."}
+          {inParty ? PARTY_KEPT : KEPT_HERE}
           <span className="font-semibold text-teal-bright">What we sent</span>
         </button>
       </div>
@@ -2034,7 +2160,7 @@ function MaybeButton({ on, name, group, onClick }: { on: boolean; name: string; 
       }
       className={`${navPill} ${on ? "bg-star/20 text-star" : "bg-white/10 text-white hover:bg-white/15"}`}
     >
-      <span aria-hidden="true">{on ? "★" : "☆"}</span> Maybe
+      <StarIcon size={16} filled={on} /> Maybe
     </button>
   );
 }

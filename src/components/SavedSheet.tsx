@@ -1,8 +1,9 @@
 "use client";
 
+import { KEPT_HERE } from "@/lib/copy";
 import type { Pick } from "@/lib/types";
 import { formatClock, priceText } from "@/lib/time";
-import { CarIcon, WalkIcon, XIcon } from "./Icons";
+import { CarIcon, StarIcon, ThumbUpIcon, WalkIcon, XIcon } from "./Icons";
 
 export type SavedKind = "liked" | "maybe";
 
@@ -29,14 +30,17 @@ export function SavedSheet({
           <h2 id="maybes-title" className="font-display text-lg font-bold">
             Saved
           </h2>
-          <p className="text-sm text-white/60">👍 liked (picks lean this way) · ☆ maybe. Tap one to look again. Only on this phone, until you close the page.</p>
+          <p className="text-sm text-white/60">
+            <ThumbUpIcon size={13} className="inline-block" /> liked (picks lean this way) · <StarIcon size={13} className="inline-block" /> maybe. Tap one to look
+            again. {KEPT_HERE}
+          </p>
         </div>
         <ul className="max-h-[50dvh] overflow-y-auto">
           {saved.map(({ pick: p, kind }) => (
             <li key={`${kind}-${p.placeId}`} className="flex items-center gap-1">
               <button type="button" onClick={() => onOpen(p)} className="flex min-h-14 min-w-0 flex-1 items-center gap-3 rounded-2xl px-3 text-left transition hover:bg-white/8">
                 <span aria-hidden="true" className={`w-5 text-center ${kind === "maybe" ? "text-star" : ""}`}>
-                  {kind === "liked" ? "👍" : "☆"}
+                  {kind === "liked" ? <ThumbUpIcon size={16} /> : <StarIcon size={16} />}
                 </span>
                 <span className="sr-only">{kind === "liked" ? "Liked: " : "Maybe: "}</span>
                 <span className="min-w-0">

@@ -35,7 +35,12 @@ export function PlateRing({ plate, size = 52 }: { plate: PlateBalance; size?: nu
           );
         })}
       </svg>
-      <figcaption className="sr-only">{description}</figcaption>
+      {/* Visible, so the colors aren't a mystery: it's a guess from the dish style. */}
+      <figcaption aria-hidden="true" className="text-center text-[10px] leading-tight text-white/55">
+        Plate balance
+        <br />
+        (estimate)
+      </figcaption>
     </figure>
   );
 }

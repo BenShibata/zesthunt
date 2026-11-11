@@ -7,9 +7,10 @@ import { CLOSING_SOON_MINUTES, distanceText, formatClock, mealFrame, minutesUnti
 import { PickPhoto } from "./PickPhoto";
 import { PaymentLine } from "./PaymentChips";
 import { PlateRing } from "./PlateRing";
+import { HeartIcon, StarIcon, ThumbDownIcon, ThumbUpIcon, XIcon as CrossIcon } from "./Icons";
 import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, MoreIcon, PartyIcon, PhoneIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import { useCardGestures } from "@/hooks/useCardGestures";
-import { aimOptions, directionsUrl, openAimedTarget } from "@/lib/links";
+import { aimOptions, directionsUrl, openAimedTarget, orderAhead } from "@/lib/links";
 import { aimAt, aimTargets, type AimKey } from "@/lib/aim";
 import { foodSymbol, placeHue } from "@/lib/look";
 import { useBow, type Bow } from "@/lib/bow";
@@ -52,6 +53,11 @@ interface Props {
   onMaybe?: () => void;
   /** This place is on your maybes. */
   isLater?: boolean;
+  /**
+   * The location is only a rough guess (from the network): walk times would be made up, so the
+   * card says where instead, and offers the real location first.
+   */
+  approx?: { area: string; onUseLocation: () => void };
   /** Solo: you liked this pick ("More like this"). */
   isMaybe?: boolean;
   /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
@@ -112,6 +118,7 @@ export function PickCard({
   likeSwipes,
   onMaybe,
   isLater,
+  approx,
   onPull,
   pullAction = "go",
   disabled,
@@ -127,7 +134,14 @@ export function PickCard({
   const detailsAtTop = scroll.id === pick.id ? scroll.top : true;
   // Tap the photo to flip through the place's photos (food-first); back to the first on a new pick.
   const [shot, setShot] = useState({ id: pick.id, i: 0 });
-  const gallery = pick.photos && pick.photos.length > 1 ? pick.photos : [pick.photo];
+  // Which real photos have loaded or failed: a failed one leaves the carousel (when there are
+  // others), and a photo credit shows only over a photo that's actually there.
+  const [photoSeen, setPhotoSeen] = useState<{ id: string; loaded: string[]; failed: string[] }>({ id: pick.id, loaded: [], failed: [] });
+  const seen = photoSeen.id === pick.id ? photoSeen : { id: pick.id, loaded: [], failed: [] };
+  const urlOf = (p: Pick["photo"]) => (p.kind === "url" ? p.url : "");
+  const allPhotos = pick.photos && pick.photos.length > 1 ? pick.photos : [pick.photo];
+  const working = allPhotos.filter((p) => !seen.failed.includes(urlOf(p)));
+  const gallery = working.length > 0 ? working : [allPhotos[0]];
   const at = shot.id === pick.id ? shot.i % gallery.length : 0;
   const photo = gallery[at];
   // Solo, a pull aims at what letting go does (see lib/aim).
@@ -135,7 +149,7 @@ export function PickCard({
   const has = aimOptions(pick);
   const walking = pick.travelMode === "walk";
   const TARGETS: Record<AimKey, { label: string; icon: ReactNode }> = {
-    order: { label: "Order to go", icon: <BagIcon size={24} /> },
+    order: orderAhead(pick).kind === "own" ? { label: "Website", icon: <ExternalIcon size={24} /> } : { label: "Order to go", icon: <BagIcon size={24} /> },
     directions: { label: "Directions", icon: walking ? <WalkIcon size={24} /> : <CarIcon size={24} /> },
     journey: { label: "All options", icon: <MoreIcon size={24} /> },
     call: { label: pick.reservable ? "Call to reserve" : "Call", icon: <PhoneIcon size={24} /> },
@@ -292,6 +306,13 @@ export function PickCard({
           photo={photo}
           tint={tint}
           instant={at > 0 || photoNow}
+          onState={(st) => {
+            const u = urlOf(photo);
+            setPhotoSeen((prev) => {
+              const base = prev.id === pick.id ? prev : { id: pick.id, loaded: [], failed: [] };
+              return st === "loaded" ? { ...base, loaded: [...base.loaded, u] } : { ...base, failed: [...base.failed, u] };
+            });
+          }}
           alt={`Photo ${gallery.length > 1 ? `${at + 1} of ${gallery.length} ` : ""}at ${pick.name}${gallery.length > 1 ? ". Tap for the next photo" : ""}`}
         />
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/45 via-transparent to-black/70" />
@@ -308,14 +329,26 @@ export function PickCard({
           className={`pointer-events-none absolute left-5 top-1/3 rotate-[-12deg] rounded-lg border-4 px-3 py-1 font-display text-3xl font-extrabold ${likeSwipes ? "border-teal-bright text-teal-bright" : "border-paprika-bright text-paprika-bright"}`}
           style={{ opacity: hasBack || likeSwipes ? Math.max(0, progress) : 0 }}
         >
-          {likeSwipes ? "👍 MORE" : "BACK"}
+          {likeSwipes ? (
+            <span className="inline-flex items-center gap-1.5">
+              <ThumbUpIcon size={26} /> MORE
+            </span>
+          ) : (
+            "BACK"
+          )}
         </span>
         <span
           aria-hidden="true"
           className="pointer-events-none absolute right-5 top-1/3 rotate-[12deg] rounded-lg border-4 border-white px-3 py-1 font-display text-3xl font-extrabold text-white"
           style={{ opacity: Math.max(0, -progress) }}
         >
-          {likeSwipes ? "👎 LESS" : "NEXT"}
+          {likeSwipes ? (
+            <span className="inline-flex items-center gap-1.5">
+              <ThumbDownIcon size={26} /> LESS
+            </span>
+          ) : (
+            "NEXT"
+          )}
         </span>
 
         <span
@@ -323,7 +356,9 @@ export function PickCard({
           className="pointer-events-none absolute inset-x-0 top-[38%] mx-auto w-max rounded-lg border-4 border-star px-3 py-1 font-display text-3xl font-extrabold text-star"
           style={{ opacity: upProgress }}
         >
-          ☆ MAYBE
+          <span className="inline-flex items-center gap-1.5">
+            <StarIcon size={26} /> MAYBE
+          </span>
         </span>
 
         {/* In a group: your own answer (others' stay secret). Tap another answer below to change it. */}
@@ -334,21 +369,22 @@ export function PickCard({
                 answer === "love" ? "bg-social/90" : answer === "ok" ? "bg-teal/90" : "bg-black/60"
               }`}
             >
-              {answer === "love" ? "♥ You love it" : answer === "ok" ? "👍 You said OK" : "✕ Not for you"}
+              {answer === "love" ? <HeartIcon size={14} /> : answer === "ok" ? <ThumbUpIcon size={14} /> : <CrossIcon size={14} />}
+              {answer === "love" ? "You love it" : answer === "ok" ? "You said OK" : "Not for you"}
             </span>
           </div>
         )}
         {isLater && !answer && !isMaybe && (
           <div className={`pointer-events-none absolute top-3 right-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-3 text-sm font-semibold text-star backdrop-blur-md">
-              <span aria-hidden="true">☆</span> Your maybe
+              <StarIcon size={14} /> Your maybe
             </span>
           </div>
         )}
         {isMaybe && !answer && (
           <div className={`pointer-events-none absolute top-3 right-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
             <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-3 text-sm font-semibold text-white backdrop-blur-md">
-              <span aria-hidden="true">👍</span> You liked this
+              <ThumbUpIcon size={14} /> You liked this
             </span>
           </div>
         )}
@@ -365,7 +401,20 @@ export function PickCard({
           </div>
         )}
         <div className="pointer-events-none absolute inset-x-0 bottom-0 flex items-end justify-between gap-3 px-4 pt-4 pb-8">
-          {pick.travelUnknown ? (
+          {approx ? (
+            <button
+              type="button"
+              onClick={approx.onUseLocation}
+              aria-label={`Near ${approx.area}. Use my location for walk times`}
+              className="pointer-events-auto flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-black/55 px-4 py-1 text-left text-base font-semibold text-white backdrop-blur-md hover:bg-black/70"
+            >
+              <PinIcon size={18} className="shrink-0 text-teal-bright" />
+              <span className="min-w-0">
+                <span className="block truncate">Near {approx.area}</span>
+                <span className="block text-sm font-normal whitespace-nowrap text-teal-bright">Tap for walk times</span>
+              </span>
+            </button>
+          ) : pick.travelUnknown ? (
             <p className="flex items-center gap-2 font-display text-[1.75rem] leading-none font-extrabold tracking-tight whitespace-nowrap text-white drop-shadow-lg">
               <PartyIcon size={26} className="shrink-0" />
               Group pick
@@ -384,7 +433,7 @@ export function PickCard({
               credit, and a Places photo carries its photographer's name. */}
           {!pick.placeId.startsWith("mock-") && (
             <span className="flex min-w-0 max-w-[40%] shrink flex-col items-end text-right text-[11px] leading-tight text-white/75 drop-shadow">
-              {photo.kind === "url" && photo.attribution && <span className="max-w-full truncate">Photo: {photo.attribution}</span>}
+              {photo.kind === "url" && photo.attribution && seen.loaded.includes(photo.url) && <span className="max-w-full truncate">Photo: {photo.attribution}</span>}
               {/* Never truncated: the "Google Maps" credit has to stay readable. */}
               <span className="whitespace-nowrap">Google Maps</span>
             </span>
@@ -404,7 +453,7 @@ export function PickCard({
         // Closed: every drag is ours. Open at the top: the browser only scrolls the content down (finger
         // moving up), so a downward drag is a pull. (Safari lacks pan-down and keeps pan-y there.)
         style={{ touchAction: !expanded ? "none" : detailsAtTop ? "pan-down" : "pan-y" }}
-        className={`animate-rise relative flex select-none items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-4 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[60%] shrink-0 overflow-y-auto overscroll-none" : ""}`}
+        className={`animate-rise relative flex select-none items-start gap-4 rounded-t-3xl bg-ink-2 px-4 pt-4 pb-2 shadow-[0_-10px_30px_rgba(0,0,0,0.35)] -mt-4 ${expanded ? "max-h-[78%] shrink-0 overflow-y-auto overscroll-none" : ""}`}
         {...(expanded ? { tabIndex: 0, "aria-label": `Details about ${pick.name}` } : {})}
       >
         <div className="min-w-0 flex-1">
@@ -415,9 +464,7 @@ export function PickCard({
             {pick.name}
           </h1>
           <p id="pick-reason" className="mt-1 text-base text-white/80">
-            <span aria-hidden="true" className="mr-1.5">
-              {symbol}
-            </span>
+            <UtensilsIcon size={15} className="mr-1.5 inline-block -translate-y-px text-white/55" />
             {pick.guessed ? (pick.kind ?? pick.reason) : pick.suggestion}
           </p>
           {/* The decision-makers, up front: rating, price, and how long it's open. */}
@@ -427,6 +474,7 @@ export function PickCard({
                 <span aria-hidden="true" className="text-white/90">
                   <span className="text-star">★</span> {rating.visual}
                 </span>
+                <span aria-hidden="true" className="text-white/55"> on Google</span>
                 <span className="sr-only">{rating.spoken}, </span>
                 <span aria-hidden="true"> · </span>
               </>
@@ -475,7 +523,7 @@ export function PickCard({
               <button
                 type="button"
                 onClick={onCantEat}
-                className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
+                className="-ml-1 mt-1 mr-6 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
               >
                 <UtensilsIcon size={14} />
                 Can&apos;t eat this

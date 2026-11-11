@@ -1,5 +1,6 @@
 "use client";
 
+import { KEPT_HERE } from "@/lib/copy";
 import { useEffect, useRef, useState } from "react";
 import { ALLERGIES } from "@/lib/dietary";
 import type { Pick } from "@/lib/types";
@@ -37,7 +38,7 @@ interface Props {
   onClose: () => void;
 }
 
-export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, decided, onRememberChange, startWithOrder }: Props) {
+export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allergies = [], onAllergiesChange, onDecideTogether, onClose, onRememberChange, startWithOrder }: Props) {
   const [remembered, setRemembered] = useState(() => readWins().some((w) => w.placeId === pick.placeId));
   const [inviteNote, setInviteNote] = useState<string | null>(null);
   const [orderOpen, setOrderOpen] = useState(Boolean(startWithOrder));
@@ -70,7 +71,8 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
   }, []);
 
   return (
-    <main className="flex h-dvh flex-col bg-sheet text-sheet-ink dark:bg-[#1b1916] dark:text-white">
+    // The same dark theme and phone width as the rest of the app.
+    <main className="dark mx-auto flex h-dvh w-full max-w-md flex-col bg-[#1b1916] text-white">
       <div className="relative h-[26dvh] shrink-0">
         {/* The place itself (the storefront when we have it, so it's easy to spot on arrival). */}
         <div className="absolute inset-0 overflow-hidden bg-ink">
@@ -100,13 +102,9 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           </p>
         ) : (
           <p className="text-sm font-semibold text-teal dark:text-teal-bright">
-            Your journey starts here
-            {decided && (
-              <span className="font-normal text-sheet-muted dark:text-white/60">
-                {" "}
-                · decided in {decided.seconds < 90 ? `${decided.seconds} second${decided.seconds === 1 ? "" : "s"}` : `${Math.round(decided.seconds / 60)} minutes`}
-              </span>
-            )}
+            {pick.travelUnknown
+              ? "Your pick"
+              : `${pick.walkMinutes} min ${walking ? "walk" : "drive"}${pick.closesAt ? ` · open till ${formatClock(pick.closesAt)}` : ""}`}
           </p>
         )}
         <h1 id="locked-title" ref={heading} tabIndex={-1} className="mt-0.5 font-display text-3xl leading-tight font-bold tracking-tight outline-none">
@@ -156,6 +154,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             href={directionsUrl(pick)}
             target="_blank"
             rel="noopener noreferrer"
+            aria-label={`Head there${pick.travelUnknown ? "" : `: ${pick.walkMinutes} min ${walking ? "walk" : "drive"}`}`}
             className="inline-flex h-14 items-center justify-center gap-2 rounded-2xl bg-paprika text-lg font-semibold text-white shadow-md transition hover:bg-paprika-deep active:scale-[0.99]"
           >
             {walking ? <WalkIcon size={22} /> : <CarIcon size={22} />}
@@ -165,13 +164,14 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           {(order.kind !== "none" || pick.phoneDial) && (
             <div className={`grid gap-2 ${order.kind !== "none" && pick.phoneDial ? "grid-cols-2" : "grid-cols-1"}`}>
               {order.kind === "own" && (
-                <a href={order.url} target="_blank" rel="noopener noreferrer" className={secondaryBtn}>
-                  <BagIcon size={18} />
-                  Order to go
+                // Places gives no ordering link: this is the restaurant's own website, so it says so.
+                <a href={order.url} target="_blank" rel="noopener noreferrer" className={secondaryBtn} aria-label={`Website: ${pick.name}`}>
+                  <ExternalIcon size={18} />
+                  Website
                 </a>
               )}
               {order.kind === "delivery" && (
-                <button type="button" aria-expanded={orderOpen} onClick={() => setOrderOpen((o) => !o)} className={secondaryBtn}>
+                <button type="button" aria-expanded={orderOpen} onClick={() => setOrderOpen((o) => !o)} className={secondaryBtn} aria-label="Order to go: DoorDash or Uber Eats">
                   <BagIcon size={18} />
                   Order to go
                 </button>
@@ -229,7 +229,9 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             <h2 id="allergy-ask" className="text-base font-semibold">
               Anything to keep away from?
             </h2>
-            <p className="text-sm text-sheet-muted dark:text-white/65">Optional. We&apos;ll remind you to check with the restaurant.</p>
+            <p className="text-sm text-sheet-muted dark:text-white/65">
+              Optional. This is saved to What I eat, so your next picks use it too. Always check with the restaurant.
+            </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {ALLERGIES.map((a) => {
                 const on = allergies.includes(a);
@@ -304,7 +306,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
           <label className="mt-3 flex min-h-11 items-center justify-between gap-3 rounded-2xl bg-sheet-2 px-4 py-3 dark:bg-white/5">
             <span className="text-sm">
               <span className="font-semibold">Remember {pick.name} for next time</span>
-              <span className="block text-sheet-muted dark:text-white/65">Saved only on this phone. If it&apos;s open nearby next time, it comes first.</span>
+              <span className="block text-sheet-muted dark:text-white/65">{KEPT_HERE} If it&apos;s open nearby next time, it comes first.</span>
             </span>
             <input
               type="checkbox"
@@ -332,8 +334,7 @@ export function LockedIn({ pick, now, partyMatch, partySize, allergyNote, allerg
             </a>
           )}
           <p className="pt-2 text-center text-xs text-sheet-muted dark:text-white/60">
-            We never see your card. You pay in your own wallet.
-            {referralsOn && " Zesthunt may earn a small fee from some links; your price doesn't change."}
+            {referralsOn && "Zesthunt may earn a small fee from some links; your price doesn't change."}
           </p>
         </div>
       </section>
