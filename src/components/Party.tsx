@@ -303,6 +303,8 @@ export function PartyEndOfList({
   total,
   quit,
   onKeepVoting,
+  maybes = 0,
+  onReviewMaybes,
   onSearch,
   onStartOver,
   onReveal,
@@ -312,6 +314,9 @@ export function PartyEndOfList({
   /** Ended by "I'm done" rather than by reaching the end of the list. */
   quit?: boolean;
   onKeepVoting?: () => void;
+  /** My maybes still undecided: offered first, so they don't get lost. */
+  maybes?: number;
+  onReviewMaybes?: () => void;
   onSearch: () => void;
   onStartOver: () => void;
   onReveal: () => void;
@@ -320,7 +325,12 @@ export function PartyEndOfList({
   const waiting = Math.max(0, total - done);
   return (
     <section className="flex flex-1 flex-col items-center justify-center gap-3 px-8 text-center" aria-live="polite">
-      <p className="font-display text-2xl font-bold">{quit ? "You're done voting." : "You've answered every place."}</p>
+      <p className="font-display text-2xl font-bold">{quit ? "You're done voting." : maybes > 0 ? "You've seen every place." : "You've answered every place."}</p>
+      {maybes > 0 && onReviewMaybes && (
+        <button type="button" onClick={onReviewMaybes} autoFocus className="h-12 w-full rounded-full bg-star px-6 font-semibold text-ink">
+          ☆ Decide your {maybes} {maybes === 1 ? "maybe" : "maybes"}
+        </button>
+      )}
       <p className="text-white/75">
         {total < 2
           ? "Invite friends to vote, or show the result now."

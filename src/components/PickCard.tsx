@@ -48,6 +48,10 @@ interface Props {
   answer?: "love" | "ok" | "no" | null;
   /** Which side the card comes in from: right when moving on, left when going back. */
   enterFrom?: "right" | "left";
+  /** Swipe up on the photo: maybe (save it for later, solo or in a group). */
+  onMaybe?: () => void;
+  /** This place is on your maybes. */
+  isLater?: boolean;
   /** Solo: you liked this pick ("More like this"). */
   isMaybe?: boolean;
   /** The first pick of a visit: its photo loads straight away (later ones wait a beat, so quick skips cost nothing). */
@@ -106,6 +110,8 @@ export function PickCard({
   onBack,
   hasBack,
   likeSwipes,
+  onMaybe,
+  isLater,
   onPull,
   pullAction = "go",
   disabled,
@@ -148,9 +154,10 @@ export function PickCard({
     // Not while the bow is drawn from Let's go.
     panelFree: !expanded || detailsAtTop,
     onSwipeUp: expanded ? undefined : onExpand,
+    onMaybe,
     disabled: disabled || Boolean(drawn),
   });
-  const { dx, progress, settle } = gestures;
+  const { dx, dy, progress, upProgress, settle } = gestures;
   // Holding Let's go draws the same bow as pulling the card.
   const ext = drawn && (drawn.tension > 0 || drawn.launching) ? drawn : null;
   const tension = ext ? ext.tension : gestures.tension;
@@ -232,7 +239,9 @@ export function PickCard({
   // The whole card (photo and details) moves with the pull; on release it springs back as the arrow flies.
   const cardTransform = launching
     ? undefined
-    : dx
+    : dy
+      ? `translateY(${dy * 0.8}px) scale(${1 - upProgress * 0.04})`
+      : dx
       ? `translateX(${dx}px) rotate(${dx / 50}deg)`
       : pull
         ? `translate(${aim * 0.2}px, ${pull}px) rotate(${aim / 80}deg) scale(${1 - tension * 0.03})`
@@ -265,7 +274,7 @@ export function PickCard({
         opacity: settle === "fly" ? 0.4 : undefined,
         transition: settle === "fly"
             ? "transform 180ms ease-in, opacity 180ms ease-in"
-            : dx || pull
+            : dx || dy || pull
               ? "none"
               : "transform 320ms cubic-bezier(.2,1.5,.4,1)",
       }}
@@ -274,7 +283,7 @@ export function PickCard({
       <div
         {...gestures.photoHandlers}
         data-photo
-        className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx && !pull ? "animate-hint" : ""}`}
+        className={`relative min-h-0 flex-1 touch-none select-none overflow-hidden ${hint && !dx && !dy && !pull ? "animate-hint" : ""}`}
         onAnimationEnd={(e) => e.animationName === "hint" && onHinted?.()}
 
       >
@@ -309,6 +318,14 @@ export function PickCard({
           {likeSwipes ? "👎 LESS" : "NEXT"}
         </span>
 
+        <span
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-[38%] mx-auto w-max rounded-lg border-4 border-star px-3 py-1 font-display text-3xl font-extrabold text-star"
+          style={{ opacity: upProgress }}
+        >
+          ☆ MAYBE
+        </span>
+
         {/* In a group: your own answer (others' stay secret). Tap another answer below to change it. */}
         {answer && (
           <div className="pointer-events-none absolute top-3 right-3">
@@ -318,6 +335,13 @@ export function PickCard({
               }`}
             >
               {answer === "love" ? "♥ You love it" : answer === "ok" ? "👍 You said OK" : "✕ Not for you"}
+            </span>
+          </div>
+        )}
+        {isLater && !answer && !isMaybe && (
+          <div className={`pointer-events-none absolute top-3 right-3 transition-opacity ${quietBadge ? "opacity-0" : ""}`}>
+            <span className="inline-flex h-8 items-center gap-1 rounded-full bg-black/60 px-3 text-sm font-semibold text-star backdrop-blur-md">
+              <span aria-hidden="true">☆</span> Your maybe
             </span>
           </div>
         )}

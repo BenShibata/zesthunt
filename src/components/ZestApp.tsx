@@ -17,7 +17,7 @@ import { NUDGE_LABEL, NotQuite } from "./NotQuite";
 import { PickCard, PickSkeleton } from "./PickCard";
 import { GoMenu } from "./GoMenu";
 import { NavRow, navPill } from "./NavRow";
-import { MaybesSheet } from "./MaybesSheet";
+import { SavedSheet, type SavedKind } from "./SavedSheet";
 import { EMPTY_WISH, WishesForm, WishesSheet } from "./WishesSheet";
 import { fitsWishes, wishLine, type Wish } from "@/lib/wishes";
 import { Controls } from "./Controls";
@@ -164,6 +164,10 @@ export function ZestApp() {
   /** Solo "More like this": places you liked this visit (memory only, never saved). Searches lean toward them. */
   const [maybes, setMaybes] = useState<Pick[]>([]);
   const maybesRef = useRef<Pick[]>([]);
+  /** Solo "Maybe": saved for later without steering the picks (memory only). */
+  const [laters, setLaters] = useState<Pick[]>([]);
+  const latersRef = useRef<Pick[]>([]);
+  /** The Saved sheet: liked places and maybes. */
   const [maybesOpen, setMaybesOpen] = useState(false);
   const exhausted = useRef(new Set<Mood>());
   const motionAsked = useRef(false);
@@ -224,7 +228,7 @@ export function ZestApp() {
    */
   const appendSecondLook = useCallback((from: number) => {
     // Maybes come back first: they're the ones the person was nearly sold on.
-    const round = secondLookRound([...maybesRef.current, ...skipped.current], queueRef.current.slice(from), Date.now());
+    const round = secondLookRound([...latersRef.current, ...maybesRef.current, ...skipped.current], queueRef.current.slice(from), Date.now());
     if (round.length === 0) return false;
     secondLooks.current += 1;
     setQueue((q) => [...q, ...round]);
@@ -414,7 +418,7 @@ export function ZestApp() {
     const left = queue.length - (index + 1);
     if (left <= REFILL_AT && !refilling && !exhausted.current.has(mood)) {
       setRefilling(true);
-      fetchQueue(mood, next, { append: true, extra: { exclude: seenIds([queue, skipped.current, maybesRef.current]) } });
+      fetchQueue(mood, next, { append: true, extra: { exclude: seenIds([queue, skipped.current, maybesRef.current, latersRef.current]) } });
     } else if (left === 0 && exhausted.current.has(mood)) {
       appendSecondLook(index + 1);
     }
@@ -613,6 +617,8 @@ export function ZestApp() {
     disliked.current = [];
     maybesRef.current = [];
     setMaybes([]);
+    latersRef.current = [];
+    setLaters([]);
     setSignals([]);
     applyCraving(null);
     widenRef.current = false;
@@ -663,6 +669,10 @@ export function ZestApp() {
   while (pAt < partyPicks.length && unfitSet.has(partyPicks[pAt].id)) pAt++;
   const partyCurrent = party.active ? (partyPicks[pAt] ?? null) : null;
   const votableCount = partyPicks.filter((p) => !unfitSet.has(p.id)).length;
+  // My maybes in a group: places I moved past without answering, to come back to. Never sent anywhere.
+  const [pLater, setPLater] = useState<string[]>([]);
+  const [reviewingLater, setReviewingLater] = useState(false);
+  const pendingLaters = pLater.filter((id) => !party.myAnswers[id] && !unfitSet.has(id) && partyPicks.some((p) => p.id === id));
   // Finished: answered every place still in play, or said "I'm done".
   const doneCount = party.members.filter((m) => party.doneIds.includes(m.id) || (votableCount > 0 && (party.progress[m.id] ?? 0) >= votableCount)).length;
   // My own answers, as a little guide: how many of each, and how many places are left to see.
@@ -717,14 +727,46 @@ export function ZestApp() {
   const partyNext = () => {
     if (!partyCurrent) return;
     setPHistory((h) => [...h, pAt]);
-    setPIndex(pAt + 1);
     setSwipes((n) => n + 1);
+    if (reviewingLater) {
+      // Going back through my maybes: straight to the next undecided one, then the end.
+      const nextAt = partyPicks.findIndex((p) => p.id !== partyCurrent.id && pLater.includes(p.id) && !party.myAnswers[p.id] && !unfitSet.has(p.id));
+      if (nextAt >= 0) setPIndex(nextAt);
+      else {
+        setReviewingLater(false);
+        setPIndex(partyPicks.length);
+      }
+      return;
+    }
+    setPIndex(pAt + 1);
+  };
+  /** Maybe (in a group): move on without answering, and come back to it before you're done. Only on this phone. */
+  const partyMaybe = () => {
+    if (!partyCurrent) return;
+    if (pLater.includes(partyCurrent.id)) {
+      setPLater((l) => l.filter((id) => id !== partyCurrent.id));
+      setNotice("Taken off your maybes.");
+      return;
+    }
+    setPLater((l) => [...l, partyCurrent.id]);
+    haptic(8);
+    setEnterFrom("right");
+    partyNext();
+  };
+  const reviewLaters = () => {
+    const at = partyPicks.findIndex((p) => pendingLaters.includes(p.id));
+    if (at < 0) return;
+    setReviewingLater(true);
+    setPHistory((h) => [...h, pAt]);
+    setPIndex(at);
   };
   /** Love it / OK / Not for me: answers (or changes the answer to) the place on screen, then moves on. */
   const partyAnswer = (a: "love" | "ok" | "no") => {
     if (!partyCurrent) return;
     const before = party.myAnswers[partyCurrent.id];
     party.answer(partyCurrent.id, a);
+    // Answering decides a maybe.
+    setPLater((l) => l.filter((id) => id !== partyCurrent.id));
     setEnterFrom("right");
     haptic(a === "love" ? 14 : 8);
     if (before && before !== a) setNotice(`Changed to ${a === "love" ? "Love it" : a === "ok" ? "OK" : "Not for me"}.`);
@@ -1017,6 +1059,8 @@ export function ZestApp() {
   const leaveParty = () => {
     party.leave();
     setKeptVoting([]);
+    setPLater([]);
+    setReviewingLater(false);
     setAskedWishes(false);
     setHostWish(EMPTY_WISH);
     clearHash();
@@ -1114,7 +1158,27 @@ export function ZestApp() {
       still ? 0 : LAUNCH_MS,
     );
   };
-  /** From the Maybes list: jump back to one (it's still in the queue), ready to go. */
+  /** Maybe: save it for later without steering the picks (or take it off), and move on. */
+  const isLater = Boolean(current && laters.some((m) => m.placeId === current.placeId));
+  const toggleLater = () => {
+    if (!current) return;
+    if (isLater) {
+      const rest = laters.filter((m) => m.placeId !== current.placeId);
+      latersRef.current = rest;
+      setLaters(rest);
+      setNotice("Taken off your maybes.");
+      return;
+    }
+    const saved = [...laters, current];
+    latersRef.current = saved;
+    setLaters(saved);
+    haptic(8);
+    setNotice(saved.length === 1 && maybes.length === 0 ? "Saved as a maybe. Find it under Saved, up top." : "Saved as a maybe.");
+    setEnterFrom("right");
+    soloSkip("liked");
+  };
+  const savedList: { pick: Pick; kind: SavedKind }[] = [...maybes.map((pick) => ({ pick, kind: "liked" as const })), ...laters.map((pick) => ({ pick, kind: "maybe" as const }))];
+  /** From the Saved list: jump back to one (it's still in the queue), ready to go. */
   const openMaybe = (p: Pick) => {
     setMaybesOpen(false);
     const at = queue.findIndex((q) => q.placeId === p.placeId);
@@ -1122,11 +1186,18 @@ export function ZestApp() {
     setHistory((h) => [...h, index]);
     setIndex(at);
   };
-  const removeMaybe = (p: Pick) => {
+  const removeMaybe = (p: Pick, kind: SavedKind) => {
+    if (kind === "maybe") {
+      const rest = laters.filter((m) => m.placeId !== p.placeId);
+      latersRef.current = rest;
+      setLaters(rest);
+      if (rest.length + maybes.length === 0) setMaybesOpen(false);
+      return;
+    }
     const rest = maybes.filter((m) => m.placeId !== p.placeId);
     maybesRef.current = rest;
     setMaybes(rest);
-    if (rest.length === 0) setMaybesOpen(false);
+    if (rest.length + laters.length === 0) setMaybesOpen(false);
   };
   const stepBack = adding ? () => setAdding((a) => (a && a.at > 0 ? { ...a, at: a.at - 1 } : a)) : inParty ? partyRewind : soloRewind;
   const back = () => {
@@ -1150,9 +1221,9 @@ export function ZestApp() {
   const timer = useInactivityTimer(IDLE_MS, onIdle, Boolean(locked) || inParty || Boolean(party.matchedCard));
 
   // Keyboard: → next, ← or Backspace back, ↓ go (or vote, or add), solo or in a group.
-  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void; maybe?: () => void; less?: () => void }>({ next, back: goBack, pullGo });
+  const keyActions = useRef<{ next: () => void; back: () => void; pullGo: () => void; answer?: (a: "love" | "ok" | "no") => void; maybe?: () => void; less?: () => void; later?: () => void }>({ next, back: goBack, pullGo });
   useEffect(() => {
-    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined, maybe: !inParty && !adding ? () => toggleMaybe() : undefined, less: !inParty && !adding ? lessLike : undefined };
+    keyActions.current = { next, back: goBack, pullGo, answer: inParty && !adding ? partyAnswer : undefined, maybe: !inParty && !adding ? () => toggleMaybe() : undefined, less: !inParty && !adding ? lessLike : undefined, later: adding ? undefined : inParty ? partyMaybe : toggleLater };
   });
   useEffect(() => {
     if (locked || composing || receiptOpen) return;
@@ -1164,7 +1235,10 @@ export function ZestApp() {
       else if (keyActions.current.answer && ["1", "2", "3"].includes(e.key)) keyActions.current.answer(e.key === "1" ? "no" : e.key === "2" ? "ok" : "love");
       else if (e.key === "ArrowRight") keyActions.current.next();
       else if (e.key === "ArrowLeft" || e.key === "Backspace") keyActions.current.back();
-      else if (e.key === "ArrowDown") {
+      else if (e.key === "ArrowUp" && keyActions.current.later) {
+        e.preventDefault();
+        keyActions.current.later();
+      } else if (e.key === "ArrowDown") {
         e.preventDefault();
         keyActions.current.pullGo();
       }
@@ -1381,7 +1455,21 @@ export function ZestApp() {
               What we sent
             </button>
           ) : (
-            // The group hunt is the headline feature, so it gets a visible button, not a menu entry.
+            <>
+            {savedList.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setMaybesOpen(true)}
+                aria-label={`Saved places (${savedList.length})`}
+                className="inline-flex h-11 items-center gap-1 rounded-full bg-white/10 px-3 text-sm font-semibold whitespace-nowrap text-white hover:bg-white/15"
+              >
+                <span aria-hidden="true" className="text-star">
+                  ☆
+                </span>
+                <span className="hidden min-[430px]:inline">Saved</span> {savedList.length}
+              </button>
+            )}
+            {/* The group hunt is the headline feature, so it gets a visible button, not a menu entry. */}
             <button
               type="button"
               onClick={onPartyButton}
@@ -1391,6 +1479,7 @@ export function ZestApp() {
               <PartyIcon size={18} className="hidden shrink-0 min-[360px]:block" />
               {partyBusy ? "Opening…" : "Hunt together"}
             </button>
+            </>
           )
         }
       />
@@ -1583,7 +1672,7 @@ export function ZestApp() {
                   <span aria-hidden="true" className="w-5 text-center text-base">↓</span>Pull the card down, or hold Let&apos;s go, to aim and shoot
                 </li>
                 <li className="flex items-center gap-2.5">
-                  <span aria-hidden="true" className="w-5 text-center text-base">👍</span>Liked places are saved for this visit
+                  <span aria-hidden="true" className="w-5 text-center text-base">☆</span>Swipe up (or Maybe) to save one for later
                 </li>
                 <li className="flex items-center gap-2.5">
                   <span aria-hidden="true" className="w-5 text-center text-base">◉</span>Tap the photo for more photos
@@ -1668,6 +1757,8 @@ export function ZestApp() {
             fitsGroup={fitsWishes(partyCurrent, party.wishes)}
             onNext={next}
             onBack={goBack}
+            onMaybe={partyMaybe}
+            isLater={pLater.includes(partyCurrent.id)}
                 hasBack={canGoBack}
             onPull={pullGo}
             pullAction="vote"
@@ -1682,6 +1773,8 @@ export function ZestApp() {
             done={doneCount}
             total={party.members.length}
             quit={party.iAmDone}
+            maybes={party.iAmDone ? 0 : pendingLaters.length}
+            onReviewMaybes={reviewLaters}
             onKeepVoting={() => setDone(false)}
             onSearch={() => setComposing(true)}
             onStartOver={() => {
@@ -1722,6 +1815,8 @@ export function ZestApp() {
           quietBadge={Boolean(shownNotice || voice.listening)}
           onNext={lessLike}
           onBack={() => toggleMaybe({ swiped: true })}
+          onMaybe={toggleLater}
+          isLater={isLater}
           likeSwipes
           onPull={pullGo}
           pullAction="go"
@@ -1808,14 +1903,15 @@ export function ZestApp() {
         </form>
       )}
 
-      {maybesOpen && !inParty && maybes.length > 0 && (
-        <MaybesSheet maybes={maybes} onOpen={openMaybe} onRemove={removeMaybe} onClose={() => setMaybesOpen(false)} />
+      {maybesOpen && !inParty && savedList.length > 0 && (
+        <SavedSheet saved={savedList} onOpen={openMaybe} onRemove={removeMaybe} onClose={() => setMaybesOpen(false)} />
       )}
       {/* Back, always bottom-left; Let's go and the liked list (solo), or where you are and Skip (group), beside it. */}
       <NavRow
         hidden={composing || receiptOpen || !(adding ? addingCurrent : shown)}
         canBack={canGoBack}
         onBack={goBack}
+        compactBack={inParty && !adding}
         center={
           adding ? (
             <span className="text-sm text-white/60">
@@ -1824,13 +1920,19 @@ export function ZestApp() {
           ) : inParty ? (
             // My answers so far, as the same symbols as the buttons, and how many places are left to see.
             <span
-              className="inline-flex items-center gap-2 rounded-full bg-white/8 px-3 py-1.5 text-sm text-white/80 tabular-nums"
-              aria-label={`Your answers: ${myTally.love} love it, ${myTally.ok} OK, ${myTally.no} not for me. ${myTally.left} left to see.`}
+              className="inline-flex items-center gap-1.5 rounded-full bg-white/8 px-2.5 py-1.5 text-sm whitespace-nowrap text-white/80 tabular-nums"
+              aria-label={`Your answers: ${myTally.love} love it, ${myTally.ok} OK, ${myTally.no} not for me${pendingLaters.length > 0 ? `, ${pendingLaters.length} maybe` : ""}. ${myTally.left} left to see.`}
             >
-              <span aria-hidden="true" className="text-social-bright">♥ {myTally.love}</span>
-              <span aria-hidden="true">👍 {myTally.ok}</span>
-              <span aria-hidden="true" className="text-white/60">✕ {myTally.no}</span>
-              <span aria-hidden="true" className="font-semibold text-white">· {myTally.left} left</span>
+              {/* Only the symbols used so far, so it stays one short line. */}
+              {myTally.love > 0 && <span aria-hidden="true" className="text-social-bright">♥{myTally.love}</span>}
+              {myTally.ok > 0 && <span aria-hidden="true">👍{myTally.ok}</span>}
+              {myTally.no > 0 && <span aria-hidden="true" className="text-white/60">✕{myTally.no}</span>}
+              {pendingLaters.length > 0 && (
+                <span aria-hidden="true" className="text-star">
+                  ☆{pendingLaters.length}
+                </span>
+              )}
+              <span aria-hidden="true" className="font-semibold text-white">{myTally.left} left</span>
             </span>
           ) : current ? (
             <BowButton
@@ -1846,15 +1948,9 @@ export function ZestApp() {
         }
         right={
           adding ? null : inParty ? (
-            partyCurrent && (
-              <button type="button" onClick={partyNext} aria-label="Skip this place for now (no answer)" className={`${navPill} text-white/85 hover:bg-white/10`}>
-                Skip <span aria-hidden="true">›</span>
-              </button>
-            )
-          ) : maybes.length > 0 ? (
-            <button type="button" onClick={() => setMaybesOpen(true)} aria-label={`Places you liked (${maybes.length})`} className={`${navPill} text-white/85 hover:bg-white/10`}>
-              Liked ({maybes.length}) <span aria-hidden="true">›</span>
-            </button>
+            partyCurrent && <MaybeButton on={pLater.includes(partyCurrent.id)} name={partyCurrent.name} group onClick={partyMaybe} />
+          ) : current ? (
+            <MaybeButton on={isLater} name={current.name} onClick={toggleLater} />
           ) : null
         }
       />
@@ -1919,5 +2015,26 @@ export function ZestApp() {
         </button>
       </div>
     </main>
+  );
+}
+
+/** ☆ Maybe: save it for later and move on (solo), or come back to it before you're done (in a group). Tap again to take it off. */
+function MaybeButton({ on, name, group, onClick }: { on: boolean; name: string; group?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={on}
+      aria-label={
+        on
+          ? `${name} is a maybe. Tap to take it off`
+          : group
+            ? `Maybe: come back to ${name} before you're done (no answer yet)`
+            : `Maybe: save ${name} for later and see another`
+      }
+      className={`${navPill} ${on ? "bg-star/20 text-star" : "bg-white/10 text-white hover:bg-white/15"}`}
+    >
+      <span aria-hidden="true">{on ? "★" : "☆"}</span> Maybe
+    </button>
   );
 }
