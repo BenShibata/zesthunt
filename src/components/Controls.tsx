@@ -72,7 +72,7 @@ export function Controls(p: Props) {
           {opt("love", "Love it", <HeartIcon size={18} />, "bg-social text-white")}
         </div>
         <p className="pt-1.5 text-center text-xs text-white/55" aria-live="polite">
-          {a.value ? "Tap another to change your answer." : "Answers stay secret until the reveal."}
+          {a.value ? "Tap another to change your answer." : "Group votes pick the place together, unlike More / Less like this when solo."}
         </p>
       </div>
     );

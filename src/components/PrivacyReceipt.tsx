@@ -96,7 +96,10 @@ export function PrivacyReceipt({
               )}
             </Row>
             <Row label="Time">{clock(sent.localTime)}, no date</Row>
-            <Row label="Mood">{MOOD_LABELS[sent.mood]}</Row>
+            <Row label="Mood">
+              {MOOD_LABELS[sent.mood]}
+              <span className="block text-xs text-white/55">The kind of meal to lean toward (Fresh, Hearty, Quick…). It starts as Fresh; Steer changes it.</span>
+            </Row>
             {diet && diet.diets.length > 0 && <Row label="Diet">{diet.diets.join(", ")}</Row>}
             {diet && diet.allergies.length > 0 && <Row label="Allergies">{diet.allergies.join(", ")}</Row>}
             {sent.craving && <Row label="Craving">“{sent.craving}”</Row>}

@@ -8,7 +8,9 @@ export interface MenuItem {
   /** A small count shown next to the label (choices on). */
   count?: number;
   icon: ReactNode;
-  onSelect: () => void;
+  onSelect?: () => void;
+  /** A page instead of an action (About, Privacy). */
+  href?: string;
 }
 
 /**
@@ -66,11 +68,17 @@ export function TopBar({ demo, items, badge = 0, action }: { demo?: boolean; ite
           <ul id="app-menu" className="animate-rise absolute top-12 right-0 w-64 overflow-hidden rounded-2xl bg-ink-3 py-1.5 shadow-2xl ring-1 ring-white/10">
             {items.map((item) => (
               <li key={item.label}>
+                {item.href ? (
+                  <a href={item.href} className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-base font-medium text-white hover:bg-white/8">
+                    <span className="shrink-0 text-white/70">{item.icon}</span>
+                    <span className="flex-1">{item.label}</span>
+                  </a>
+                ) : (
                 <button
                   type="button"
                   onClick={() => {
                     setOpen(false);
-                    item.onSelect();
+                    item.onSelect?.();
                   }}
                   aria-label={item.detail ? `${item.label}: ${item.detail}` : undefined}
                   className="flex min-h-12 w-full items-center gap-3 px-4 text-left text-base font-medium text-white hover:bg-white/8"
@@ -83,6 +91,7 @@ export function TopBar({ demo, items, badge = 0, action }: { demo?: boolean; ite
                     </span>
                   ) : null}
                 </button>
+                )}
               </li>
             ))}
           </ul>

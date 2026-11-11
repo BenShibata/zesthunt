@@ -522,7 +522,7 @@ export function PickCard({
               <button
                 type="button"
                 onClick={onCantEat}
-                className="-ml-1 mt-1 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
+                className="-ml-1 mt-1 mr-6 inline-flex min-h-11 items-center gap-1 rounded-full px-1 text-sm font-semibold text-teal-bright hover:underline"
               >
                 <UtensilsIcon size={14} />
                 Can&apos;t eat this

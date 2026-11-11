@@ -29,10 +29,10 @@ import { secondLookRound, seenIds } from "@/lib/secondLook";
 import { steerGuess, type SteerGuess } from "@/lib/steer";
 import { SearchContext } from "./SearchContext";
 import { codeFromHash, partyLink, toPartyCard, useParty } from "@/hooks/useParty";
-import { EveryoneLoves, InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyResults } from "./Party";
+import { EveryoneLoves, InviteSheet, JoinScreen, PartyBar, PartyEndOfList, PartyIntro, PartyResults } from "./Party";
 import { DietPanel } from "./DietPanel";
 import { PrivacyReceipt } from "./PrivacyReceipt";
-import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon, XIcon, StarIcon, ThumbDownIcon, ThumbUpIcon } from "./Icons";
+import { CarIcon, HeartIcon, LockIcon, PartyIcon, PinIcon, RewindIcon, SlidersIcon, UtensilsIcon, WalkIcon, XIcon, StarIcon, ThumbDownIcon, ThumbUpIcon, CompassMark, SendIcon } from "./Icons";
 import { aimAt, type AimKey } from "@/lib/aim";
 import { aimOptions, openAimedTarget } from "@/lib/links";
 import { createBow } from "@/lib/bow";
@@ -193,6 +193,7 @@ export function ZestApp() {
   const [pHistory, setPHistory] = useState<number[]>([]);
   const [hostExtra, setHostExtra] = useState<Pick[]>([]);
   const [wishesOpen, setWishesOpen] = useState(false);
+  const [partyIntro, setPartyIntro] = useState(false);
   const [myWish, setMyWish] = useState<Wish | null>(null);
   // Asked once per group: guests get the sheet when they join; the host sets them in the invite sheet.
   const [askedWishes, setAskedWishes] = useState(false);
@@ -1103,7 +1104,8 @@ export function ZestApp() {
     if (dietOpen) closeDiet();
     setReceiptOpen(false);
     if (party.active) setInviteOpen((o) => !o);
-    else if (!partyBusy) void startParty();
+    // First, what a party is: nothing is opened until "Start a party".
+    else if (!partyBusy) setPartyIntro(true);
   };
 
   useEffect(() => {
@@ -1459,6 +1461,9 @@ export function ZestApp() {
           },
         ]
       : []),
+    { label: "About", icon: <CompassMark size={18} />, href: "/about" },
+    { label: "Feedback", icon: <SendIcon size={18} />, href: process.env.NEXT_PUBLIC_FEEDBACK_URL?.trim() || "/about#feedback" },
+    { label: "Privacy", icon: <LockIcon size={18} />, href: "/privacy" },
   ];
 
   return (
@@ -1543,15 +1548,21 @@ export function ZestApp() {
               }
             }}
           >
-            {/* Starting a group is one sheet: the host's own wishes go right here. */}
-            {party.isHost && !askedWishes && now && (
-              <div className="border-t border-white/10 pt-3">
-                <p className="mb-2 text-sm font-semibold">What would work for you? <span className="font-normal text-white/60">Optional, and nobody sees whose.</span></p>
-                <WishesForm value={hostWish} onChange={setHostWish} cravings={cravingShortcuts(mealFrame(now), dietary.diets)} compact />
-              </div>
-            )}
+            {/* The host's own wishes: the invite sheet's second step. */}
+            {party.isHost && !askedWishes && now ? (
+              <WishesForm value={hostWish} onChange={setHostWish} cravings={cravingShortcuts(mealFrame(now), dietary.diets)} compact />
+            ) : null}
           </InviteSheet>
         </div>
+      )}
+      {partyIntro && !inParty && (
+        <PartyIntro
+          busy={partyBusy}
+          onClose={() => setPartyIntro(false)}
+          onStart={() => {
+            void startParty().then(() => setPartyIntro(false));
+          }}
+        />
       )}
       {wishesOpen && inParty && now && (
         <WishesSheet cravings={cravingShortcuts(mealFrame(now), dietary.diets)} initial={myWish} onSave={saveWishes} onSkip={() => setWishesOpen(false)}>
