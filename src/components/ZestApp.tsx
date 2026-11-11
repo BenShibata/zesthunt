@@ -9,7 +9,7 @@ import { haptic } from "@/lib/haptics";
 import { cravingShortcuts } from "@/lib/cravings";
 import { fitNote, tooLate } from "@/lib/partyFit";
 import { forgetAllWins, readWins } from "@/lib/wins";
-import { mealFrame } from "@/lib/time";
+import { areaSizeText, mealFrame } from "@/lib/time";
 import { useInactivityTimer } from "@/hooks/useInactivityTimer";
 import { requestMotionPermission, useShake } from "@/hooks/useShake";
 import { useVoice, type VoiceFallback } from "@/hooks/useVoice";
@@ -560,8 +560,8 @@ export function ZestApp() {
         groupSearch.current(wish);
         return;
       }
+      // The craving shows as a chip under the top bar; no second copy over the photo.
       applyCraving(wish);
-      setNotice(`Hunting: “${wish}”`);
       load(mood);
     },
     [load, mood, applyCraving],
@@ -612,7 +612,7 @@ export function ZestApp() {
     areaQuery.current = null;
     applyWiden(false);
     setPrecise(pos);
-    setNotice("Rounded to ~1 km before it left your device.");
+    setNotice(`Rounded to ${areaSizeText()} before it left your device.`);
     load(mood);
   };
 
@@ -1625,7 +1625,7 @@ export function ZestApp() {
         />
       ) : (
         <>
-          <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} onUseLocation={() => void shareMyLocation()} />
+          {!areaOpen && <SearchContext area={searchArea} craving={craving} onChangeArea={openArea} onClearCraving={clearCraving} onUseLocation={() => void shareMyLocation()} />}
         </>
       )}
 
@@ -1709,6 +1709,18 @@ export function ZestApp() {
             </div>
           )}
           {/* One guess, small and out of the way; never while someone is reading the details. */}
+          {/* Steering, one tap away on the card once you've passed on a pick (until then the tips have the spot). */}
+          {!steerHint && !steering && !inParty && !showTips && current && swipes > 0 && expandedId !== current.id && !shownNotice && (
+            <button
+              type="button"
+              onClick={() => setTuneOpen(true)}
+              aria-label="Steer the picks: lighter, heartier, quicker, cheaper, a treat, or surprise me"
+              className="animate-rise pointer-events-auto inline-flex h-11 items-center gap-1.5 self-start rounded-full bg-black/60 px-3.5 text-sm font-semibold text-white shadow-lg backdrop-blur-md transition hover:bg-black/70 active:scale-95"
+            >
+              <SlidersIcon size={15} />
+              Steer
+            </button>
+          )}
           {steerHint && !steering && !inParty && current && expandedId !== current.id && (
             <div className="animate-rise pointer-events-auto inline-flex h-11 items-center self-start rounded-full bg-black/60 text-sm font-semibold text-white shadow-lg backdrop-blur-md">
               <button type="button" onClick={takeHint} className="inline-flex h-11 items-center gap-1.5 rounded-full pr-2.5 pl-3.5 transition hover:bg-white/10 active:scale-95">
@@ -1885,10 +1897,20 @@ export function ZestApp() {
         />
       )}
       {composing && (
-        <p className="animate-rise relative z-50 px-5 pb-2 font-display text-2xl font-bold">{inParty ? "Find a place to add" : "What sounds good?"}</p>
+        <div className="animate-rise relative z-50 flex items-center justify-between gap-2 pr-3 pb-2 pl-5">
+          <p className="font-display text-2xl font-bold">{inParty ? "Find a place to add" : "What sounds good?"}</p>
+          <button
+            type="button"
+            onClick={() => setComposing(false)}
+            className="inline-flex h-11 shrink-0 items-center gap-1 rounded-full bg-white/10 px-3.5 text-sm font-semibold text-white hover:bg-white/15"
+          >
+            <XIcon size={15} />
+            Close
+          </button>
+        </div>
       )}
       {composing && now && (
-        <div className="animate-rise relative z-50 flex gap-1.5 overflow-x-auto px-4 pb-2 [scrollbar-width:none]" role="group" aria-label="Quick cravings">
+        <div className="animate-rise relative z-50 flex flex-wrap gap-1.5 px-4 pb-2" role="group" aria-label="Quick cravings">
           {cravingShortcuts(mealFrame(now), dietary.diets).map((c) => (
             <button
               key={c}
@@ -1934,7 +1956,7 @@ export function ZestApp() {
       )}
       {/* Back, always bottom-left; Let's go and the liked list (solo), or where you are and Skip (group), beside it. */}
       <NavRow
-        hidden={composing || receiptOpen || !(adding ? addingCurrent : shown)}
+        hidden={composing || receiptOpen || areaOpen || !(adding ? addingCurrent : shown)}
         canBack={canGoBack}
         onBack={goBack}
         compactBack={inParty && !adding}
@@ -1996,6 +2018,7 @@ export function ZestApp() {
           ) : null
         }
       />
+      {!areaOpen && (
       <Controls
         searching={composing}
         disabled={!(adding ? addingCurrent : shown) || receiptOpen}
@@ -2044,6 +2067,7 @@ export function ZestApp() {
         }}
         onHoldEnd={voice.stop}
       />
+      )}
       <div className="flex justify-center px-3 pb-[env(safe-area-inset-bottom)]">
         <button
           type="button"

@@ -1,5 +1,6 @@
 "use client";
 
+import { areaSizeText } from "@/lib/time";
 import type { ReactNode } from "react";
 import { MOOD_LABELS, type PicksEvent } from "@/lib/types";
 import type { SentRequest } from "@/lib/api";
@@ -78,7 +79,7 @@ export function PrivacyReceipt({
             <Row label="Area">
               {sent.location ? (
                 <>
-                  Rounded to ~1 km:{" "}
+                  Rounded to {areaSizeText()}:{" "}
                   <span className="font-mono">
                     {sent.location.lat.toFixed(2)}, {sent.location.lng.toFixed(2)}
                   </span>

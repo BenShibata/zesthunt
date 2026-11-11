@@ -1,5 +1,6 @@
 "use client";
 
+import { areaSizeText } from "@/lib/time";
 import { useId } from "react";
 import type { AreaSource } from "@/lib/types";
 
@@ -61,7 +62,7 @@ export function AreaVisual({
         ? `A city-level guess${label ? ` (${label})` : ""}. Nothing more precise.`
         : source === "typed"
           ? "Only the words you typed are sent."
-          : "Only this ~1 km area leaves your device.";
+          : `Only this ${areaSizeText()} area leaves your device.`;
 
   return (
     <figure className={className}>

@@ -20,7 +20,8 @@ export function LocationPrompt({
 }) {
   const [value, setValue] = useState("");
   return (
-    <section className="flex flex-1 flex-col justify-center gap-4 overflow-y-auto px-6" aria-labelledby="where-title">
+    // Centered when there's room, scrolling from the top when there isn't (so the heading is never clipped).
+    <section className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-6 [&>*:first-child]:mt-auto [&>*:last-child]:mb-auto" aria-labelledby="where-title">
       <CompassMark size={40} className="text-paprika-bright" />
       <h1 id="where-title" className="font-display text-3xl font-bold tracking-tight">
         Where are you hunting?

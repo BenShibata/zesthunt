@@ -52,3 +52,9 @@ export function ratingText(rating: number | null | undefined, count: number | nu
     spoken: `Rated ${value} out of 5${n > 0 ? ` from ${n.toLocaleString("en-US")} ratings` : ""} on Google`,
   };
 }
+
+/** The size of the rounded area a location is snapped to, in the units the region uses. */
+export function areaSizeText(locale?: string): string {
+  const region = (locale ?? (typeof navigator === "undefined" ? "en-US" : navigator.language)).split("-")[1]?.toUpperCase();
+  return ["US", "GB", "LR", "MM"].includes(region ?? "") ? "~½ mile" : "~1 km";
+}
