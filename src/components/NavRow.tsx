@@ -8,7 +8,22 @@ import { ChevronLeftIcon } from "./Icons";
  * (faded when there's nothing to go back to), something in the middle, something on the
  * right. Solo: Let's go and the places you liked. In a group: where you are, and Skip.
  */
-export function NavRow({ canBack, onBack, center, right, hidden }: { canBack: boolean; onBack: () => void; center?: ReactNode; right?: ReactNode; hidden?: boolean }) {
+export function NavRow({
+  canBack,
+  onBack,
+  center,
+  right,
+  hidden,
+  compactBack,
+}: {
+  canBack: boolean;
+  onBack: () => void;
+  center?: ReactNode;
+  right?: ReactNode;
+  hidden?: boolean;
+  /** Just the arrow on narrower phones, to leave room for a wide middle. */
+  compactBack?: boolean;
+}) {
   return (
     <div className={`relative z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 pt-1 transition-opacity ${hidden ? "pointer-events-none opacity-0" : ""}`}>
       <div>
@@ -20,7 +35,7 @@ export function NavRow({ canBack, onBack, center, right, hidden }: { canBack: bo
           className="inline-flex h-11 items-center gap-0.5 rounded-full pr-3 pl-2 text-sm font-semibold text-white/85 transition hover:bg-white/10 disabled:text-white/30 disabled:hover:bg-transparent"
         >
           <ChevronLeftIcon size={18} />
-          Back
+          <span className={compactBack ? "sr-only min-[420px]:not-sr-only" : ""}>Back</span>
         </button>
       </div>
       <div className="flex min-w-0 justify-center">{center}</div>

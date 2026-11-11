@@ -7,6 +7,8 @@ import { haptic } from "@/lib/haptics";
 const SWIPE_AT = 96;
 /** How far to pull down before letting go launches (like drawing a bow): far enough that it's never by accident. */
 export const PULL_AT = 150;
+/** Upward distance on the photo that marks a pick as a maybe. */
+const UP_AT = 80;
 /** Movement before a gesture picks a direction; less than this and it's a tap. */
 const DECIDE_AT = 8;
 const TAP_MS = 350;
@@ -24,6 +26,7 @@ type Axis = "x" | "pull" | "up" | "none" | null;
  *   buzzes once when it's far enough, and on release springs back as the arrow flies.
  *   Moving sideways while pulling aims (the card picks what's aimed at from `aim`). The
  *   details pull too while closed, or open and scrolled to their top;
+ * - on the photo only, swipe up for maybe (save it for later): the card is tossed up;
  * - on the photo only, a tap flips to the next photo.
  * The details panel takes sideways swipes too, while its up-and-down scrolling stays native.
  * Presses that start on a button or link are left alone, so those keep working.
@@ -36,6 +39,7 @@ export function useCardGestures({
   onTap,
   panelFree,
   onSwipeUp,
+  onMaybe,
   disabled,
 }: {
   onNext: () => void;
@@ -52,9 +56,12 @@ export function useCardGestures({
   panelFree?: boolean;
   /** Swipe up on the details panel (while it's closed, to open it). */
   onSwipeUp?: () => void;
+  /** Swipe up on the photo: maybe (save it for later). The card flies up. */
+  onMaybe?: () => void;
   disabled?: boolean;
 }) {
   const [dx, setDx] = useState(0);
+  const [dy, setDy] = useState(0);
   const [pullRaw, setPullRaw] = useState(0);
   const [aim, setAim] = useState(0);
   const [launching, setLaunching] = useState(false);
@@ -78,12 +85,20 @@ export function useCardGestures({
     s.dy = e.clientY - s.y;
     if (!s.axis && Math.hypot(s.dx, s.dy) > DECIDE_AT) {
       const canPullHere = s.photo || panelFree;
-      s.axis = Math.abs(s.dx) > Math.abs(s.dy) ? "x" : canPullHere && s.dy > 0 && onPull ? "pull" : !s.photo && onSwipeUp && s.dy < 0 ? "up" : "none";
+      s.axis =
+        Math.abs(s.dx) > Math.abs(s.dy)
+          ? "x"
+          : canPullHere && s.dy > 0 && onPull
+            ? "pull"
+            : s.dy < 0 && (s.photo ? onMaybe : onSwipeUp)
+              ? "up"
+              : "none";
       // The details hold on to the pointer only once the gesture is clearly ours, so taps
       // and (when open) scrolling there stay native, and the gesture ends even off the panel.
       if (!s.photo && s.axis !== "none") e.currentTarget.setPointerCapture(e.pointerId);
     }
     if (s.axis === "x") setDx(s.dx);
+    if (s.axis === "up" && s.photo) setDy(Math.min(0, s.dy));
     if (s.axis === "pull") {
       const d = Math.max(0, s.dy);
       setPullRaw(d);
@@ -123,8 +138,23 @@ export function useCardGestures({
       );
       return;
     }
+    if (!cancelled && s.axis === "up" && s.photo && s.dy < -UP_AT) {
+      // A maybe: the card is tossed up, then the next one comes in.
+      setSettle("fly");
+      setDy(-(window.innerHeight + 120));
+      setTimeout(
+        () => {
+          setSettle("none");
+          setDy(0);
+          onMaybe?.();
+        },
+        still ? 0 : FLY_MS,
+      );
+      return;
+    }
     setSettle("spring");
     setDx(0);
+    setDy(0);
     if (cancelled) return;
     if (s.axis === "x") {
       // Not far enough: springs back.
@@ -142,7 +172,7 @@ export function useCardGestures({
         },
         still ? 0 : LAUNCH_MS,
       );
-    } else if (s.axis === "up" && s.dy < -48) {
+    } else if (s.axis === "up" && !s.photo && s.dy < -48) {
       onSwipeUp?.();
     } else if (!s.axis && s.photo && Date.now() - s.t < TAP_MS) {
       onTap?.();
@@ -153,6 +183,10 @@ export function useCardGestures({
     dx,
     /** -1 (swiping left, next) … 1 (swiping right, back). */
     progress: Math.max(-1, Math.min(1, dx / SWIPE_AT)),
+    /** Upward drag on the photo (a maybe), negative pixels. */
+    dy,
+    /** 0 → 1 as an upward drag on the photo nears a maybe. */
+    upProgress: Math.max(0, Math.min(1, -dy / UP_AT)),
     /** How far the photo has moved down, with resistance past the launch point. */
     pull: pullRaw < PULL_AT ? pullRaw * 0.6 : Math.min(150, PULL_AT * 0.6 + (pullRaw - PULL_AT) * 0.2),
     /** 0 → 1 as the pull approaches the launch point. */
