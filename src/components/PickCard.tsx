@@ -405,12 +405,13 @@ export function PickCard({
             <button
               type="button"
               onClick={approx.onUseLocation}
-              className="pointer-events-auto flex min-h-11 items-center gap-2 rounded-full bg-black/55 px-4 text-left text-base font-semibold text-white backdrop-blur-md hover:bg-black/70"
+              aria-label={`Near ${approx.area}. Use my location for walk times`}
+              className="pointer-events-auto flex min-h-11 min-w-0 items-center gap-2 rounded-full bg-black/55 px-4 py-1 text-left text-base font-semibold text-white backdrop-blur-md hover:bg-black/70"
             >
               <PinIcon size={18} className="shrink-0 text-teal-bright" />
-              <span>
-                Near {approx.area}
-                <span className="block text-sm font-normal text-teal-bright">Use my location for walk times</span>
+              <span className="min-w-0">
+                <span className="block truncate">Near {approx.area}</span>
+                <span className="block text-sm font-normal whitespace-nowrap text-teal-bright">Tap for walk times</span>
               </span>
             </button>
           ) : pick.travelUnknown ? (
