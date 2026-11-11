@@ -10,7 +10,7 @@ import { PlateRing } from "./PlateRing";
 import { HeartIcon, StarIcon, ThumbDownIcon, ThumbUpIcon, XIcon as CrossIcon } from "./Icons";
 import { BagIcon, CarIcon, ChevronDownIcon, ClockIcon, ExternalIcon, LeafIcon, MoreIcon, PartyIcon, PhoneIcon, PinIcon, SearchIcon, UtensilsIcon, WalkIcon } from "./Icons";
 import { useCardGestures } from "@/hooks/useCardGestures";
-import { aimOptions, directionsUrl, openAimedTarget } from "@/lib/links";
+import { aimOptions, directionsUrl, openAimedTarget, orderAhead } from "@/lib/links";
 import { aimAt, aimTargets, type AimKey } from "@/lib/aim";
 import { foodSymbol, placeHue } from "@/lib/look";
 import { useBow, type Bow } from "@/lib/bow";
@@ -149,7 +149,7 @@ export function PickCard({
   const has = aimOptions(pick);
   const walking = pick.travelMode === "walk";
   const TARGETS: Record<AimKey, { label: string; icon: ReactNode }> = {
-    order: { label: "Order to go", icon: <BagIcon size={24} /> },
+    order: orderAhead(pick).kind === "own" ? { label: "Website", icon: <ExternalIcon size={24} /> } : { label: "Order to go", icon: <BagIcon size={24} /> },
     directions: { label: "Directions", icon: walking ? <WalkIcon size={24} /> : <CarIcon size={24} /> },
     journey: { label: "All options", icon: <MoreIcon size={24} /> },
     call: { label: pick.reservable ? "Call to reserve" : "Call", icon: <PhoneIcon size={24} /> },

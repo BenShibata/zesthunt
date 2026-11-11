@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { Pick } from "@/lib/types";
 import type { AimKey } from "@/lib/aim";
 import { bookTableUrl, directionsUrl, orderAhead, referralsOn } from "@/lib/links";
-import { BagIcon, CarIcon, ClockIcon, MoreIcon, PhoneIcon, TagIcon, WalkIcon } from "./Icons";
+import { BagIcon, CarIcon, ClockIcon, ExternalIcon, MoreIcon, PhoneIcon, TagIcon, WalkIcon } from "./Icons";
 
 /**
  * "Let's go": the same choices as aiming a pull, as a menu. Directions, ordering on the
@@ -31,7 +31,14 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
         <h2 id="go-menu-title" className="px-3 pt-2 pb-1 text-sm font-semibold text-white/60">
           Let&apos;s go to {pick.name}
         </h2>
-        <a href={directionsUrl(pick)} target="_blank" rel="noopener noreferrer" onClick={() => onChoose("directions")} className={row}>
+        <a
+          href={directionsUrl(pick)}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={() => onChoose("directions")}
+          className={row}
+          aria-label={`Head there${pick.travelUnknown ? "" : `: ${pick.walkMinutes} min ${walking ? "walk" : "drive"}`}`}
+        >
           {icon(walking ? <WalkIcon size={20} /> : <CarIcon size={20} />, "bg-paprika")}
           <span>
             Head there
@@ -39,16 +46,17 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
           </span>
         </a>
         {order.kind === "own" && (
-          <a href={order.url} target="_blank" rel="noopener noreferrer" onClick={() => onChoose("order")} className={row}>
-            {icon(<BagIcon size={20} />)}
+          // Places gives no ordering link: this is the restaurant's own website, so it says so.
+          <a href={order.url} target="_blank" rel="noopener noreferrer" onClick={() => onChoose("order")} className={row} aria-label={`Website: ${pick.name}`}>
+            {icon(<ExternalIcon size={20} />)}
             <span>
-              Order to go
-              {sub("On their own site")}
+              Website
+              {sub("Their own site, which may take orders")}
             </span>
           </a>
         )}
         {order.kind === "delivery" && (
-          <button type="button" onClick={() => onChoose("order")} className={row}>
+          <button type="button" onClick={() => onChoose("order")} className={row} aria-label="Order to go: DoorDash or Uber Eats">
             {icon(<BagIcon size={20} />)}
             <span>
               Order to go
@@ -57,7 +65,12 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
           </button>
         )}
         {pick.phoneDial && (
-          <a href={`tel:${pick.phoneDial}`} onClick={() => onChoose("call")} className={row}>
+          <a
+            href={`tel:${pick.phoneDial}`}
+            onClick={() => onChoose("call")}
+            className={row}
+            aria-label={`${pick.reservable ? "Call to reserve" : "Call"} ${pick.name}${pick.phone ? `, ${pick.phone}` : ""}`}
+          >
             {icon(<PhoneIcon size={20} />)}
             <span>
               {pick.reservable ? "Call to reserve" : "Call"}
@@ -66,7 +79,7 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
           </a>
         )}
         {book && (
-          <a href={book} target="_blank" rel="noopener noreferrer" onClick={() => onChoose("journey")} className={row}>
+          <a href={book} target="_blank" rel="noopener noreferrer" onClick={() => onChoose("journey")} className={row} aria-label="Book a table on OpenTable">
             {icon(<ClockIcon size={20} />)}
             <span>
               Book a table
@@ -77,7 +90,7 @@ export function GoMenu({ pick, onChoose, onClose }: { pick: Pick; onChoose: (tar
         {pick.sponsored && (
           <SponsoredRow deal={pick.sponsored.deal} url={pick.sponsored.url} className={row} icon={icon(<TagIcon size={20} />, "bg-star/20 text-star")} />
         )}
-        <button type="button" onClick={() => onChoose("journey")} className={row}>
+        <button type="button" onClick={() => onChoose("journey")} className={row} aria-label="All the details: hours, price, split the bill, send to a friend">
           {icon(<MoreIcon size={20} />)}
           <span>
             All the details

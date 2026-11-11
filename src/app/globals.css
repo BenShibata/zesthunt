@@ -1,5 +1,9 @@
 @import "tailwindcss";
 
+/* One theme everywhere: the app is dark, so "dark:" styles follow a .dark class (set on the
+   journey screen and the privacy page) rather than the system setting. */
+@custom-variant dark (&:where(.dark, .dark *));
+
 @theme {
   /* Camera-dark opening screen */
   --color-ink: #0b0b0c;

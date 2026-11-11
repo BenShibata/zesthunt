@@ -76,7 +76,7 @@ const sections: { title: string; body: string[] }[] = [
 
 export default function PrivacyPage() {
   return (
-    <main className="min-h-dvh bg-sheet text-sheet-ink dark:bg-[#1b1916] dark:text-white">
+    <main className="dark min-h-dvh bg-[#1b1916] text-white">
       <div className="mx-auto max-w-md px-5 py-8">
         <Link href="/" className="inline-flex h-11 items-center gap-2 font-display text-lg font-extrabold">
           <CompassMark size={24} className="text-paprika" />
